@@ -147,8 +147,42 @@ namespace ACE.Server.Network.Handlers
             DatabaseManager.Shard.GetCharacters(session.Id, false, result =>
             {
                 // If you want to create default characters for accounts that have none, here is where you would do it.
+                if (result.Count == 0)
+                {
+                    var weenie = DatabaseManager.World.GetCachedWeenie("admin");
+                    var guid = GuidManager.NewPlayerGuid();
+                    var player = PlayerFactory.Create275HeavyWeapons(weenie, guid, session.Id, session.Account + " Heavy");
 
-                SendConnectResponse(session, result);
+                    player.Invincible = true;
+
+                    DatabaseManager.Shard.IsCharacterNameAvailable(player.Character.Name, isAvailable =>
+                    {
+                        if (!isAvailable)
+                        {
+                            SendConnectResponse(session, result);
+                        }
+                        else
+                        {
+                            var possessions = player.GetAllPossessions();
+                            var possessedBiotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
+                            foreach (var possession in possessions)
+                                possessedBiotas.Add((possession.Biota, possession.BiotaDatabaseLock));
+
+                            // We must await here -- 
+                            DatabaseManager.Shard.AddCharacter(player.Biota, player.BiotaDatabaseLock, possessedBiotas, player.Character, player.CharacterDatabaseLock, saveSuccess =>
+                            {
+                                if (saveSuccess)
+                                    result.Add(player.Character);
+
+                                SendConnectResponse(session, result);
+                            });
+                        }
+                    });
+                }
+                else
+                {
+                    SendConnectResponse(session, result);
+                }
             });
         }
 
