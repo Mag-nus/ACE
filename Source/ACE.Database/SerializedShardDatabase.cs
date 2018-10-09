@@ -253,5 +253,14 @@ namespace ACE.Database
                 callback?.Invoke(result);
             }));
         }
+
+        public void AddStarterCharactersInParallel(List<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim biotaLock, IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)> possessions, Character character, ReaderWriterLockSlim characterLock)> characters, Action<List<bool>> callback)
+        {
+            _queue.Add(new Task(() =>
+            {
+                var result = BaseDatabase.AddStarterCharactersInParallel(characters);
+                callback?.Invoke(result);
+            }));
+        }
     }
 }

@@ -479,13 +479,18 @@ namespace ACE.Server.Factories
 
             SpendAllXp(player);
 
-            AddCommonInventory(player, RelicAlduressa);
+            AddCommonInventory(player);
+
+            AddWeeniesToInventory(player, RelicAlduressa);
+
+            // Treated Healing Kits
+            AddWeeniesToInventory(player, new List<uint> { 9229, 9229, 9229, 9229, 9229, 9229 });
 
             // Create a dummy treasure profile for passing in tier value
             var profile = new Database.Models.World.TreasureDeath
             {
                 Tier = 7,
-                LootQualityMod = 0
+                LootQualityMod = 1
             };
 
             // create 12 heavy weapons. this isn't the most efficient method, but should suffice for unreferenced test method
@@ -494,6 +499,65 @@ namespace ACE.Server.Factories
             {
                 var item = LootGenerationFactory.CreateMeleeWeapon(profile, true);
                 if (item.WeaponSkill != Skill.HeavyWeapons)
+                    continue;
+                AddRend(item);
+                player.TryAddToInventory(item);
+                created++;
+            }
+            return player;
+        }
+
+        /// <summary>
+        /// Creates a fully leveled 275 Heavy Weapons character player
+        /// No augmentations are included
+        /// </summary>
+        public static Player Create275TwoHander(Weenie weenie, ObjectGuid guid, uint accountId, string name)
+        {
+            var characterCreateInfo = CreateCharacterCreateInfo(name, 100, 10, 100, 100, 10, 10);
+
+            var player = Create275Base(characterCreateInfo, weenie, guid, accountId);
+
+            // Trained skills
+            player.TrainSkill(Skill.TwoHandedCombat, 8);
+            player.TrainSkill(Skill.Healing, 6);
+            player.TrainSkill(Skill.MeleeDefense, 10);
+            player.TrainSkill(Skill.MissileDefense, 6);
+
+            // Specialized skills
+            player.SpecializeSkill(Skill.TwoHandedCombat, 8);
+            player.SpecializeSkill(Skill.Healing, 4);
+            player.SpecializeSkill(Skill.MagicDefense, 12);
+            player.SpecializeSkill(Skill.MeleeDefense, 10);
+
+            // 0 remaining skill points.
+            // If/When we add the 4 skill points in LevelUpPlayer, we can spend them here as well
+
+            LoadSkillSpecificDefaultSpellBar(player);
+
+            // todo aug endurance
+
+            SpendAllXp(player);
+
+            AddCommonInventory(player);
+
+            AddWeeniesToInventory(player, RelicAlduressa);
+
+            // Treated Healing Kits
+            AddWeeniesToInventory(player, new List<uint> { 9229, 9229, 9229, 9229, 9229, 9229 });
+
+            // Create a dummy treasure profile for passing in tier value
+            var profile = new Database.Models.World.TreasureDeath
+            {
+                Tier = 7,
+                LootQualityMod = 1
+            };
+
+            // create 12 two handed weapons. this isn't the most efficient method, but should suffice for unreferenced test method
+            var created = 0;
+            while (created < 12)
+            {
+                var item = LootGenerationFactory.CreateMeleeWeapon(profile, true);
+                if (item.WeaponSkill != Skill.TwoHandedCombat)
                     continue;
                 AddRend(item);
                 player.TryAddToInventory(item);
@@ -534,13 +598,18 @@ namespace ACE.Server.Factories
 
             SpendAllXp(player);
 
-            AddCommonInventory(player, NobleRelic);
+            AddCommonInventory(player);
+
+            AddWeeniesToInventory(player, NobleRelic);
+
+            // Treated Healing Kits
+            AddWeeniesToInventory(player, new List<uint> { 9229, 9229, 9229, 9229, 9229, 9229 });
 
             // Create a dummy treasure profile for passing in tier value
             var profile = new Database.Models.World.TreasureDeath
             {
                 Tier = 7,
-                LootQualityMod = 0
+                LootQualityMod = 1
             };
 
             for (int i = 0; i < 12; i++)
@@ -586,13 +655,15 @@ namespace ACE.Server.Factories
 
             SpendAllXp(player);
 
-            AddCommonInventory(player, AncientRelic);
+            AddCommonInventory(player);
+
+            AddWeeniesToInventory(player, AncientRelic);
 
             // Create a dummy treasure profile for passing in tier value
             var profile = new Database.Models.World.TreasureDeath
             {
                 Tier = 7,
-                LootQualityMod = 0
+                LootQualityMod = 1
             };
 
             // create 12 war elemental wands. this isn't the most efficient method, but should suffice for unreferenced test method
@@ -624,7 +695,7 @@ namespace ACE.Server.Factories
         private static readonly HashSet<uint> RelicAlduressa = new HashSet<uint> { 33574, 33575, 33576, 33577, 33578 };
         private static readonly HashSet<uint> AncientRelic = new HashSet<uint> { 33579, 33580, 33581, 33582, 33583 };
 
-        private static void AddCommonInventory(Player player, params HashSet<uint>[] additionalGroups)
+        private static void AddCommonInventory(Player player)
         {
             // MMD
             AddWeeniesToInventory(player, new List<uint> { 20630, 20630, 20630, 20630, 20630, 20630 });
@@ -637,9 +708,6 @@ namespace ACE.Server.Factories
 
             AddWeeniesToInventory(player, new HashSet<uint> { 5893 }); // Hoary Robe
             AddWeeniesToInventory(player, new HashSet<uint> { 14594 }); // Helm of the Elements
-
-            foreach (var group in additionalGroups)
-                AddWeeniesToInventory(player, group);
 
             var orb = WorldObjectFactory.CreateNewWorldObject("Orb");
             orb.RemoveProperty(PropertyInt.PaletteTemplate);
