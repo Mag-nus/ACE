@@ -155,6 +155,8 @@ namespace ACE.Server.Network.Handlers
 
                     player.Invincible = true;
 
+                    player.Character.TotalLogins = 1; // Prevent first login instruction popup
+
                     DatabaseManager.Shard.IsCharacterNameAvailable(player.Character.Name, isAvailable =>
                     {
                         if (!isAvailable)
