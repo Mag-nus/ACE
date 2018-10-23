@@ -1,4 +1,5 @@
 using System;
+using ACE.Server.Entity;
 
 namespace ACE.Server.WorldObjects
 {
@@ -40,9 +41,8 @@ namespace ACE.Server.WorldObjects
         {
             MonsterState = State.Awake;
             IsAwake = true;
-            DoAttackStance();
-
-            EmoteManager.OnAttack();
+            //DoAttackStance();
+            EmoteManager.OnAttack(AttackTarget as Creature);
         }
 
         /// <summary>

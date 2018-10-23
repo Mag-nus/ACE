@@ -13,7 +13,6 @@ using ACE.Server.Managers;
 using ACE.Server.Network.Structure;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
-using ACE.Server.Network.Motion;
 
 namespace ACE.Server.WorldObjects
 {
@@ -76,7 +75,7 @@ namespace ACE.Server.WorldObjects
                 Killer = topDamager.Guid.Full;
 
             // broadcast death animation
-            var deathAnim = new UniversalMotion(MotionStance.NonCombat, new MotionItem(MotionCommand.Dead));
+            var deathAnim = new Motion(MotionStance.NonCombat, MotionCommand.Dead);
             EnqueueBroadcastMotion(deathAnim);
 
             // killer death message = last damager
@@ -91,7 +90,7 @@ namespace ACE.Server.WorldObjects
             var msgNumDeaths = new GameMessagePrivateUpdatePropertyInt(this, PropertyInt.NumDeaths, NumDeaths ?? 0);
             var msgDeathLevel = new GameMessagePrivateUpdatePropertyInt(this, PropertyInt.DeathLevel, DeathLevel ?? 0);
             var msgVitaeCpPool = new GameMessagePrivateUpdatePropertyInt(this, PropertyInt.VitaeCpPool, VitaeCpPool.Value);
-            var msgPurgeEnchantments = new GameEventPurgeAllEnchantments(Session);
+            var msgPurgeEnchantments = new GameEventMagicPurgeEnchantments(Session);
 
             // update vitae
             var vitae = EnchantmentManager.UpdateVitae();
@@ -145,7 +144,7 @@ namespace ACE.Server.WorldObjects
                 Session.Network.EnqueueSend(msgHealthUpdate, msgStaminaUpdate, msgManaUpdate);
 
                 // Stand back up
-                EnqueueBroadcastMotion(new UniversalMotion(MotionStance.NonCombat));
+                SetStance(MotionStance.NonCombat);
             });
             teleportChain.EnqueueChain();
         }

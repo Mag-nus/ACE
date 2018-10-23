@@ -594,7 +594,7 @@ namespace ACE.Server.Command.Handlers
                 }
 
                 // Save the position
-                session.Player.SetPosition(positionType, (Position)playerPosition.Clone());
+                session.Player.SetPosition(positionType, new Position(playerPosition));
                 // Report changes to client
                 var positionMessage = new GameMessageSystemChat($"Set: {positionType} to Loc: {playerPosition}", ChatMessageType.Broadcast);
                 session.Network.EnqueueSend(positionMessage);
@@ -727,16 +727,33 @@ namespace ACE.Server.Command.Handlers
         // telepoi location
         [CommandHandler("telepoi", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1,
             "Teleport yourself to a named Point of Interest",
-            "[POI]\n" +
-            "@telepoi Arwic")]
+            "[POI|list]\n" +
+            "@telepoi Arwic\n"+
+            "Get the list of POIs\n" +
+            "@telepoi list")]
         public static void HandleTeleportPoi(Session session, params string[] parameters)
         {
             var poi = String.Join(" ", parameters);
-            var teleportPOI = DatabaseManager.World.GetCachedPointOfInterest(poi);
-            if (teleportPOI == null)
-                return;
-            var weenie = DatabaseManager.World.GetCachedWeenie(teleportPOI.WeenieClassId);
-            session.Player.Teleport(weenie.GetPosition(PositionType.Destination));
+
+            if (poi.ToLower() == "list")
+            {
+                DatabaseManager.World.CacheAllPointsOfInterest();
+                var pois = DatabaseManager.World.GetPointsOfInterestCache();
+                var list = pois
+                    .Select(k => k.Key)
+                    .OrderBy(k => k)
+                    .DefaultIfEmpty()
+                    .Aggregate((a, b) => a + ", " + b);
+                session.Network.EnqueueSend(new GameMessageSystemChat($"All POIs: {list}", ChatMessageType.Broadcast));
+            }
+            else
+            {
+                var teleportPOI = DatabaseManager.World.GetCachedPointOfInterest(poi);
+                if (teleportPOI == null)
+                    return;
+                var weenie = DatabaseManager.World.GetCachedWeenie(teleportPOI.WeenieClassId);
+                session.Player.Teleport(weenie.GetPosition(PositionType.Destination));
+            }
         }
 
         // teleloc cell x y z [qx qy qz qw]
@@ -1419,7 +1436,7 @@ namespace ACE.Server.Command.Handlers
             foreach (var possession in possessions)
                 possessedBiotas.Add((possession.Biota, possession.BiotaDatabaseLock));
 
-            DatabaseManager.Shard.AddCharacter(player.Biota, player.BiotaDatabaseLock, possessedBiotas, player.Character, player.CharacterDatabaseLock, null);
+            DatabaseManager.Shard.AddCharacterInParallel(player.Biota, player.BiotaDatabaseLock, possessedBiotas, player.Character, player.CharacterDatabaseLock, null);
 
             session.LogOffPlayer();
         }
@@ -1434,6 +1451,31 @@ namespace ACE.Server.Command.Handlers
             // @qst erase fellow < quest flag > -Erase a fellowship quest flag.
             // @qst bestow < quest flag > -Stamps the specific quest flag on the targeted player.If this fails, it's probably because you spelled the quest flag wrong.
             // @qst - Query, stamp, and erase quests on the targeted player.
+            if (parameters.Length == 0)
+            {
+                // todo: display help screen
+                return;
+            }
+
+            if (parameters[0].Equals("erase"))
+            {
+                if (parameters.Length < 2)
+                {
+                    // delete all quests?
+                    // seems unsafe, maybe a confirmation?
+                    return;
+                }
+                var questName = parameters[1];
+                var player = session.Player;
+                if (!player.QuestManager.HasQuest(questName))
+                {
+                    player.SendMessage($"{questName} not found");
+                    return;
+                }
+                player.QuestManager.Erase(questName);
+                player.SendMessage($"{questName} erased");
+                return;
+            }
 
             // TODO: output
         }

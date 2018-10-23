@@ -12,7 +12,6 @@ using ACE.Entity.Enum;
 using ACE.Server.Entity.Actions;
 using ACE.Server.Factories;
 using ACE.Server.Network.GameMessages.Messages;
-using ACE.Server.Network.Motion;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages;
 
@@ -40,7 +39,7 @@ namespace ACE.Server.WorldObjects
             // A player has their possessions passed via the ctor. All other world objects must load their own inventory
             if (!(this is Player) && !(new ObjectGuid(ContainerId ?? 0).IsPlayer()))
             {
-                DatabaseManager.Shard.GetInventory(biota.Id, false, biotas =>
+                DatabaseManager.Shard.GetInventoryInParallel(biota.Id, false, biotas =>
                 {
                     EnqueueAction(new ActionEventDelegate(() => SortBiotasIntoInventory(biotas)));
                 });
@@ -57,7 +56,9 @@ namespace ACE.Server.WorldObjects
             if (UseRadius < 2)
                 UseRadius = 2; // Until DoMoveTo (Physics, Indoor/Outside range variance) is smarter, use 2 is safest.
 
-            GenerateContainList();
+            var creature = this as Creature;
+            if (creature == null)
+                GenerateContainList();
         }
 
 

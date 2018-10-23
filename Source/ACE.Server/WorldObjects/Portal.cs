@@ -307,14 +307,14 @@ namespace ACE.Server.WorldObjects
                 if (!player.QuestManager.HasQuest(Quest))
                     player.QuestManager.Update(Quest);
             }
-            if (QuestRestriction != null && !player.QuestManager.HasQuest(QuestRestriction))
+            if (QuestRestriction != null && !player.QuestManager.HasQuest(QuestRestriction) && !player.IgnorePortalRestrictions)
             {
                 player.QuestManager.HandleNoQuestError(this);
                 return;
             }
 
             // everything looks good, teleport
-            EmoteManager.OnUse();
+            EmoteManager.OnUse(player);
 
 #if DEBUG
             player.Session.Network.EnqueueSend(new GameMessageSystemChat("Portal sending player to destination", ChatMessageType.System));
