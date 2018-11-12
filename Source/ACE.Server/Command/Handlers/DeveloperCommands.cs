@@ -158,6 +158,12 @@ namespace ACE.Server.Command.Handlers
             session.Player.EnqueueBroadcastPhysicsState();
         }
 
+        [CommandHandler("netstats", AccessLevel.Developer, CommandHandlerFlag.None, "View network statistics")]
+        public static void HandleNetStats(Session session, params string[] parameters)
+        {
+            CommandHandlerHelper.WriteOutputInfo(session, NetworkStatistics.Summary(), ChatMessageType.Broadcast);
+        }
+
         /// <summary>
         /// List all clothing bases which are compatible with setup
         /// </summary>
@@ -407,7 +413,7 @@ namespace ACE.Server.Command.Handlers
                     {
                         var blockid = new LandblockId((byte)x, (byte)y);
                         Stopwatch sw = Stopwatch.StartNew();
-                        LandblockManager.ForceLoadLandBlock(blockid, false, false);
+                        LandblockManager.GetLandblock(blockid, false, false);
                         sw.Stop();
                         CommandHandlerHelper.WriteOutputDebug(session, $"Loaded Landblock {blockid.Landblock:X4} in {sw.ElapsedMilliseconds} milliseconds");
                     }
