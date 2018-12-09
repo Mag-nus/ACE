@@ -151,7 +151,6 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("fakelogin", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Fake Login Complete response")]
         public static void HandleFakeLogin(Session session, params string[] parameters)
         {
-            session.Player.InWorld = true;
             session.Player.ReportCollisions = true;
             session.Player.IgnoreCollisions = false;
             session.Player.Hidden = false;
@@ -417,7 +416,7 @@ namespace ACE.Server.Command.Handlers
 
             foreach (var player in PlayerManager.GetAllOnline())
             {
-                message += $"{player.Name} : {player.Session.Id}\n";
+                message += $"{player.Name} : {player.Session.AccountId}\n";
                 playerCounter++;
             }
 
@@ -433,7 +432,7 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("save-now", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Saves your session.")]
         public static void HandleSaveNow(Session session, params string[] parameters)
         {
-            session.Player.EnqueueSaveChain();
+            session.Player.SavePlayerToDatabase();
         }
 
         /// <summary>
@@ -1314,8 +1313,8 @@ namespace ACE.Server.Command.Handlers
 
             var specialized = player.Skills.Values.Where(s => s.AdvancementClass == SkillAdvancementClass.Specialized).OrderBy(s => s.Skill.ToString());
             var trained = player.Skills.Values.Where(s => s.AdvancementClass == SkillAdvancementClass.Trained).OrderBy(s => s.Skill.ToString());
-            var untrained = player.Skills.Values.Where(s => s.AdvancementClass == SkillAdvancementClass.Untrained).OrderBy(s => s.Skill.ToString());
-            var unusable = player.Skills.Values.Where(s => s.AdvancementClass == SkillAdvancementClass.Inactive).OrderBy(s => s.Skill.ToString());
+            var untrained = player.Skills.Values.Where(s => s.AdvancementClass == SkillAdvancementClass.Untrained && s.IsUsable).OrderBy(s => s.Skill.ToString());
+            var unusable = player.Skills.Values.Where(s => s.AdvancementClass == SkillAdvancementClass.Untrained && !s.IsUsable).OrderBy(s => s.Skill.ToString());
 
             foreach (var skill in specialized)
                 Console.WriteLine(skill.Skill + ": " + skill.Current);
@@ -1329,9 +1328,6 @@ namespace ACE.Server.Command.Handlers
                 Console.WriteLine(skill.Skill + ": " + skill.Current);
             Console.WriteLine("===");
 
-            // FIXME: 'unusable' skills as they are called in the client
-            // i assume these should be in the 'Inactive' list on the server,
-            // but they are showing up in the untrained list...
             foreach (var skill in unusable)
                 Console.WriteLine(skill.Skill + ": " + skill.Current);
         }

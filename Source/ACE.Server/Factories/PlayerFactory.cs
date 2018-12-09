@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
+using log4net;
+
 using ACE.Database;
 using ACE.Database.Models.World;
 using ACE.DatLoader;
@@ -16,28 +18,32 @@ namespace ACE.Server.Factories
 {
     public static class PlayerFactory
     {
+        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+
         public enum CreateResult
         {
             Success,
-            TooManySkillCreditsUsed
+            TooManySkillCreditsUsed,
+            InvalidSkillRequested,
+            FailedToTrainSkill,
+            FailedToSpecializeSkill,
         }
 
         public static CreateResult Create(CharacterCreateInfo characterCreateInfo, Weenie weenie, ObjectGuid guid, uint accountId, out Player player)
         {
-            var cg = DatManager.PortalDat.CharGen;
-
+            var heritageGroup = DatManager.PortalDat.CharGen.HeritageGroups[characterCreateInfo.Heritage];
 
             player = new Player(weenie, guid, accountId);
 
             player.SetProperty(PropertyInt.HeritageGroup, (int)characterCreateInfo.Heritage);
-            player.SetProperty(PropertyString.HeritageGroup, cg.HeritageGroups[characterCreateInfo.Heritage].Name);
+            player.SetProperty(PropertyString.HeritageGroup, heritageGroup.Name);
             player.SetProperty(PropertyInt.Gender, (int)characterCreateInfo.Gender);
             player.SetProperty(PropertyString.Sex, characterCreateInfo.Gender == 1 ? "Male" : "Female");
 
-            //player.SetProperty(PropertyDataId.Icon, cg.HeritageGroups[characterCreateInfo.Heritage].IconImage); // I don't believe this is used anywhere in the client, but it might be used by a future custom launcher
+            //player.SetProperty(PropertyDataId.Icon, cgh.IconImage); // I don't believe this is used anywhere in the client, but it might be used by a future custom launcher
 
             // pull character data from the dat file
-            var sex = cg.HeritageGroups[characterCreateInfo.Heritage].Genders[(int)characterCreateInfo.Gender];
+            var sex = heritageGroup.Genders[(int)characterCreateInfo.Gender];
 
             player.SetProperty(PropertyDataId.MotionTable, sex.MotionTable);
             player.SetProperty(PropertyDataId.SoundTable, sex.SoundTable);
@@ -106,13 +112,13 @@ namespace ACE.Server.Factories
             else
                 CreateIOU(player, sex.GetFootwearWeenie(characterCreateInfo.Apperance.FootwearStyle));
 
-            string templateName = cg.HeritageGroups[characterCreateInfo.Heritage].Templates[characterCreateInfo.TemplateOption].Name;
+            string templateName = heritageGroup.Templates[characterCreateInfo.TemplateOption].Name;
             //player.SetProperty(PropertyString.Title, templateName);
             player.SetProperty(PropertyString.Template, templateName);
-            player.AddTitle(cg.HeritageGroups[characterCreateInfo.Heritage].Templates[characterCreateInfo.TemplateOption].Title, true);
+            player.AddTitle(heritageGroup.Templates[characterCreateInfo.TemplateOption].Title, true);
 
             // stats
-            uint totalAttributeCredits = cg.HeritageGroups[characterCreateInfo.Heritage].AttributeCredits;
+            uint totalAttributeCredits = heritageGroup.AttributeCredits;
             uint usedAttributeCredits = 0;
 
             player.Strength.StartingValue = ValidateAttributeCredits(characterCreateInfo.StrengthAbility, usedAttributeCredits, totalAttributeCredits);
@@ -133,8 +139,7 @@ namespace ACE.Server.Factories
             player.Self.StartingValue = ValidateAttributeCredits(characterCreateInfo.SelfAbility, usedAttributeCredits, totalAttributeCredits);
             usedAttributeCredits += player.Self.StartingValue;
 
-            // Validate this is equal to actual attribute credits. 330 for all but "Olthoi", which have 60
-            if (usedAttributeCredits > 330 || ((characterCreateInfo.Heritage == (int)HeritageGroup.Olthoi || characterCreateInfo.Heritage == (int)HeritageGroup.OlthoiAcid) && usedAttributeCredits > 60))
+            if (usedAttributeCredits > heritageGroup.AttributeCredits)
                 return CreateResult.TooManySkillCreditsUsed;
 
             // data we don't care about
@@ -147,25 +152,50 @@ namespace ACE.Server.Factories
             player.Mana.Current = player.Mana.Base;
 
             // set initial skill credit amount. 52 for all but "Olthoi", which have 68
-            player.SetProperty(PropertyInt.AvailableSkillCredits, (int)cg.HeritageGroups[characterCreateInfo.Heritage].SkillCredits);
+            player.SetProperty(PropertyInt.AvailableSkillCredits, (int)heritageGroup.SkillCredits);
 
             for (int i = 0; i < characterCreateInfo.SkillAdvancementClasses.Count; i++)
             {
-                var skill = (Skill)i;
-                var skillCost = skill.GetCost();
                 var sac = characterCreateInfo.SkillAdvancementClasses[i];
+
+                if (sac == SkillAdvancementClass.Inactive)
+                    continue;
+
+                if (!DatManager.PortalDat.SkillTable.SkillBaseHash.ContainsKey((uint)i))
+                {
+                    log.ErrorFormat("Character {0} tried to create with skill {1} that was not found in Portal dat.", characterCreateInfo.Name, i);
+                    return CreateResult.InvalidSkillRequested;
+                }
+
+                var skill = DatManager.PortalDat.SkillTable.SkillBaseHash[(uint)i];
+
+                var trainedCost = skill.TrainedCost;
+                var specializedCost = skill.UpgradeCostFromTrainedToSpecialized;
+
+                foreach (var skillGroup in heritageGroup.Skills)
+                {
+                    if (skillGroup.SkillNum == i)
+                    {
+                        trainedCost = skillGroup.NormalCost;
+                        specializedCost = skillGroup.PrimaryCost;
+                        break;
+                    }
+                }
 
                 if (sac == SkillAdvancementClass.Specialized)
                 {
-                    player.TrainSkill(skill, skillCost.TrainingCost);
-                    player.SpecializeSkill(skill, skillCost.SpecializationCost);
+                    if (!player.TrainSkill((Skill)i, trainedCost))
+                        return CreateResult.FailedToTrainSkill;
+                    if (!player.SpecializeSkill((Skill)i, specializedCost))
+                        return CreateResult.FailedToSpecializeSkill;
                 }
                 else if (sac == SkillAdvancementClass.Trained)
                 {
-                    player.TrainSkill(skill, skillCost.TrainingCost);
+                    if (!player.TrainSkill((Skill)i, trainedCost))
+                        return CreateResult.FailedToTrainSkill;
                 }
-                else if (skillCost != null && sac == SkillAdvancementClass.Untrained)
-                    player.UntrainSkill(skill, skillCost.TrainingCost);
+                else if (sac == SkillAdvancementClass.Untrained)
+                    player.UntrainSkill((Skill) i, 0);
             }
 
             // grant starter items based on skills
@@ -191,7 +221,7 @@ namespace ACE.Server.Factories
 
                         var loot = WorldObjectFactory.CreateNewWorldObject(item.WeenieId);
                         if (loot != null)
-                        { 
+                        {
                             if (loot.StackSize.HasValue && loot.MaxStackSize.HasValue)
                                 loot.StackSize = (item.StackSize <= loot.MaxStackSize) ? item.StackSize : loot.MaxStackSize;
                         }
@@ -262,9 +292,11 @@ namespace ACE.Server.Factories
             // Index used to determine the starting location
             var startArea = characterCreateInfo.StartArea;
 
-            player.Location = new Position(cg.StarterAreas[(int)startArea].Locations[0].ObjCellID,
-                cg.StarterAreas[(int)startArea].Locations[0].Frame.Origin.X, cg.StarterAreas[(int)startArea].Locations[0].Frame.Origin.Y, cg.StarterAreas[(int)startArea].Locations[0].Frame.Origin.Z,
-                cg.StarterAreas[(int)startArea].Locations[0].Frame.Orientation.X, cg.StarterAreas[(int)startArea].Locations[0].Frame.Orientation.Y, cg.StarterAreas[(int)startArea].Locations[0].Frame.Orientation.Z, cg.StarterAreas[(int)startArea].Locations[0].Frame.Orientation.W);
+            var starterArea = DatManager.PortalDat.CharGen.StarterAreas[(int)startArea];
+
+            player.Location = new Position(starterArea.Locations[0].ObjCellID,
+                starterArea.Locations[0].Frame.Origin.X, starterArea.Locations[0].Frame.Origin.Y, starterArea.Locations[0].Frame.Origin.Z,
+                starterArea.Locations[0].Frame.Orientation.X, starterArea.Locations[0].Frame.Orientation.Y, starterArea.Locations[0].Frame.Orientation.Z, starterArea.Locations[0].Frame.Orientation.W);
 
             player.Instantiation = player.Location;
             player.Sanctuary = player.Location;
@@ -540,7 +572,7 @@ namespace ACE.Server.Factories
             }
         }
 
-        private static void AddAllSpells( Player player)
+        private static void AddAllSpells(Player player)
         {
             for (uint spellLevel = 1; spellLevel <= 8; spellLevel++)
             {

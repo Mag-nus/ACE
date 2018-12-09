@@ -8,7 +8,6 @@ using System.Text;
 
 using ACE.Server.Managers;
 using ACE.Server.Network.GameMessages;
-using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.Handlers;
 using ACE.Server.Network.Managers;
 
@@ -38,7 +37,7 @@ namespace ACE.Server.Network
 
         // Resync will be started after ConnectResponse, and should immediately be sent then, so no delay here.
         // Fun fact: even though we send the server time in the ConnectRequest, client doesn't seem to use it?  Therefore we must TimeSync early so client doesn't see a skew when we send it later.
-        private bool sendResync;
+        public bool sendResync;
         private DateTime nextResync = DateTime.UtcNow;
 
         // Ack should be sent after a 2 second delay, so start enabled with the delay.
@@ -461,14 +460,7 @@ namespace ACE.Server.Network
                 return;
             }
 
-            // This should be set on the second packet to the server from the client.
-            // This completes the three-way handshake.
-            if (packet.Header.HasFlag(PacketHeaderFlags.ConnectResponse))
-            {
-                sendResync = true;
-                AuthenticationHandler.HandleConnectResponse(packet, session);
-                return;
-            }
+
 
             // Process all fragments out of the packet
             foreach (ClientPacketFragment fragment in packet.Fragments)
@@ -666,9 +658,8 @@ namespace ACE.Server.Network
 
         private void SendPacketRaw(ServerPacket packet)
         {
-            Socket socket = SocketManager.GetSocket();
-            if (packet.Header.Sequence == 0)
-                socket = SocketManager.GetSocket(0);
+            // necessary to select listener 0 because the use of dual unidirectional sockets doesn't work for some client firewalls
+            Socket socket = SocketManager.GetSocket(0);
 
             byte[] payload = packet.GetPayload();
 
@@ -678,14 +669,32 @@ namespace ACE.Server.Network
 
             if (packetLog.IsDebugEnabled)
             {
-                System.Net.IPEndPoint listenerEndpoint = (System.Net.IPEndPoint)socket.LocalEndPoint;
-                StringBuilder sb = new StringBuilder();
-                sb.AppendLine(String.Format("[{5}] Sending Packet (Len: {0}) [{1}:{2}=>{3}:{4}]", payload.Length, listenerEndpoint.Address, listenerEndpoint.Port, session.EndPoint.Address, session.EndPoint.Port, session.Id));
+                var listenerEndpoint = (System.Net.IPEndPoint)socket.LocalEndPoint;
+                var sb = new StringBuilder();
+                sb.AppendLine(String.Format("[{5}] Sending Packet (Len: {0}) [{1}:{2}=>{3}:{4}]", payload.Length, listenerEndpoint.Address, listenerEndpoint.Port, session.EndPoint.Address, session.EndPoint.Port, session.Network.ClientId));
                 sb.AppendLine(payload.BuildPacketString());
                 packetLog.Debug(sb.ToString());
             }
 
-            socket.SendTo(payload, session.EndPoint);
+            try
+            {
+                socket.SendTo(payload, session.EndPoint);
+            }
+            catch (SocketException ex)
+            {
+                // Unhandled Exception: System.Net.Sockets.SocketException: A message sent on a datagram socket was larger than the internal message buffer or some other network limit, or the buffer used to receive a datagram into was smaller than the datagram itself
+                // at System.Net.Sockets.Socket.UpdateStatusAfterSocketErrorAndThrowException(SocketError error, String callerName)
+                // at System.Net.Sockets.Socket.SendTo(Byte[] buffer, Int32 offset, Int32 size, SocketFlags socketFlags, EndPoint remoteEP)
+
+                var listenerEndpoint = (System.Net.IPEndPoint)socket.LocalEndPoint;
+                var sb = new StringBuilder();
+                sb.AppendLine(ex.ToString());
+                sb.AppendLine(String.Format("[{5}] Sending Packet (Len: {0}) [{1}:{2}=>{3}:{4}]", payload.Length, listenerEndpoint.Address, listenerEndpoint.Port, session.EndPoint.Address, session.EndPoint.Port, session.Network.ClientId));
+                sb.AppendLine(payload.BuildPacketString());
+                log.Error(sb.ToString());
+
+                session.State = Enum.SessionState.NetworkTimeout; // This will force WorldManager to drop the session
+            }
         }
 
         /// <summary>
