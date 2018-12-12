@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 using log4net;
@@ -10,6 +12,7 @@ using ACE.Database;
 using ACE.Database.Models.Auth;
 using ACE.Database.Models.Shard;
 using ACE.Entity.Enum;
+using ACE.Server.Factories;
 using ACE.Server.Managers;
 using ACE.Server.Network.Enum;
 using ACE.Server.Network.GameMessages.Messages;
@@ -156,7 +159,7 @@ namespace ACE.Server.Network.Handlers
                 {
                     var weenie = DatabaseManager.World.GetCachedWeenie("admin");
                     var guid = GuidManager.NewPlayerGuid();
-                    var player = PlayerFactory.Create275HeavyWeapons(weenie, guid, session.Id, session.Account + " Heavy");
+                    var player = PlayerFactory.Create275HeavyWeapons(weenie, guid, session.AccountId, session.Account + " Heavy");
 
                     player.Invincible = true;
 
@@ -179,7 +182,10 @@ namespace ACE.Server.Network.Handlers
                             DatabaseManager.Shard.AddCharacterInParallel(player.Biota, player.BiotaDatabaseLock, possessedBiotas, player.Character, player.CharacterDatabaseLock, saveSuccess =>
                             {
                                 if (saveSuccess)
+                                {
+                                    PlayerManager.AddOfflinePlayer(player);
                                     result.Add(player.Character);
+                                }
 
                                 SendConnectResponse(session, result);
                             });
