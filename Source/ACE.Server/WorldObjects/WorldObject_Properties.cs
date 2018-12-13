@@ -695,7 +695,7 @@ namespace ACE.Server.WorldObjects
         public bool GetPhysicsState(PhysicsState state)
         {
             if (PhysicsObj == null) return false;
-            return PhysicsObj.State.HasFlag(state);
+            return (PhysicsObj.State & state) != 0;
         }
 
         public void SetPhysicsState(PhysicsState state, bool? value)
@@ -1214,6 +1214,12 @@ namespace ACE.Server.WorldObjects
         {
             get => GetProperty(PropertyBool.Attackable);
             set { if (!value.HasValue) RemoveProperty(PropertyBool.Attackable); else SetProperty(PropertyBool.Attackable, value.Value); }
+        }
+
+        public bool SafeSpellComponents
+        {
+            get => GetProperty(PropertyBool.SafeSpellComponents) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.SafeSpellComponents); else SetProperty(PropertyBool.SafeSpellComponents, value); }
         }
 
         public bool? HiddenAdmin
