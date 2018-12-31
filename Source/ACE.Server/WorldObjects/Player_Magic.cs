@@ -116,6 +116,9 @@ namespace ACE.Server.WorldObjects
                 actionChain.AddAction(this, () => CreatePlayerSpell(target, targetCategory, spellId));
                 actionChain.EnqueueChain();
             }
+
+            if (UnderLifestoneProtection)
+                LifestoneProtectionDispel();
         }
 
         /// <summary>
@@ -124,6 +127,9 @@ namespace ACE.Server.WorldObjects
         public void HandleActionMagicCastUnTargetedSpell(uint spellId)
         {
             CreatePlayerSpell(spellId);
+
+            if (UnderLifestoneProtection)
+                LifestoneProtectionDispel();
         }
 
         /// <summary>
@@ -532,7 +538,7 @@ namespace ACE.Server.WorldObjects
             if (magicSkill > 0 && magicSkill >= (int)difficulty - 50)
             {
                 var chance = 1.0f - SkillCheck.GetMagicSkillChance((int)magicSkill, (int)difficulty);
-                var rng = Physics.Common.Random.RollDice(0.0f, 1.0f);
+                var rng = ThreadSafeRandom.Next(0.0f, 1.0f);
                 if (chance < rng)
                     castingPreCheckStatus = CastingPreCheckStatus.Success;
             }
@@ -542,7 +548,7 @@ namespace ACE.Server.WorldObjects
                 spell.School == MagicSchool.WarMagic && LastSuccessCast_School == MagicSchool.VoidMagic)
             {
                 // roll each time?
-                var timeLimit = Physics.Common.Random.RollDice(3.0f, 5.0f);
+                var timeLimit = ThreadSafeRandom.Next(3.0f, 5.0f);
 
                 if (Time.GetUnixTime() - LastSuccessCast_Time < timeLimit)
                 {
@@ -609,7 +615,7 @@ namespace ACE.Server.WorldObjects
                 TryBurnComponents(spell);
             });
 
-            var checkPKStatusVsTarget = CheckPKStatusVsTarget(player, (target as Player), spell);
+            var checkPKStatusVsTarget = CheckPKStatusVsTarget(player, target, spell);
             if (checkPKStatusVsTarget != null && checkPKStatusVsTarget == false)
                 castingPreCheckStatus = CastingPreCheckStatus.InvalidPKStatus;
 
@@ -777,7 +783,9 @@ namespace ACE.Server.WorldObjects
                             case MagicSchool.ItemEnchantment:
                                 break;  // do nothing
                             default:
-                                EnqueueBroadcast(new GameMessageScript(target.Guid, spell.TargetEffect, spell.Formula.Scale));
+
+                                // not sure if this was in retail for creature and life, seems confusing?
+                                //EnqueueBroadcast(new GameMessageScript(target.Guid, spell.TargetEffect, spell.Formula.Scale));
                                 break;
                         }
                     });
@@ -840,7 +848,7 @@ namespace ACE.Server.WorldObjects
             // Grab player's skill level in the spell's Magic School
             var magicSkill = GetCreatureSkill(spell.School).Current;
 
-            if ((Physics.Common.Random.RollDice(0.0f, 1.0f) > (1.0f - SkillCheck.GetMagicSkillChance((int)magicSkill, (int)spell.Power)))
+            if ((ThreadSafeRandom.Next(0.0f, 1.0f) > (1.0f - SkillCheck.GetMagicSkillChance((int)magicSkill, (int)spell.Power)))
                 && (magicSkill >= (int)spell.Power - 50) && (magicSkill > 0))
                 castingPreCheckStatus = CastingPreCheckStatus.Success;
 
@@ -950,10 +958,10 @@ namespace ACE.Server.WorldObjects
 
             // ensure level 8s are installed
             var maxSpellLevel = Math.Clamp(maxLevel, 1, 8);
-            if (maxSpellLevel == 8 && DatabaseManager.World.GetCachedSpell((uint)Network.Enum.Spell.ArmorOther8) == null)
+            if (maxSpellLevel == 8 && DatabaseManager.World.GetCachedSpell((uint)SpellId.ArmorOther8) == null)
                 maxSpellLevel = 7;
 
-            var tySpell = typeof(Network.Enum.Spell);
+            var tySpell = typeof(SpellId);
             List<BuffMessage> buffMessages = new List<BuffMessage>();
             // prepare messages
             List<string> buffsNotImplementedYet = new List<string>();
@@ -1071,6 +1079,7 @@ namespace ACE.Server.WorldObjects
             "WarMagicMastery",
             "ManaMastery",
             "ArcaneEnlightenment",
+            "ArcanumSalvaging",
             "ArmorExpertise",
             "ItemExpertise",
             "MagicItemExpertise",

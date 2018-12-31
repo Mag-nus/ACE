@@ -32,7 +32,7 @@ namespace ACE.Server.Physics.Animation
         public List<MovementNode> PendingActions;
         public PhysicsObj PhysicsObj;
         public WeenieObject WeenieObj;
-        public List<Action> Callbacks;
+        public List<Action<WeenieError>> Callbacks;
 
         public MoveToManager()
         {
@@ -59,7 +59,7 @@ namespace ACE.Server.Physics.Animation
             MovementParams = new MovementParameters();
 
             PendingActions = new List<MovementNode>();
-            Callbacks = new List<Action>();
+            Callbacks = new List<Action<WeenieError>>();
         }
 
         public void InitializeLocalVars()
@@ -346,12 +346,7 @@ namespace ACE.Server.Physics.Animation
                 }
                 else
                     CleanUpAndCallWeenie(WeenieError.None);
-
             }
-
-            if (PendingActions.Count == 0)
-                foreach (var callback in Callbacks.ToList())
-                    callback();
         }
 
         public void BeginMoveForward()
@@ -446,7 +441,13 @@ namespace ACE.Server.Physics.Animation
                     }
                 }
                 else
+                {
+                    // custom: sync for server ticrate
+                    if (AuxCommand != 0)
+                        PhysicsObj.set_heading(heading, true);
+
                     stop_aux_command(movementParams);
+                }
             }
             else
                 stop_aux_command(movementParams);
@@ -710,7 +711,8 @@ namespace ACE.Server.Physics.Animation
             if (PhysicsObj != null)
                 PhysicsObj.StopCompletely(false);
 
-            // server - handle move to done?
+            foreach (var callback in Callbacks.ToList())
+                callback(status);
         }
 
         public float GetCurrentDistance()
@@ -856,12 +858,12 @@ namespace ACE.Server.Physics.Animation
             }
         }
 
-        public void add_listener(Action listener)
+        public void add_listener(Action<WeenieError> listener)
         {
             Callbacks.Add(listener);
         }
 
-        public void remove_listener(Action listener)
+        public void remove_listener(Action<WeenieError> listener)
         {
             Callbacks.Remove(listener);
         }

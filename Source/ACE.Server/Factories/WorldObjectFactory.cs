@@ -115,6 +115,12 @@ namespace ACE.Server.Factories
                     return new SkillAlterationDevice(weenie, guid);
                 case WeenieType.PressurePlate:
                     return new PressurePlate(weenie, guid);
+                case WeenieType.PetDevice:
+                    return new PetDevice(weenie, guid);
+                case WeenieType.Pet:
+                    return new Pet(weenie, guid);
+                case WeenieType.CombatPet:
+                    return new CombatPet(weenie, guid);
                 default:
                     return new GenericObject(weenie, guid);
             }
@@ -216,6 +222,12 @@ namespace ACE.Server.Factories
                     return new SkillAlterationDevice(biota);
                 case WeenieType.PressurePlate:
                     return new PressurePlate(biota);
+                case WeenieType.PetDevice:
+                    return new PetDevice(biota);
+                case WeenieType.Pet:
+                    return new Pet(biota);
+                case WeenieType.CombatPet:
+                    return new CombatPet(biota);
                 default:
                     return new GenericObject(biota);
             }
@@ -224,7 +236,7 @@ namespace ACE.Server.Factories
         /// <summary>
         /// This will create a list of WorldObjects, all with new GUIDs and for every position provided.
         /// </summary>
-        public static List<WorldObject> CreateNewWorldObjects(List<LandblockInstance> sourceObjects, List<Biota> biotas, uint? restrictGuid = null)
+        public static List<WorldObject> CreateNewWorldObjects(List<LandblockInstance> sourceObjects, List<Biota> biotas, uint? restrict_wcid = null)
         {
             var results = new List<WorldObject>();
 
@@ -236,7 +248,7 @@ namespace ACE.Server.Factories
                 if (weenie == null)
                     continue;
 
-                if (restrictGuid != null && restrictGuid.Value != instance.Guid)
+                if (restrict_wcid != null && restrict_wcid.Value != instance.WeenieClassId)
                     continue;
 
                 var guid = new ObjectGuid(instance.Guid);

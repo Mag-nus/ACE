@@ -346,11 +346,11 @@ namespace ACE.Server.WorldObjects
         /// Returns the attribute damage bonus for a physical attack
         /// </summary>
         /// <param name="attackType">Uses strength for melee, coordination for missile</param>
-        public float GetAttributeMod(AttackType attackType)
+        public float GetAttributeMod(CombatType attackType)
         {
-            if (attackType == AttackType.Melee)
+            if (attackType == CombatType.Melee)
                 return SkillFormula.GetAttributeMod(PropertyAttribute.Strength, (int)Strength.Current);
-            else if (attackType == AttackType.Missile)
+            else if (attackType == CombatType.Missile)
                 return SkillFormula.GetAttributeMod(PropertyAttribute.Coordination, (int)Coordination.Current);
             else
                 return 1.0f;
@@ -404,7 +404,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Called when a creature evades an attack
         /// </summary>
-        public virtual void OnEvade(WorldObject attacker, AttackType attackType)
+        public virtual void OnEvade(WorldObject attacker, CombatType attackType)
         {
             // empty base for non-player creatures?
         }
@@ -412,7 +412,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Called when a creature hits a target
         /// </summary>
-        public virtual void OnDamageTarget(WorldObject target, AttackType attackType)
+        public virtual void OnDamageTarget(WorldObject target, CombatType attackType)
         {
             // empty base for non-player creatures?
         }
@@ -608,7 +608,7 @@ namespace ACE.Server.WorldObjects
             }
             //Console.WriteLine($"Sneak attack {(behind ? "behind" : "front")}, chance {Math.Round(chance * 100)}%");
 
-            var rng = Physics.Common.Random.RollDice(0.0f, 1.0f);
+            var rng = ThreadSafeRandom.Next(0.0f, 1.0f);
             if (rng > chance)
                 return 1.0f;
 
@@ -704,7 +704,7 @@ namespace ACE.Server.WorldObjects
                 chance *= (float)dirtySkill.Current / attackSkill.Current;
             }
 
-            var rng = Physics.Common.Random.RollDice(0.0f, 1.0f);
+            var rng = ThreadSafeRandom.Next(0.0f, 1.0f);
             if (rng > chance)
                 return;
 
@@ -729,7 +729,7 @@ namespace ACE.Server.WorldObjects
         public void FightDirty_ApplyLowAttack(Creature target)
         {
             var spellID = GetCreatureSkill(Skill.DirtyFighting).AdvancementClass == SkillAdvancementClass.Specialized ?
-                Network.Enum.Spell.DF_Specialized_DefenseDebuff : Network.Enum.Spell.DF_Trained_DefenseDebuff;
+                SpellId.DF_Specialized_DefenseDebuff : SpellId.DF_Trained_DefenseDebuff;
 
             var spell = new Spell(spellID);
             if (spell.NotFound) return;  // TODO: friendly message to install DF patch
@@ -750,7 +750,7 @@ namespace ACE.Server.WorldObjects
         public void FightDirty_ApplyMediumAttack(Creature target)
         {
             var spellID = GetCreatureSkill(Skill.DirtyFighting).AdvancementClass == SkillAdvancementClass.Specialized ?
-                Network.Enum.Spell.DF_Specialized_Bleed : Network.Enum.Spell.DF_Trained_Bleed;
+                SpellId.DF_Specialized_Bleed : SpellId.DF_Trained_Bleed;
 
             var spell = new Spell(spellID);
             if (spell.NotFound) return;  // TODO: friendly message to install DF patch
@@ -773,7 +773,7 @@ namespace ACE.Server.WorldObjects
         {
             // attack debuff
             var spellID = GetCreatureSkill(Skill.DirtyFighting).AdvancementClass == SkillAdvancementClass.Specialized ?
-                Network.Enum.Spell.DF_Specialized_AttackDebuff : Network.Enum.Spell.DF_Trained_AttackDebuff;
+                SpellId.DF_Specialized_AttackDebuff : SpellId.DF_Trained_AttackDebuff;
 
             var spell = new Spell(spellID);
             if (spell.NotFound) return;  // TODO: friendly message to install DF patch
@@ -787,7 +787,7 @@ namespace ACE.Server.WorldObjects
 
             // healing resistance rating
             spellID = GetCreatureSkill(Skill.DirtyFighting).AdvancementClass == SkillAdvancementClass.Specialized ?
-                Network.Enum.Spell.DF_Specialized_HealingDebuff : Network.Enum.Spell.DF_Trained_HealingDebuff;
+                SpellId.DF_Specialized_HealingDebuff : SpellId.DF_Trained_HealingDebuff;
 
             spell = new Spell(spellID);
             if (spell.NotFound) return;  // TODO: friendly message to install DF patch

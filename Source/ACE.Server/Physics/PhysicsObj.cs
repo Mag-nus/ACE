@@ -143,10 +143,12 @@ namespace ACE.Server.Physics
             }
         }
 
-        ~PhysicsObj()
+        // calling DestroyObject() twice can be bad - especially if a new object has been re-created for it,
+        // such as the player already relogging back in
+        /*~PhysicsObj()
         {
             DestroyObject();
-        }
+        }*/
 
         public void Destroy()
         {
@@ -266,7 +268,7 @@ namespace ACE.Server.Physics
                 return;
             }
             var upperBound = (float)delta;
-            var randp = Common.Random.RollDice(0.0f, upperBound);
+            var randp = ACE.ThreadSafeRandom.Next(0.0f, upperBound);
             var hook = new FPHook(PhysicsHookType.Velocity | PhysicsHookType.MotionTable | PhysicsHookType.Setup, PhysicsTimer_CurrentTime, randp, 0.0f, 1.0f, pes);
             Hooks.AddLast(hook);
         }
@@ -905,6 +907,15 @@ namespace ACE.Server.Physics
             MovementManager.PerformMovement(mvs);
         }
 
+        public void MoveToPosition(Position pos, MovementParameters movementParams)
+        {
+            var mvs = new MovementStruct();
+            mvs.Position = new Position(pos);
+            mvs.Type = MovementType.MoveToPosition;
+            mvs.Params = movementParams;
+            MovementManager.PerformMovement(mvs);
+        }
+
         public void RemoveLinkAnimations()
         {
             if (PartArray != null)
@@ -1281,8 +1292,8 @@ namespace ACE.Server.Physics
                 var origin = newPos.Frame.Origin;
                 newPos = setPos.Pos;    // ??
 
-                newPos.Frame.Origin.X += Common.Random.RollDice(-1.0f, 1.0f) * setPos.RadX;
-                newPos.Frame.Origin.Y += Common.Random.RollDice(-1.0f, 1.0f) * setPos.RadY;
+                newPos.Frame.Origin.X += ACE.ThreadSafeRandom.Next(-1.0f, 1.0f) * setPos.RadX;
+                newPos.Frame.Origin.Y += ACE.ThreadSafeRandom.Next(-1.0f, 1.0f) * setPos.RadY;
 
                 result = SetPositionInternal(newPos, setPos, transition);
                 if (result == SetPositionError.OK) break;
@@ -1456,6 +1467,8 @@ namespace ACE.Server.Physics
                 UpdateChild(Children.Objects[i], Children.PartNumbers[i], Children.Frames[i]);
         }
 
+        public int InitialUpdates;
+
         public void UpdateObjectInternal(double quantum)
         {
             if (!TransientState.HasFlag(TransientStateFlags.Active) || CurCell == null)
@@ -1474,6 +1487,7 @@ namespace ACE.Server.Physics
                 {
                     CachedVelocity = Vector3.Zero;
                     set_frame(newPos.Frame);
+                    InitialUpdates++;
                 }
                 else
                 {
@@ -1509,6 +1523,7 @@ namespace ACE.Server.Physics
                 newPos.Frame.Origin = Position.Frame.Origin;
                 set_frame(newPos.Frame);
                 CachedVelocity = Vector3.Zero;
+                InitialUpdates++;
             }
 
             if (DetectionManager != null) DetectionManager.CheckDetection();
@@ -2380,7 +2395,7 @@ namespace ACE.Server.Physics
             }
             else
             {
-                Velocity = Vector3.Zero;
+                //Velocity = Vector3.Zero;  // gets objects stuck in falling state?
                 if (collisions.FramesStationaryFall == 3)
                 {
                     TransientState &= ~TransientStateFlags.StationaryComplete;
@@ -3852,12 +3867,12 @@ namespace ACE.Server.Physics
             ObjMaint.get_voyeurs();
         }
 
-        public void add_moveto_listener(Action listener)
+        public void add_moveto_listener(Action<WeenieError> listener)
         {
             MovementManager.MoveToManager.add_listener(listener);
         }
 
-        public void remove_moveto_listener(Action listener)
+        public void remove_moveto_listener(Action<WeenieError> listener)
         {
             MovementManager.MoveToManager.remove_listener(listener);
         }

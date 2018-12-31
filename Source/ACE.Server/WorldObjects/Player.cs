@@ -17,7 +17,6 @@ using ACE.Server.Network;
 using ACE.Server.Network.Enum;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
-using ACE.Server.Network.Sequence;
 using ACE.Server.Network.Structure;
 using ACE.Server.WorldObjects.Entity;
 using ACE.Server.Physics.Animation;
@@ -94,91 +93,6 @@ namespace ACE.Server.WorldObjects
             PhysicsObj.SetPlayer();
         }
 
-        protected override void InitializeSequences()
-        {
-            base.InitializeSequences();
-
-            Sequences.SetSequence(SequenceType.PrivateUpdateAttribute, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateAttribute2ndLevel, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkill, new ByteSequence(false));
-
-            Sequences.SetSequence(SequenceType.PrivateUpdatePropertyInt, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdatePropertyInt64, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdatePropertyBool, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdatePropertyDouble, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdatePropertyDataID, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdatePropertyInstanceID, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdatePropertyString, new ByteSequence(false));
-
-            Sequences.SetSequence(SequenceType.PrivateUpdateAttribute2ndLevelHealth, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateAttribute2ndLevelStamina, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateAttribute2ndLevelMana, new ByteSequence(false));
-
-            Sequences.SetSequence(SequenceType.Confirmation, new ByteSequence(false));
-
-            Sequences.SetSequence(SequenceType.PrivateUpdateAttributeStrength, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateAttributeEndurance, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateAttributeQuickness, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateAttributeCoordination, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateAttributeFocus, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateAttributeSelf, new ByteSequence(false));
-
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillAxe, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillBow, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillCrossBow, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillDagger, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillMace, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillMeleeDefense, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillMissileDefense, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillSling, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillSpear, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillStaff, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillSword, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillThrownWeapon, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillUnarmedCombat, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillArcaneLore, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillMagicDefense, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillManaConversion, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillSpellcraft, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillItemAppraisal, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillPersonalAppraisal, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillDeception, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillHealing, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillJump, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillLockpick, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillRun, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillAwareness, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillArmsAndArmorRepair, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillCreatureAppraisal, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillWeaponAppraisal, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillArmorAppraisal, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillMagicItemAppraisal, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillCreatureEnchantment, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillItemEnchantment, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillLifeMagic, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillWarMagic, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillLeadership, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillLoyalty, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillFletching, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillAlchemy, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillCooking, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillSalvaging, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillTwoHandedCombat, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillGearcraft, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillVoidMagic, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillHeavyWeapons, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillLightWeapons, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillFinesseWeapons, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillMissileWeapons, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillShield, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillDualWield, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillRecklessness, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillSneakAttack, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillDirtyFighting, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillChallenge, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PrivateUpdateSkillSummoning, new ByteSequence(false));
-        }
-
         private void SetEphemeralValues()
         {
             BaseDescriptionFlags |= ObjectDescriptionFlag.Player;
@@ -221,6 +135,10 @@ namespace ACE.Server.WorldObjects
 
             QuestManager = new QuestManager(this);
 
+            LastUseTracker = new Dictionary<int, DateTime>();
+
+            LootPermission = new Dictionary<ObjectGuid, DateTime>();
+
             return; // todo
             /* todo fix for new EF model
             TrackedContracts = new Dictionary<uint, ContractTracker>();
@@ -238,8 +156,6 @@ namespace ACE.Server.WorldObjects
 
                 TrackedContracts.Add(trackedContract.Key, loadContract);
             }*/
-
-            LastUseTracker = new Dictionary<int, DateTime>();
 
             // =======================================
             // This code was taken from the old Load()
@@ -427,19 +343,19 @@ namespace ACE.Server.WorldObjects
 
             // if local, examine it
             if (wo != null)
-                wo.Examine(Session);
+                Examine(wo);
             else
             {
                 // examine item on landblock
                 wo = CurrentLandblock?.GetObject(examinationId);
                 if (wo != null)
-                    wo.Examine(Session);
+                    Examine(wo);
                 else
                 {
                     // search creature equipped weapons on nearby landblocks
                     wo = CurrentLandblock?.GetWieldedObject(examinationId);
                     if (wo != null)
-                        wo.Examine(Session);
+                        Examine(wo);
                     else
                     {
                         // At this point, the object wasn't found.
@@ -453,6 +369,33 @@ namespace ACE.Server.WorldObjects
 
             RequestedAppraisalTarget = examinationId.Full;
             CurrentAppraisalTarget = examinationId.Full;
+        }
+
+        public void Examine(WorldObject obj)
+        {
+            var success = true;
+            var creature = obj as Creature;
+            Player player = null;
+
+            if (creature != null)
+            {
+                player = obj as Player;
+                var skill = player != null ? Skill.AssessPerson : Skill.AssessCreature;
+
+                var currentSkill = (int)GetCreatureSkill(skill).Current;
+                int difficulty = (int)creature.GetCreatureSkill(Skill.Deception).Current;
+
+                var chance = SkillCheck.GetSkillChance(currentSkill, difficulty);
+
+                if (player != null && !player.GetCharacterOption(CharacterOption.AttemptToDeceiveOtherPlayers))
+                    chance = 1.0f;
+
+                success = chance >= ThreadSafeRandom.Next(0.0f, 1.0f);
+            }
+            Session.Network.EnqueueSend(new GameEventIdentifyObjectResponse(Session, obj, success));
+
+            if (!success && player != null)
+                player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{Name} tried and failed to assess you!", ChatMessageType.Appraisal));
         }
 
         public override void OnCollideObject(WorldObject target)
@@ -600,6 +543,9 @@ namespace ACE.Server.WorldObjects
                 // remove the player from landblock management -- after the animation has run
                 logoutChain.AddAction(this, () =>
                 {
+                    if (PlayerKillerStatus == PlayerKillerStatus.PKLite)
+                        PlayerKillerStatus = PlayerKillerStatus.NPK;
+
                     CurrentLandblock?.RemoveWorldObject(Guid, false);
                     SetPropertiesAtLogOut();
                     SavePlayerToDatabase();
@@ -966,7 +912,7 @@ namespace ACE.Server.WorldObjects
                     if (result)
                     {
                         var spell = new Server.Entity.Spell(spellId);
-                        buffMessage = new GameMessageSystemChat($"{consumableName} applies {spell.Name} on you.", ChatMessageType.Craft);
+                        buffMessage = new GameMessageSystemChat($"{consumableName} casts {spell.Name} on you.", ChatMessageType.Magic);
                     }
                     else
                         buffMessage = new GameMessageSystemChat($"Consuming {consumableName} attempted to apply a spell not yet fully implemented.", ChatMessageType.System);
@@ -1002,7 +948,9 @@ namespace ACE.Server.WorldObjects
                 }
 
                 var soundEvent = new GameMessageSound(Guid, sound, 1.0f);
-                Session.Network.EnqueueSend(soundEvent, buffMessage);
+                EnqueueBroadcast(soundEvent);
+
+                Session.Network.EnqueueSend(buffMessage);
 
                 // return to original stance
                 var returnStance = new Motion(CurrentMotionState.Stance);
@@ -1058,6 +1006,37 @@ namespace ACE.Server.WorldObjects
         public void SendMessage(string msg)
         {
             Session.Network.EnqueueSend(new GameMessageSystemChat(msg, ChatMessageType.Broadcast));
+        }
+
+        public void HandleActionEnterPkLite()
+        {
+            // ensure permanent npk
+            if (PlayerKillerStatus != PlayerKillerStatus.NPK || MinimumTimeSincePk != null)
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat("Only Non-Player Killers may enter PK Lite. Please see @help pklite for more details about this command.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            // perform pk lite entry motion / effect
+            var motion = new Motion(MotionStance.NonCombat, MotionCommand.EnterPKLite);
+            EnqueueBroadcastMotion(motion);
+
+            var motionTable = DatManager.PortalDat.ReadFromDat<MotionTable>(MotionTableId);
+            var animLength = motionTable.GetAnimationLength(MotionStance.NonCombat, MotionCommand.EnterPKLite);
+
+            var actionChain = new ActionChain();
+            actionChain.AddDelaySeconds(animLength);
+            actionChain.AddAction(this, () =>
+            {
+                PlayerKillerStatus = PlayerKillerStatus.PKLite;
+
+                var status = new GameMessagePublicUpdatePropertyInt(this, PropertyInt.PlayerKillerStatus, (int)PlayerKillerStatus);
+                var msg = new GameMessageSystemChat($"{Name} is looking for a fight!", ChatMessageType.Broadcast);
+
+                EnqueueBroadcast(status, msg);
+
+            });
+            actionChain.EnqueueChain();
         }
     }
 }

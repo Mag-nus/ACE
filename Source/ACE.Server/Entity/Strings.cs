@@ -27,7 +27,7 @@ namespace ACE.Server.Entity
             new DeathMessage(
                 "{0} is torn to ribbons by your assault!",
                 "You are torn to ribbons by {1}'s assault!",
-                "{0} is torn to ribbons by {0]'s assault!"),
+                "{0} is torn to ribbons by {1}'s assault!"),
 
             new DeathMessage(
                 "Your killing blow nearly turns {0} inside-out!",
@@ -143,14 +143,14 @@ namespace ACE.Server.Entity
         public static List<DeathMessage> Lightning = new List<DeathMessage>()
         {
             new DeathMessage(
-                "Electricity tears {0} apart!",
-                "{1}'s electricity tears you apart!",
-                "{1}'s electricity tears {0} apart!"),
-
-            new DeathMessage(
                 "Blistered by lightning, {0} falls!",
                 "Blistered by {1}'s lightning, you die!",
                 "Blistered by {1}'s lightning, {0} dies!"),
+
+            new DeathMessage(
+                "Electricity tears {0} apart!",
+                "Electricity from {1}'s attack tears you apart!",
+                "Electricity from {1}'s attack tears {0} apart!"),
 
             new DeathMessage(
                 "Your lightning coruscates over {0}'s mortal remains!",
@@ -485,13 +485,13 @@ namespace ACE.Server.Entity
             {
                 //var damageType = killer.GetDamageType();
                 DeathMessages.TryGetValue(damageType, out var messages);
-                var idx = Physics.Common.Random.RollDice(0, messages.Count - 1);
+                var idx = ThreadSafeRandom.Next(0, messages.Count - 1);
                 return messages[idx];
             }
             else
             {
                 var messages = Critical;
-                var idx = Physics.Common.Random.RollDice(0, messages.Count - 1);
+                var idx = ThreadSafeRandom.Next(0, messages.Count - 1);
                 return messages[idx];
             }
         }

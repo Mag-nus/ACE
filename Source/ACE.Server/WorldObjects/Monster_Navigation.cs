@@ -3,6 +3,7 @@ using System.Numerics;
 
 using ACE.Entity;
 using ACE.Entity.Enum;
+using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
 using ACE.Server.Managers;
 using ACE.Server.Physics.Animation;
@@ -79,7 +80,9 @@ namespace ACE.Server.WorldObjects
             IsTurning = true;
 
             // send network actions
-            if (IsRanged)
+            var targetDist = GetDistanceToTarget();
+            var turnTo = IsRanged || (CurrentAttack == CombatType.Magic && targetDist <= GetSpellMaxRange());
+            if (turnTo)
                 TurnTo(AttackTarget);
             else
                 MoveTo(AttackTarget, RunRate);
@@ -89,7 +92,7 @@ namespace ACE.Server.WorldObjects
             IsMoving = true;
 
             var mvp = GetMovementParameters();
-            if (IsRanged)
+            if (turnTo)
                 PhysicsObj.TurnToObject(AttackTarget.PhysicsObj.ID, mvp);
             else
                 PhysicsObj.MoveToObject(AttackTarget.PhysicsObj, mvp);
@@ -123,17 +126,23 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void StartMove()
         {
-            LastMoveTime = Timers.RunningTime;;
+            LastMoveTime = Timers.RunningTime;
             IsMoving = true;
         }
 
         /// <summary>
         /// Called when the MoveTo process has completed
         /// </summary>
-        public void OnMoveComplete()
+        public virtual void OnMoveComplete(WeenieError status)
         {
             if (DebugMove)
                 Console.WriteLine($"{Name} ({Guid}) - OnMoveComplete");
+
+            if (status != WeenieError.None)
+                return;
+
+            if (MonsterState == State.Return)
+                Sleep();
 
             PhysicsObj.CachedVelocity = Vector3.Zero;   // ??
             IsMoving = false;
@@ -184,6 +193,9 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public float GetDistanceToTarget()
         {
+            if (AttackTarget == null)
+                return float.MaxValue;
+
             var dist = (AttackTarget.Location.ToGlobal() - Location.ToGlobal()).Length();
             var radialDist = dist - (AttackTarget.PhysicsObj.GetRadius() + PhysicsObj.GetRadius());
 
@@ -220,7 +232,7 @@ namespace ACE.Server.WorldObjects
             //if (!IsRanged)
                 UpdatePosition();
 
-            if (GetDistanceToTarget() >= MaxChaseRange)
+            if (GetDistanceToTarget() >= MaxChaseRange && MonsterState != State.Return)
                 Sleep();
         }
 
@@ -232,10 +244,12 @@ namespace ACE.Server.WorldObjects
             UpdatePosition_SyncLocation();
 
             //SendUpdatePosition(ForcePos);
-            SendUpdatePosition();
+            if (ForcePos)
+                SendUpdatePosition();
 
             if (DebugMove)
-                Console.WriteLine($"{Name} ({Guid}) - UpdatePosition (velocity: {PhysicsObj.CachedVelocity.Length()})");
+                //Console.WriteLine($"{Name} ({Guid}) - UpdatePosition (velocity: {PhysicsObj.CachedVelocity.Length()})");
+                Console.WriteLine($"{Name} ({Guid}) - UpdatePosition: {Location.ToLOCString()}");
         }
 
         /// <summary>
@@ -268,6 +282,7 @@ namespace ACE.Server.WorldObjects
                 //else
                     //Console.WriteLine("Moving " + Name + " to " + Location.LandblockId.Raw.ToString("X8"));
             }
+
             Location.Pos = newPos.Frame.Origin;
             Location.Rotation = newPos.Frame.Orientation;
 
@@ -345,9 +360,12 @@ namespace ACE.Server.WorldObjects
         {
             var mvp = new MovementParameters();
 
-            // set non-defualt params for monster movement
+            // set non-default params for monster movement
             mvp.Flags &= ~MovementParamFlags.CanWalk;
-            if (!IsRanged)
+
+            var turnTo = IsRanged || (CurrentAttack == CombatType.Magic && GetDistanceToTarget() <= GetSpellMaxRange());
+
+            if (!turnTo)
                 mvp.Flags |= MovementParamFlags.FailWalk | MovementParamFlags.UseFinalHeading | MovementParamFlags.Sticky | MovementParamFlags.MoveAway;
 
             return mvp;
@@ -363,6 +381,36 @@ namespace ACE.Server.WorldObjects
         {
             //Console.WriteLine($"{Name} ({Guid}) - OnUnsticky");
             Sticky = false;
+        }
+
+        public static float HomeDist = 192.0f;
+        public static float HomeDistSq = HomeDist * HomeDist;
+
+        public void CheckMissHome()
+        {
+            if (MonsterState == State.Return)
+                return;
+
+            var homeDistSq = Vector3.DistanceSquared(Location.ToGlobal(), GetPosition(PositionType.Home).ToGlobal());
+
+            if (homeDistSq > HomeDistSq)
+                MoveToHome();
+        }
+
+        public void MoveToHome()
+        {
+            MonsterState = State.Return;
+            AttackTarget = null;
+
+            var home = GetPosition(PositionType.Home);
+
+            if (Location.Equals(home))
+                return;
+
+            MoveTo(home, RunRate);
+
+            PhysicsObj.MoveToPosition(new Physics.Common.Position(home), GetMovementParameters());
+            IsMoving = true;
         }
     }
 }

@@ -19,6 +19,12 @@ namespace ACE.Server.WorldObjects
     partial class Player
     {
         /// <summary>
+        /// A list of players who have granted corpse looting permissions
+        /// with /permit
+        /// </summary>
+        public Dictionary<ObjectGuid, DateTime> LootPermission;
+
+        /// <summary>
         /// Called when a player dies, in conjunction with Die()
         /// </summary>
         /// <param name="lastDamager">The last damager that landed the death blow</param>
@@ -34,9 +40,14 @@ namespace ACE.Server.WorldObjects
             // broadcast to nearby players
             var nearbyMsg = string.Format(deathMessage.Broadcast, Name, lastDamager.Name);
             var broadcastMsg = new GameMessageSystemChat(nearbyMsg, ChatMessageType.Broadcast);
-            var nearbyPlayers = EnqueueBroadcast(false, broadcastMsg);
 
-            var excludePlayers = nearbyPlayers.ToList();
+            var excludePlayers = new List<Player>();
+            if (lastDamager is Player lastDamagerPlayer)
+                excludePlayers.Add(lastDamagerPlayer);
+
+            var nearbyPlayers = EnqueueBroadcast(excludePlayers, false, broadcastMsg);
+
+            excludePlayers.AddRange(nearbyPlayers);
             excludePlayers.Add(this);   // exclude self
 
             // if the player's lifestone is in a different landblock, also broadcast their demise to that landblock
@@ -52,9 +63,6 @@ namespace ACE.Server.WorldObjects
                 var lifestoneBlock = LandblockManager.GetLandblock(new LandblockId(Sanctuary.Landblock << 16 | 0xFFFF), true);
                 lifestoneBlock.EnqueueBroadcast(excludePlayers, true, broadcastMsg);
             }
-
-            // reset damage history for this player
-            DamageHistory.Reset();
 
             return deathMessage;
         }
@@ -92,16 +100,21 @@ namespace ACE.Server.WorldObjects
             var msgVitaeCpPool = new GameMessagePrivateUpdatePropertyInt(this, PropertyInt.VitaeCpPool, VitaeCpPool.Value);
             var msgPurgeEnchantments = new GameEventMagicPurgeEnchantments(Session);
 
-            // update vitae
-            var vitae = EnchantmentManager.UpdateVitae();
-
-            var spellID = (uint)Network.Enum.Spell.Vitae;
-            var spell = new Spell(spellID);
-            var vitaeEnchantment = new Enchantment(this, Guid, spellID, spell.Duration, 0, (EnchantmentMask)spell.StatModType, vitae);
-            var msgVitaeEnchantment = new GameEventMagicUpdateEnchantment(Session, vitaeEnchantment);
-
             // send network messages for player death
-            Session.Network.EnqueueSend(msgHealthUpdate, msgNumDeaths, msgDeathLevel, msgVitaeCpPool, msgPurgeEnchantments, msgVitaeEnchantment);
+            Session.Network.EnqueueSend(msgHealthUpdate, msgNumDeaths, msgDeathLevel, msgVitaeCpPool, msgPurgeEnchantments);
+
+            // update vitae
+            // players who died in a PKLite fight do not accrue vitae
+            var pkLiteKiller = GetKiller_PKLite();
+            if (pkLiteKiller == null)
+            {
+                var vitae = EnchantmentManager.UpdateVitae();
+
+                var spellID = (uint)SpellId.Vitae;
+                var spell = new Spell(spellID);
+                var vitaeEnchantment = new Enchantment(this, Guid, spellID, spell.Duration, 0, (EnchantmentMask)spell.StatModType, vitae);
+                Session.Network.EnqueueSend(new GameEventMagicUpdateEnchantment(Session, vitaeEnchantment));
+            }
 
             // wait for the death animation to finish
             var dieChain = new ActionChain();
@@ -111,6 +124,9 @@ namespace ACE.Server.WorldObjects
             // enter portal space
             dieChain.AddAction(this, CreateCorpse);
             dieChain.AddAction(this, TeleportOnDeath);
+            dieChain.AddAction(this, SetLifestoneProtection);
+            dieChain.AddAction(this, SetMinimumTimeSincePK);
+
             dieChain.EnqueueChain();
         }
 
@@ -145,7 +161,11 @@ namespace ACE.Server.WorldObjects
 
                 // Stand back up
                 SetStance(MotionStance.NonCombat);
+
+                // reset damage history for this player
+                DamageHistory.Reset();
             });
+
             teleportChain.EnqueueChain();
         }
 
@@ -285,6 +305,20 @@ namespace ACE.Server.WorldObjects
             // Hidden Vein (May 2002) - Many changes made on the way item loss on death works. See http://acpedia.org/wiki/Hidden_Vein and http://acpedia.org/wiki/Announcements_-_2002/05_-_Hidden_Vein#Letter_to_the_Players for more details
             // Throne of Destiny expansion (July 2005) - The formula used for working out how many items a character drops was updated. For details on the old formula and how it changed see http://acpedia.org/wiki/Announcements_-_2005/07_-_Throne_of_Destiny_(expansion)#FAQ_-_AC:TD_Level_Cap_Update
 
+            // if player dies in a PKLite battle,
+            // they don't drop any items, and revert back to NPK status
+
+            if (PlayerKillerStatus == PlayerKillerStatus.PKLite)
+            {
+                var killer = CurrentLandblock?.GetObject(new ObjectGuid(Killer ?? 0));
+                if (killer is Player)
+                {
+                    PlayerKillerStatus = PlayerKillerStatus.NPK;
+                    EnqueueBroadcast(new GameMessagePublicUpdatePropertyInt(this, PropertyInt.PlayerKillerStatus, (int)PlayerKillerStatus));
+                    return new List<WorldObject>();
+                }
+            }
+
             var numItemsDropped = GetNumItemsDropped();
 
             var numCoinsDropped = GetNumCoinsDropped();
@@ -404,10 +438,10 @@ namespace ACE.Server.WorldObjects
                 return 0;
 
             if (level >= 11 && level <= 20)
-                return Physics.Common.Random.RollDice(0, 1);
+                return ThreadSafeRandom.Next(0, 1);
 
             // level 21+
-            var numItemsDropped = (level / 20) + Physics.Common.Random.RollDice(0, 2);
+            var numItemsDropped = (level / 20) + ThreadSafeRandom.Next(0, 2);
 
             numItemsDropped = Math.Min(numItemsDropped, MaxItemsDropped);   // is this really a max cap?
 
@@ -467,6 +501,261 @@ namespace ACE.Server.WorldObjects
                 msg += "!";
 
             return msg;
+        }
+
+        public static TimeSpan PermitTime = TimeSpan.FromHours(1);
+
+        public void HandleActionAddPlayerPermission(string playerName)
+        {
+            // is this player online?
+            var player = PlayerManager.GetOnlinePlayer(playerName);
+
+            if (player == null)
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"{playerName} is not online.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            // check for self-permit
+            if (Name.Equals(player.Name))
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"You already have permission to loot your corpse.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            // verify other player has /consent on
+            if (!player.GetCharacterOption(CharacterOption.AcceptCorpseLootingPermissions))
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"{player.Name} is not accepting corpse looting permissions from other players.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            // do they already have permission?
+            if (player.HasLootPermission(Guid))
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"{player.Name} already has permission to loot your corpse.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            player.LootPermission.Add(Guid, DateTime.UtcNow + PermitTime);
+
+            // send messages to both players
+            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{Name} has given you permission to loot one of his or her corpses. This permission will last one hour.", ChatMessageType.Broadcast));
+
+            Session.Network.EnqueueSend(new GameMessageSystemChat($"You have given permission to {player.Name} to loot one of your corpses. This permission will last one hour.", ChatMessageType.Broadcast));
+        }
+
+        public void HandleActionRemovePlayerPermission(string playerName)
+        {
+            // is this player online?
+            var player = PlayerManager.GetOnlinePlayer(playerName);
+
+            // check for self-revoke
+            if (Name.Equals(player.Name))
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"You always have permission to loot your corpse.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            // do they already have permission?
+            if (player == null || !player.HasLootPermission(Guid))
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"{player.Name} doesn't have permission to loot your corpse.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            // remove looting permissions
+            player.LootPermission.Remove(Guid);
+
+            // send messages to both players
+            player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{Name} has revoked permission to loot one of his or her corpses.", ChatMessageType.Broadcast));
+
+            Session.Network.EnqueueSend(new GameMessageSystemChat($"{player.Name}'s permission to loot your corpse has been revoked.", ChatMessageType.Broadcast));
+        }
+
+        /// <summary>
+        /// Cleans out any expired permissions
+        /// </summary>
+        public void PrunePermissions()
+        {
+            LootPermission = LootPermission.Where(p => p.Value >= DateTime.UtcNow).ToDictionary(p => p.Key, p => p.Value);
+        }
+
+        public bool HasLootPermission(ObjectGuid guid)
+        {
+            PrunePermissions();
+
+            return LootPermission.ContainsKey(guid);
+        }
+
+        public void HandleActionDisplayPlayerConsentList()
+        {
+            PrunePermissions();
+
+            if (LootPermission.Count == 0)
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have permission to loot anyone's corpse.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            var playerNames = new List<string>();
+
+            foreach (var playerGuid in LootPermission.Keys)
+            {
+                // is the granter required to stay online?
+                var player = PlayerManager.FindByGuid(playerGuid);
+
+                if (player == null)
+                {
+                    Console.WriteLine($"{Name}.HandleActionDisplayPlayerConsentList(): couldn't find player guid {playerGuid}");
+                    continue;
+                }
+                playerNames.Add(player.Name);
+            }
+            Session.Network.EnqueueSend(new GameMessageSystemChat("You have permissions to loot a corpse from these players:\n" + string.Join("\n", playerNames), ChatMessageType.Broadcast));
+        }
+
+        public void HandleActionClearPlayerConsentList()
+        {
+            PrunePermissions();
+
+            if (LootPermission.Count == 0)
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"You do not have permission to loot anyone's corpse.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            LootPermission.Clear();
+
+            Session.Network.EnqueueSend(new GameMessageSystemChat($"You have cleared your consent list. Players will have to permit you again to allow you access to their corpse.", ChatMessageType.Broadcast));
+        }
+
+        /// <summary>
+        /// A player can remove corpse looting permissions that were granted to them.
+        /// </summary>
+        /// <param name="playerName">The granter name</param>
+        public void HandleActionRemoveFromPlayerConsentList(string playerName)
+        {
+            var player = PlayerManager.FindByName(playerName);
+
+            if (player == null)
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"{playerName} is not online.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            // check for self-revoke
+            if (Name.Equals(player.Name))
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"You always have permission to loot your corpse.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            // do we have permissions?
+            if (!HasLootPermission(player.Guid))
+            {
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"You don't have permission to loot {player.Name}'s corpse.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            // remove looting permissions
+            LootPermission.Remove(player.Guid);
+
+            Session.Network.EnqueueSend(new GameMessageSystemChat($"You have removed your permissions to loot {player.Name}'s corpse.", ChatMessageType.Broadcast));
+        }
+
+        public bool UnderLifestoneProtection
+        {
+            get => GetProperty(PropertyBool.UnderLifestoneProtection) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.UnderLifestoneProtection); else SetProperty(PropertyBool.UnderLifestoneProtection, value); }
+        }
+
+        public double? LifestoneProtectionTimestamp
+        {
+            get => GetProperty(PropertyFloat.LifestoneProtectionTimestamp) ?? null;
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.LifestoneProtectionTimestamp); else SetProperty(PropertyFloat.LifestoneProtectionTimestamp, value.Value); }
+        }
+
+        public void SetLifestoneProtection()
+        {
+            UnderLifestoneProtection = true;
+            LifestoneProtectionTimestamp = 0;
+        }
+
+        public void HandleLifestoneProtection()
+        {
+            Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.LifestoneMagicProtectsYou));
+            EnqueueBroadcast(new GameMessageScript(Guid, ACE.Entity.Enum.PlayScript.ShieldUpBlue));
+        }
+
+        public static TimeSpan LifestoneProtectionTime = TimeSpan.FromMinutes(1);
+
+        public void LifestoneProtectionTick()
+        {
+            if (!UnderLifestoneProtection)
+                return;
+
+            LifestoneProtectionTimestamp += cachedHeartbeatInterval;
+
+            if (LifestoneProtectionTimestamp < LifestoneProtectionTime.TotalSeconds)
+                return;
+
+            UnderLifestoneProtection = false;
+            LifestoneProtectionTimestamp = null;
+
+            Session.Network.EnqueueSend(new GameMessageSystemChat("You're no longer protected by the Lifestone's magic!", ChatMessageType.Magic));
+        }
+
+        public void LifestoneProtectionDispel()
+        {
+            UnderLifestoneProtection = false;
+            LifestoneProtectionTimestamp = null;
+
+            Session.Network.EnqueueSend(new GameMessageSystemChat("Your actions have dispelled the Lifestone's magic!", ChatMessageType.Magic));
+        }
+
+        public double? MinimumTimeSincePk
+        {
+            get => GetProperty(PropertyFloat.MinimumTimeSincePk) ?? null;
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.MinimumTimeSincePk); else SetProperty(PropertyFloat.MinimumTimeSincePk, value.Value); }
+        }
+
+        public void SetMinimumTimeSincePK()
+        {
+            if ((PlayerKillerStatus & PlayerKillerStatus.PK) == 0 && MinimumTimeSincePk == null)
+                return;
+
+            var prevStatus = PlayerKillerStatus;
+
+            PlayerKillerStatus &= ~PlayerKillerStatus.PK;
+            PlayerKillerStatus |= PlayerKillerStatus.NPK;
+            MinimumTimeSincePk = 0;
+
+            if ((prevStatus & PlayerKillerStatus.PK) != 0)
+            {
+                EnqueueBroadcast(new GameMessagePublicUpdatePropertyInt(this, PropertyInt.PlayerKillerStatus, (int)PlayerKillerStatus));
+                Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.YouAreTemporarilyNoLongerPK));
+            }
+        }
+
+        public static TimeSpan TemporaryNPKTime = TimeSpan.FromMinutes(5);
+
+        public void PK_DeathTick()
+        {
+            if (MinimumTimeSincePk == null)
+                return;
+
+            MinimumTimeSincePk += cachedHeartbeatInterval;
+
+            if (MinimumTimeSincePk < TemporaryNPKTime.TotalSeconds)
+                return;
+
+            PlayerKillerStatus &= ~PlayerKillerStatus.NPK;
+            PlayerKillerStatus |= PlayerKillerStatus.PK;
+            MinimumTimeSincePk = null;
+
+            EnqueueBroadcast(new GameMessagePublicUpdatePropertyInt(this, PropertyInt.PlayerKillerStatus, (int)PlayerKillerStatus));
+            Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.YouArePKAgain));
         }
     }
 }

@@ -1,5 +1,14 @@
 # ACEmulator Change Log
 
+### 2018-12-21
+[Ripley]
+* Add Session.BootSession to expand DropSession beyond "Network Timeout" and allow for launcher pings.
+* Wired up EmoteType.SetSanctuaryPosition (No more free rides back to Training Academy after leaving)
+
+### 2018-12-09
+[Ripley]
+* Move Spell enum from server to Entity and rename SpellId
+
 ### 2018-12-07
 [Ripley]
 * Added some properties so the SQL writers could annotate them for readability (PCAP imported properties, used for dev reference only)

@@ -235,6 +235,9 @@ namespace ACE.Server.WorldObjects
             var rotateTime = GetRotateDelay(angle);
             pickUpItemChain.AddDelaySeconds(rotateTime);*/
 
+            var sourceContainer = targetLocation as Container;
+            var motionPickup = sourceContainer != null ? sourceContainer.MotionPickup : MotionCommand.Pickup;
+
             pickUpItemChain.AddAction(this, () =>
             {
                 /*if (thisMoveToChainNumberCopy != moveToChainCounter)
@@ -246,13 +249,13 @@ namespace ACE.Server.WorldObjects
                 }*/
 
                 // start picking up item animation
-                var motion = new Motion(CurrentMotionState.Stance, MotionCommand.Pickup);
+                var motion = new Motion(CurrentMotionState.Stance, motionPickup);
                 EnqueueBroadcast(new GameMessageUpdatePosition(this), new GameMessageUpdateMotion(this, motion));
             });
 
             // Wait for animation to progress
             var motionTable = DatManager.PortalDat.ReadFromDat<MotionTable>(MotionTableId);
-            var pickupAnimationLength = motionTable.GetAnimationLength(CurrentMotionState.Stance, MotionCommand.Pickup, MotionCommand.Ready);
+            var pickupAnimationLength = motionTable.GetAnimationLength(CurrentMotionState.Stance, motionPickup, MotionCommand.Ready);
             pickUpItemChain.AddDelaySeconds(pickupAnimationLength);
 
             // pick up item
@@ -275,7 +278,11 @@ namespace ACE.Server.WorldObjects
                 if (itemWasRestingOnLandblock)
                 {
                     if (CurrentLandblock != null && CurrentLandblock.RemoveWorldObjectFromPickup(itemGuid))
+                    {
                         item.NotifyOfEvent(RegenerationType.PickUp);
+                        EnqueueActionBroadcast((Player p) => p.RemoveTrackedObject(item, true), true);
+                        item.PhysicsObj.DestroyObject();    // destroy physicsobj, but do not remove from tracking
+                    }
                 }
                 else
                 {
@@ -617,9 +624,34 @@ namespace ACE.Server.WorldObjects
             }
 
             // if were are still here, this needs to do a pack pack or main pack move.
-            MoveItemWithNetworking(item, container, placement);
+            var actionChain = new ActionChain();
 
-            container.OnAddItem();
+            // is destination container owned by player?
+            if (!containerOwnedByPlayer)
+            {
+                // start pickup motion
+                var motionPickup = container.MotionPickup;
+                EnqueueBroadcast(new GameMessageUpdateMotion(this, new Motion(CurrentMotionState.Stance, motionPickup)));
+
+                // wait for animation to progress
+                var motionTable = DatManager.PortalDat.ReadFromDat<MotionTable>(MotionTableId);
+                var animLength = motionTable.GetAnimationLength(CurrentMotionState.Stance, motionPickup, MotionCommand.Ready);
+                actionChain.AddDelaySeconds(animLength);
+            }
+
+            actionChain.AddAction(this, () =>
+            {
+                // put item into container
+                MoveItemWithNetworking(item, container, placement);
+
+                container.OnAddItem();
+
+                // return to previous stance
+                if (!containerOwnedByPlayer)
+                    actionChain.AddAction(this, () => EnqueueBroadcastMotion(new Motion(CurrentMotionState.Stance)));
+            });
+
+            actionChain.EnqueueChain();
         }
 
         /// <summary>
@@ -878,8 +910,8 @@ namespace ACE.Server.WorldObjects
             switch (itemWieldReq)
             {
                 case WieldRequirement.RawSkill:
-                    // Check WieldDifficulty property against player's Skill level, defined by item's WieldSkilltype property
-                    var itemSkillReq = ConvertToMoASkill((Skill)(item.GetProperty(PropertyInt.WieldSkilltype) ?? 0));
+                    // Check WieldDifficulty property against player's Skill level, defined by item's WieldSkillType property
+                    var itemSkillReq = ConvertToMoASkill((Skill)(item.GetProperty(PropertyInt.WieldSkillType) ?? 0));
 
                     if (itemSkillReq != Skill.None)
                     {
@@ -899,8 +931,8 @@ namespace ACE.Server.WorldObjects
                     break;
 
                 case WieldRequirement.Attrib:
-                    // Check WieldDifficulty property against player's Attribute, defined by item's WieldSkilltype property
-                    var itemAttributeReq = (PropertyAttribute)(item.GetProperty(PropertyInt.WieldSkilltype) ?? 0);
+                    // Check WieldDifficulty property against player's Attribute, defined by item's WieldSkillType property
+                    var itemAttributeReq = (PropertyAttribute)(item.GetProperty(PropertyInt.WieldSkillType) ?? 0);
 
                     if (itemAttributeReq != PropertyAttribute.Undef)
                     {
@@ -1490,7 +1522,7 @@ namespace ACE.Server.WorldObjects
 
             // Build the needed messages to the client.
             if (missileAmmo)
-                EnqueueBroadcast( new GameMessageSetStackSize(toWo));
+                EnqueueBroadcast(new GameMessageSetStackSize(toWo));
             else
                 EnqueueBroadcast(new GameEventItemServerSaysContainId(Session, toWo, this), new GameMessageSetStackSize(toWo));
         }
@@ -1518,12 +1550,15 @@ namespace ACE.Server.WorldObjects
                 container = GetInventoryItem(new ObjectGuid(containerId)) as Container;
 
             if (container == null)
+                container = CurrentLandblock?.GetObject(containerId) as Container;
+
+            if (container == null)
             {
                 log.Error("Player_Inventory HandleActionStackableSplitToContainer container not found");
                 return;
             }
 
-            var stack = container.GetInventoryItem(new ObjectGuid(stackId));
+            var stack = GetInventoryItem(new ObjectGuid(stackId));
 
             if (stack == null)
             {

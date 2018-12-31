@@ -23,10 +23,23 @@ namespace ACE.Server.WorldObjects
 
             if (!IsAwake || IsDead) return;
 
+            HandleFindTarget();
+
+            CheckMissHome();    // tickrate?
+
+            if (AttackTarget == null && MonsterState != State.Return) return;
+
             IsMonster = true;
 
+            var pet = this as CombatPet;
+            if (pet != null && DateTime.UtcNow >= pet.ExpirationTime)
+            {
+                Destroy();
+                return;
+            }
+
             var creatureTarget = AttackTarget as Creature;
-            if (creatureTarget != null && (creatureTarget.IsDead || !creatureTarget.IsVisible(this)))
+            if (creatureTarget != null && (creatureTarget.IsDead || (pet == null && !creatureTarget.IsVisible(this))))
             {
                 Sleep();
                 return;
@@ -60,7 +73,7 @@ namespace ACE.Server.WorldObjects
                     CurrentAttack = null;
                 }
             }
-            if (weapon == null && CurrentAttack != null && CurrentAttack == AttackType.Missile)
+            if (weapon == null && CurrentAttack != null && CurrentAttack == CombatType.Missile)
             {
                 EquipInventoryItems(true);
                 DoAttackStance();
@@ -73,8 +86,8 @@ namespace ACE.Server.WorldObjects
                 CurrentAttack = GetAttackType();
                 MaxRange = GetMaxRange();
 
-                if (CurrentAttack == AttackType.Magic)
-                    MaxRange = MaxMeleeRange;   // FIXME: server position sync
+                //if (CurrentAttack == AttackType.Magic)
+                    //MaxRange = MaxMeleeRange;   // FIXME: server position sync
             }
 
             // get distance to target
@@ -84,9 +97,9 @@ namespace ACE.Server.WorldObjects
             if (Sticky)
                 UpdatePosition();
 
-            if (CurrentAttack != AttackType.Missile)
+            if (CurrentAttack != CombatType.Missile)
             {
-                if (targetDist > MaxRange || !IsFacing(AttackTarget))
+                if (targetDist > MaxRange || (!IsFacing(AttackTarget) && !IsSelfCast()))
                 {
                     // turn / move towards
                     if (!IsTurning && !IsMoving)
@@ -120,6 +133,10 @@ namespace ACE.Server.WorldObjects
                         Attack();
                 }
             }
+
+            // pets drawing aggro
+            if (pet != null)
+                pet.PetCheckMonsters();
         }
     }
 }

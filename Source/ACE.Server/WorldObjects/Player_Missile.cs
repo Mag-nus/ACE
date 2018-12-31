@@ -10,7 +10,13 @@ namespace ACE.Server.WorldObjects
 {
     partial class Player
     {
-        public float AccuracyLevel;
+        private float _accuracyLevel;
+
+        public float AccuracyLevel
+        {
+            get => IsExhausted ? 0.0f : _accuracyLevel;
+            set => _accuracyLevel = value;
+        }
 
         public WorldObject MissileTarget;
 
@@ -51,7 +57,10 @@ namespace ACE.Server.WorldObjects
                 return;
             }
             if (MissileTarget == null)
+            {
+                AttackTarget = target;
                 MissileTarget = target;
+            }
             else
                 return;
 
@@ -150,6 +159,9 @@ namespace ACE.Server.WorldObjects
             });
 
             actionChain.EnqueueChain();
+
+            if (UnderLifestoneProtection)
+                LifestoneProtectionDispel();
         }
 
         // TODO: the damage pipeline currently uses the creature ammo instead of the projectile

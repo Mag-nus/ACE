@@ -16,7 +16,7 @@ namespace ACE.Server.WorldObjects
         public WorldObject ParentLink;
         public List<WorldObject> ChildLinks = new List<WorldObject>();
 
-        public void ActivateLinks(List<LandblockInstance> sourceObjects, List<Biota> biotas)
+        public void ActivateLinks(List<LandblockInstance> sourceObjects, List<Biota> biotas, WorldObject parent = null)
         {
             if (LinkedInstances.Count == 0) return;
 
@@ -25,6 +25,9 @@ namespace ACE.Server.WorldObjects
                 AddGeneratorLinks();
                 return;
             }
+
+            if (parent == null)
+                parent = this;
 
             foreach (var link in LinkedInstances)
             {
@@ -41,11 +44,11 @@ namespace ACE.Server.WorldObjects
                 if (wo == null) continue;
 
                 wo.Location = new Position(link.ObjCellId, link.OriginX, link.OriginY, link.OriginZ, link.AnglesX, link.AnglesY, link.AnglesZ, link.AnglesW);
-                SetLinkProperties(wo);
+                parent.SetLinkProperties(wo);
                 CurrentLandblock?.AddWorldObject(wo);
 
-                wo.ParentLink = this;
-                ChildLinks.Add(wo);
+                wo.ParentLink = parent;
+                parent.ChildLinks.Add(wo);
 
                 // process nested links recursively
                 foreach (var subLink in link.LandblockInstanceLink)
@@ -65,6 +68,23 @@ namespace ACE.Server.WorldObjects
         {
             // empty base
             Console.WriteLine($"{Name}.SetLinkProperties({wo.Name}) called for unknown parent type: {WeenieType}");
+        }
+
+        public virtual void UpdateLinkProperties(WorldObject wo)
+        {
+            // empty base
+            Console.WriteLine($"{Name}.UpdateLinkProperties({wo.Name}) called for unknown parent type: {WeenieType}");
+        }
+
+        public void UpdateLinks()
+        {
+            foreach (var link in ChildLinks)
+            {
+                UpdateLinkProperties(link);
+
+                foreach (var subLink in link.ChildLinks)
+                    UpdateLinkProperties(subLink);
+            }
         }
     }
 }

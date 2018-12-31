@@ -9,17 +9,16 @@ using ACE.Server.Managers;
 using ACE.Server.Physics;
 using ACE.Server.Physics.Common;
 using ACE.Server.Physics.Extensions;
-
 namespace ACE.Server.WorldObjects
 {
     partial class WorldObject
     {
         private readonly ActionQueue actionQueue = new ActionQueue();
 
-        private const int DefaultHeartbeatInterval = 5;
+        public const int DefaultHeartbeatInterval = 5;
 
-        private double? cachedHeartbeatTimestamp;
-        private double cachedHeartbeatInterval;
+        protected double? cachedHeartbeatTimestamp;
+        protected double cachedHeartbeatInterval;
 
         public virtual void Tick(double currentUnixTime)
         {
@@ -57,7 +56,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void QueueFirstHeartbeat(double currentUnixTime)
         {
-            var delay = Physics.Common.Random.RollDice(0.0f, DefaultHeartbeatInterval);
+            var delay = ThreadSafeRandom.Next(0.0f, DefaultHeartbeatInterval);
 
             var firstHeartbeat = currentUnixTime + delay;
 
@@ -172,11 +171,12 @@ namespace ACE.Server.WorldObjects
             // monsters have separate physics updates
             var creature = this as Creature;
             var monster = creature != null && creature.IsMonster;
+            var pet = this as CombatPet;
 
             // determine if updates should be run for object
             //var runUpdate = !monster && (isMissile || !PhysicsObj.IsGrounded);
             //var runUpdate = isMissile;
-            var runUpdate = !monster && (isMissile || /*IsMoving ||*/ IsAnimating /*|| contactPlane*/);
+            var runUpdate = !monster && (isMissile || /*IsMoving ||*/ /*!PhysicsObj.IsGrounded || */ PhysicsObj.InitialUpdates <= 1 || IsAnimating /*|| contactPlane*/);
 
             if (creature != null)
             {
@@ -199,7 +199,7 @@ namespace ACE.Server.WorldObjects
 
             // get position before
             var pos = PhysicsObj.Position.Frame.Origin;
-            var prevPos = new Vector3(pos.X, pos.Y, pos.Z);
+            var prevPos = pos;
             var cellBefore = PhysicsObj.CurCell != null ? PhysicsObj.CurCell.ID : 0;
 
             //Console.WriteLine($"{Name} - ticking physics");
@@ -207,7 +207,7 @@ namespace ACE.Server.WorldObjects
 
             // get position after
             pos = PhysicsObj.Position.Frame.Origin;
-            var newPos = new Vector3(pos.X, pos.Y, pos.Z);
+            var newPos = pos;
 
             // handle landblock / cell change
             var isMoved = (prevPos != newPos);

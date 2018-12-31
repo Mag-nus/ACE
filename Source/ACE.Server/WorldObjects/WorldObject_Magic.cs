@@ -127,12 +127,21 @@ namespace ACE.Server.WorldObjects
         /// Returns TRUE if player should be allowed to cast the spell on target player
         /// Returns FALSE if player shouldn't be allowed to cast the spell on target player
         /// </returns>
-        protected bool? CheckPKStatusVsTarget(Player player, Player target, Spell spell)
+        protected bool? CheckPKStatusVsTarget(Player player, WorldObject target, Spell spell)
         {
             if (player == null || target == null)
                 return null;
 
             if (player == target)
+                return true;
+
+            var targetPlayer = target as Player;
+            if (targetPlayer == null && target.WielderId != null)
+            {
+                // handle casting item spells
+                targetPlayer = player.CurrentLandblock.GetObject(target.WielderId.Value) as Player;
+            }
+            if (targetPlayer == null)
                 return true;
 
             if (spell == null || spell.IsHarmful)
@@ -142,7 +151,7 @@ namespace ACE.Server.WorldObjects
                     return false;
 
                 // Ensure that a harmful spell isn't being cast on another player that doesn't have the same PK status
-                if (player.PlayerKillerStatus != target.PlayerKillerStatus)
+                if (player.PlayerKillerStatus != targetPlayer.PlayerKillerStatus)
                     return false;
             }
 
@@ -168,6 +177,14 @@ namespace ACE.Server.WorldObjects
             // Invalidate beneficial spells against Creature/Non-player targets
             if (targetCreature != null && targetPlayer == null && spell.IsBeneficial)
                 return true;
+
+            // Invalidate beneficial spells against monster wielded items
+            if (targetCreature == null && spell.IsBeneficial && target.OwnerId != null)
+            {
+                var targetMonster = CurrentLandblock.GetObject(target.OwnerId.Value) as Creature;
+                if (!(targetMonster is Player))
+                    return true;
+            }
 
             // Cannot cast Weapon Aura spells on targets that are not players or creatures
             if ((spell.Name.Contains("Aura of")) && (spell.School == MagicSchool.ItemEnchantment))
@@ -206,7 +223,7 @@ namespace ACE.Server.WorldObjects
         {
             // uses regular 0.03 factor, and not magic casting 0.07 factor
             var chance = SkillCheck.GetSkillChance((int)casterMagicSkill, (int)targetMagicDefenseSkill);
-            var rng = Physics.Common.Random.RollDice(0.0f, 1.0f);
+            var rng = ThreadSafeRandom.Next(0.0f, 1.0f);
 
             return chance <= rng;
         }
@@ -238,8 +255,17 @@ namespace ACE.Server.WorldObjects
             //Console.WriteLine($"{target.Name}.ResistSpell({Name}, {spell.Name}): magicSkill: {magicSkill}, difficulty: {targetMagicDefenseSkill}");
             bool resisted = MagicDefenseCheck(magicSkill, targetMagicDefenseSkill);
 
-            if (targetPlayer != null && targetPlayer.Invincible == true)
-                resisted = true;
+            if (targetPlayer != null)
+            {
+                if (targetPlayer.Invincible == true)
+                    resisted = true;
+
+                if (targetPlayer.UnderLifestoneProtection)
+                {
+                    targetPlayer.HandleLifestoneProtection();
+                    resisted = true;
+                }
+            }
 
             if (resisted)
             {
@@ -291,7 +317,7 @@ namespace ACE.Server.WorldObjects
                     int minBoostValue = Math.Min(spell.Boost, spell.MaxBoost);
                     int maxBoostValue = Math.Max(spell.Boost, spell.MaxBoost);
 
-                    int tryBoost = Physics.Common.Random.RollDice(minBoostValue, maxBoostValue);
+                    int tryBoost = ThreadSafeRandom.Next(minBoostValue, maxBoostValue);
                     int boost = tryBoost;
                     damage = tryBoost < 0 ? (uint)Math.Abs(tryBoost) : 0;
 
@@ -629,9 +655,9 @@ namespace ACE.Server.WorldObjects
                 {
                     case SpellType.PortalRecall:
                         PositionType recall = PositionType.Undef;
-                        switch ((Network.Enum.Spell)spell.Id)
+                        switch ((SpellId)spell.Id)
                         {
-                            case Network.Enum.Spell.PortalRecall:       // portal recall
+                            case SpellId.PortalRecall:       // portal recall
                                 if (player.GetPosition(PositionType.LastPortal) == null)
                                 {
                                     // You must link to a portal to recall it!
@@ -640,7 +666,7 @@ namespace ACE.Server.WorldObjects
                                 else
                                     recall = PositionType.LastPortal;
                                 break;
-                            case Network.Enum.Spell.LifestoneRecall1:   // lifestone recall
+                            case SpellId.LifestoneRecall1:   // lifestone recall
                                 if (player.GetPosition(PositionType.LinkedLifestone) == null)
                                 {
                                     // You must link to a lifestone to recall it!
@@ -649,7 +675,7 @@ namespace ACE.Server.WorldObjects
                                 else
                                     recall = PositionType.LinkedLifestone;
                                 break;
-                            case Network.Enum.Spell.PortalTieRecall1:   // primary portal tie recall
+                            case SpellId.PortalTieRecall1:   // primary portal tie recall
                                 if (player.GetPosition(PositionType.LinkedPortalOne) == null)
                                 {
                                     // You must link to a portal to recall it!
@@ -658,7 +684,7 @@ namespace ACE.Server.WorldObjects
                                 else
                                     recall = PositionType.LinkedPortalOne;
                                 break;
-                            case Network.Enum.Spell.PortalTieRecall2:   // secondary portal tie recall
+                            case SpellId.PortalTieRecall2:   // secondary portal tie recall
                                 if (player.GetPosition(PositionType.LinkedPortalTwo) == null)
                                 {
                                     // You must link to a portal to recall it!
@@ -689,9 +715,9 @@ namespace ACE.Server.WorldObjects
                     case SpellType.PortalLink:
                         if (player != null)
                         {
-                            switch ((Network.Enum.Spell)spell.Id)
+                            switch ((SpellId)spell.Id)
                             {
-                                case Network.Enum.Spell.PortalTie1:    // Primary Portal Tie
+                                case SpellId.PortalTie1:    // Primary Portal Tie
                                     if (target.WeenieType == WeenieType.Portal)
                                     {
                                         var targetPortal = target as Portal;
@@ -703,13 +729,13 @@ namespace ACE.Server.WorldObjects
                                     else
                                         player.Session.Network.EnqueueSend(new GameEventCommunicationTransientString(player.Session, $"Primary Portal Tie cannot be cast on {target.Name}"));
                                     break;
-                                case Network.Enum.Spell.LifestoneTie1:  // Lifestone Tie
+                                case SpellId.LifestoneTie1:  // Lifestone Tie
                                     if (target.WeenieType == WeenieType.LifeStone)
                                         player.LinkedLifestone = target.Location;
                                     else
                                         player.Session.Network.EnqueueSend(new GameEventCommunicationTransientString(player.Session, $"Lifestone Tie cannot be cast on {target.Name}"));
                                     break;
-                                case Network.Enum.Spell.PortalTie2:  // Secondary Portal Tie
+                                case SpellId.PortalTie2:  // Secondary Portal Tie
                                     if (target.WeenieType == WeenieType.Portal)
                                     {
                                         var targetPortal = target as Portal;

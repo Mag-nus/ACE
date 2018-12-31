@@ -1,8 +1,11 @@
 using System;
 using System.Linq;
+using ACE.Database;
 using ACE.Database.Models.Shard;
 using ACE.Database.Models.World;
 using ACE.Entity;
+using ACE.Entity.Enum;
+using ACE.Server.Factories;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 
@@ -54,7 +57,7 @@ namespace ACE.Server.WorldObjects
             if (player == null) return;
 
             // verify permissions to use hook
-            if (HouseOwner == null || HouseOwner.Value != player.Guid.Full)
+            if (!House.HasPermission(player, true))
             {
                 player.Session.Network.EnqueueSend(new GameEventCommunicationTransientString(player.Session, $"The {Name} is locked"));
                 player.SendUseDoneEvent();
@@ -94,19 +97,16 @@ namespace ACE.Server.WorldObjects
         {
             //Console.WriteLine("SetNoItem()");
 
-            if (Name.Equals("Floor Hook"))
-                SetupTableId = FloorHook_SetupTableID;
-            else if (Name.Equals("Wall Hook"))
-                SetupTableId = WallHook_SetupTableID;
-            else if (Name.Equals("Ceiling Hook"))
-                SetupTableId = CeilingHook_SetupTableID;
-            else
-                Console.WriteLine($"Unknown hook: {Name}");
+            var weenie = DatabaseManager.World.GetCachedWeenie(WeenieClassId);
+            var hook = WorldObjectFactory.CreateWorldObject(weenie, new ObjectGuid(0));
 
-            MotionTableId = 0;
-            PhysicsTableId = Hook_PhysicsTableID;
-            SoundTableId = 0;
-            ObjScale = Hook_ObjScale;
+            SetupTableId = hook.SetupTableId;
+            MotionTableId = hook.MotionTableId;
+            PhysicsTableId = hook.PhysicsTableId;
+            SoundTableId = hook.SoundTableId;
+            Placement = hook.Placement;
+            ObjScale = hook.ObjScale;
+            Name = hook.Name;
 
             EnqueueBroadcast(new GameMessageUpdateObject(this));
         }
@@ -129,8 +129,42 @@ namespace ACE.Server.WorldObjects
             PhysicsTableId = item.PhysicsTableId;
             SoundTableId = item.SoundTableId;
             ObjScale = item.ObjScale;
+            Name = item.Name;
+
+            Placement = (Placement)(item.HookPlacement ?? (int)ACE.Entity.Enum.Placement.Hook);
 
             EnqueueBroadcast(new GameMessageUpdateObject(this));
+        }
+
+        public override MotionCommand MotionPickup
+        {
+            get
+            {
+                var hookType = (HookType)(HookType ?? 0);
+
+                switch (hookType)
+                {
+                    default:
+                        return MotionCommand.Pickup;
+
+                    case ACE.Entity.Enum.HookType.Wall:
+                        return MotionCommand.Pickup10;
+
+                    case ACE.Entity.Enum.HookType.Ceiling:
+                    case ACE.Entity.Enum.HookType.Roof:
+                        return MotionCommand.Pickup20;
+                }
+            }
+        }
+
+        public void OnLoad()
+        {
+            var hidden = Inventory.Count == 0 && !(House.HouseHooksVisible ?? true);
+
+            NoDraw = hidden;
+            UiHidden = hidden;
+
+            OnAddItem();
         }
     }
 }

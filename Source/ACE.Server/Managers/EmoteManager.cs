@@ -592,6 +592,7 @@ namespace ACE.Server.Managers
 
                     if (WorldObject == null || WorldObject.CurrentMotionState == null) break;
 
+                    // TODO: refactor me!
                     if (emoteSet.Category != (uint)EmoteCategory.Vendor && emoteSet.Style != null)
                     {
                         var startingMotion = new Motion((MotionStance)emoteSet.Style, (MotionCommand)emoteSet.Substyle);
@@ -654,12 +655,23 @@ namespace ACE.Server.Managers
                     }
                     else
                     {
+                        // vendor / other motions
+                        var startingMotion = new Motion(MotionStance.NonCombat, MotionCommand.Ready);
+                        var motionTable = DatManager.PortalDat.ReadFromDat<DatLoader.FileTypes.MotionTable>(WorldObject.MotionTableId);
+                        var animLength = motionTable.GetAnimationLength(WorldObject.CurrentMotionState.Stance, (MotionCommand)emote.Motion, MotionCommand.Ready);
+
                         motion = new Motion(MotionStance.NonCombat, (MotionCommand)emote.Motion, emote.Extent);
 
                         if (Debug)
                             Console.WriteLine($"{WorldObject.Name} running motion (block 2) {MotionStance.NonCombat}, {(MotionCommand)(emote.Motion ?? 0)}");
 
                         WorldObject.ExecuteMotion(motion);
+
+                        var motionChain = new ActionChain();
+                        motionChain.AddDelaySeconds(animLength);
+                        motionChain.AddAction(WorldObject, () => WorldObject.ExecuteMotion(startingMotion, false));
+
+                        motionChain.EnqueueChain();
                     }
 
                     break;
@@ -739,7 +751,7 @@ namespace ACE.Server.Managers
                             player.Session.Network.EnqueueSend(new GameEventPopupString(player.Session, emote.Message));
                         else
                         {
-                            Confirmation confirm = new Confirmation((ConfirmationType)emote.Stat, emote.Message, WorldObject.Guid.Full, targetObject.Guid.Full);
+                            Confirmation confirm = new Confirmation((ConfirmationType)emote.Stat, emote.Message, WorldObject, targetObject);
                             ConfirmationManager.AddConfirmation(confirm);
                             player.Session.Network.EnqueueSend(new GameEventConfirmationRequest(player.Session, (ConfirmationType)emote.Stat, confirm.ConfirmationID, confirm.Message));
                         }
@@ -836,8 +848,8 @@ namespace ACE.Server.Managers
                     break;
                 case EmoteType.SetSanctuaryPosition:
 
-                    //if (player != null)
-                        //player.Sanctuary = emote.Position;
+                    if (player != null && emote.ObjCellId.HasValue && emote.OriginX.HasValue && emote.OriginY.HasValue && emote.OriginZ.HasValue && emote.AnglesW.HasValue && emote.AnglesX.HasValue && emote.AnglesY.HasValue && emote.AnglesZ.HasValue)
+                        player.Sanctuary = new Position(emote.ObjCellId.Value, emote.OriginX.Value, emote.OriginY.Value, emote.OriginZ.Value, emote.AnglesX.Value, emote.AnglesY.Value, emote.AnglesZ.Value, emote.AnglesW.Value);
                     break;
 
                 case EmoteType.Sound:
@@ -1023,7 +1035,7 @@ namespace ACE.Server.Managers
             if (wcid != null)
                 emoteSet = emoteSet.Where(e => e.WeenieClassId == wcid.Value);
             if (useRNG)
-                emoteSet = emoteSet.Where(e => e.Probability >= Physics.Common.Random.RollDice(0.0f, 1.0f));
+                emoteSet = emoteSet.Where(e => e.Probability >= ThreadSafeRandom.Next(0.0f, 1.0f));
 
             return emoteSet.FirstOrDefault();
         }

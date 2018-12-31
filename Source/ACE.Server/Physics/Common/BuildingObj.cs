@@ -125,6 +125,24 @@ namespace ACE.Server.Physics.Common
             return building;
         }
 
+        public float GetMinZ()
+        {
+            get_building_cells();
+
+            var minZ = float.MaxValue;
+
+            foreach (var buildingCell in BuildingCells)
+            {
+                foreach (var cellStruct in buildingCell.Environment.Cells.Values)
+                {
+                    foreach (var vertex in cellStruct.VertexArray.Vertices.Values)
+                        if (vertex.Origin.Z < minZ)
+                            minZ = vertex.Origin.Z;
+                }
+            }
+            return minZ;
+        }
+
         public void remove()
         {
             var sortCell = (SortCell)CurCell;

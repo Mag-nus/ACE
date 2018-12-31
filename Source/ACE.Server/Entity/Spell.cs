@@ -54,7 +54,7 @@ namespace ACE.Server.Entity
         /// <summary>
         /// Constructs a Spell from a Spell enum
         /// </summary>
-        public Spell(Network.Enum.Spell spell, bool loadDB = true)
+        public Spell(SpellId spell, bool loadDB = true)
         {
             Init((uint)spell, loadDB);
         }
@@ -102,34 +102,14 @@ namespace ACE.Server.Entity
         /// <summary>
         /// Returns TRUE if this is a beneficial spell
         /// </summary>
-        public bool IsBeneficial
-        {
-            get
-            {
-                // TODO: item enchantment?
-                // is all of this logic even needed,
-                // or can SpellFlags.Beneficial just be used?
-
-                // All War and Void spells are harmful
-                if (School == MagicSchool.WarMagic || School == MagicSchool.VoidMagic)
-                    return false;
-
-                // Life Magic spells that don't have bit three of their bitfield property set are harmful
-                if (School == MagicSchool.LifeMagic && !Flags.HasFlag(SpellFlags.Beneficial))
-                    return false;
-
-                // Creature Magic spells that don't have bit three of their bitfield property set are harmful
-                if (School == MagicSchool.CreatureEnchantment && !Flags.HasFlag(SpellFlags.Beneficial))
-                    return false;
-
-                return true;
-            }
-        }
+        public bool IsBeneficial => Flags.HasFlag(SpellFlags.Beneficial);
 
         /// <summary>
         /// Returns TRUE if this is a hamrful spell
         /// </summary>
         public bool IsHarmful { get => !IsBeneficial; }
+
+        public bool IsProjectile => NumProjectiles > 0;
 
         public List<uint> TryBurnComponents()
         {
@@ -151,7 +131,7 @@ namespace ACE.Server.Entity
                 // component burn rate = spell base rate * component destruction modifier
                 var burnRate = baseRate * spellComponent.CDM;
 
-                var rng = Physics.Common.Random.RollDice(0.0f, 1.0f);
+                var rng = ThreadSafeRandom.Next(0.0f, 1.0f);
                 if (rng < burnRate)
                     consumed.Add(component);
             }

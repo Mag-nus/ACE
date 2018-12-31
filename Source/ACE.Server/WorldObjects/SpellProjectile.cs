@@ -305,6 +305,13 @@ namespace ACE.Server.WorldObjects
             if (target.Health.Current <= 0)
                 return -1;
 
+            // check lifestone protection
+            if (targetPlayer != null && targetPlayer.UnderLifestoneProtection)
+            {
+                targetPlayer.HandleLifestoneProtection();
+                return null;
+            }
+
             double damageBonus = 0.0f, warSkillBonus = 0.0f, finalDamage = 0.0f;
 
             var resistanceType = GetResistanceType(Spell.DamageType);
@@ -315,7 +322,7 @@ namespace ACE.Server.WorldObjects
 
             // critical hit
             var critical = GetWeaponMagicCritFrequencyModifier(source);
-            if (Physics.Common.Random.RollDice(0.0f, 1.0f) < critical)
+            if (ThreadSafeRandom.Next(0.0f, 1.0f) < critical)
                 criticalHit = true;
 
             bool isPVP = sourcePlayer != null && targetPlayer != null;
@@ -364,7 +371,7 @@ namespace ACE.Server.WorldObjects
                         warSkillBonus = Spell.MinDamage * percentageBonus;
                     }
                 }
-                var baseDamage = Physics.Common.Random.RollDice(Spell.MinDamage, Spell.MaxDamage);
+                var baseDamage = ThreadSafeRandom.Next(Spell.MinDamage, Spell.MaxDamage);
 
                 finalDamage = baseDamage + damageBonus + warSkillBonus;
                 finalDamage *= target.GetNaturalResistance(resistanceType, GetWeaponResistanceModifier(source, Spell.DamageType));

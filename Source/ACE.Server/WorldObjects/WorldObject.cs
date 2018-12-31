@@ -90,7 +90,6 @@ namespace ACE.Server.WorldObjects
             Biota = weenie.CreateCopyAsBiota(guid.Full);
             Guid = guid;
 
-            InitializeSequences();
             InitializePropertyDictionaries();
             SetEphemeralValues();
 
@@ -108,7 +107,6 @@ namespace ACE.Server.WorldObjects
 
             biotaOriginatedFromDatabase = true;
 
-            InitializeSequences();
             InitializePropertyDictionaries();
             SetEphemeralValues();
         }
@@ -148,7 +146,7 @@ namespace ACE.Server.WorldObjects
 
             PhysicsObj.State = defaultState;
 
-            if (creature != null) AllowEdgeSlide = true;
+            //if (creature != null) AllowEdgeSlide = true;
         }
 
         public bool AddPhysicsObj()
@@ -157,6 +155,9 @@ namespace ACE.Server.WorldObjects
                 return false;
 
             AdjustDungeon(Location);
+
+            // exclude linkspots from spawning
+            if (WeenieClassId == 10762) return true;
 
             var cell = LScape.get_landcell(Location.Cell);
             if (cell == null) return false;
@@ -183,31 +184,6 @@ namespace ACE.Server.WorldObjects
             SetPosition(PositionType.Home, new Position(Location));
 
             return true;
-        }
-
-        protected virtual void InitializeSequences()
-        {
-            Sequences.SetSequence(SequenceType.ObjectPosition, new UShortSequence());
-            Sequences.SetSequence(SequenceType.ObjectMovement, new UShortSequence());
-            Sequences.SetSequence(SequenceType.ObjectState, new UShortSequence());
-            Sequences.SetSequence(SequenceType.ObjectVector, new UShortSequence());
-            Sequences.SetSequence(SequenceType.ObjectTeleport, new UShortSequence());
-            Sequences.SetSequence(SequenceType.ObjectServerControl, new UShortSequence());
-            Sequences.SetSequence(SequenceType.ObjectForcePosition, new UShortSequence());
-            Sequences.SetSequence(SequenceType.ObjectVisualDesc, new UShortSequence());
-            Sequences.SetSequence(SequenceType.ObjectInstance, new UShortSequence());
-
-            Sequences.SetSequence(SequenceType.Motion, new UShortSequence(1, 0x7FFF)); // MSB is reserved, so set max value to exclude it.
-
-            Sequences.SetSequence(SequenceType.PublicUpdatePropertyInt, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PublicUpdatePropertyInt64, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PublicUpdatePropertyBool, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PublicUpdatePropertyDouble, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PublicUpdatePropertyDataID, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PublicUpdatePropertyInstanceId, new ByteSequence(false));
-            Sequences.SetSequence(SequenceType.PublicUpdatePropertyString, new ByteSequence(false));
-
-            Sequences.SetSequence(SequenceType.SetStackSize, new ByteSequence(false));
         }
 
         private void InitializePropertyDictionaries()
@@ -413,14 +389,6 @@ namespace ACE.Server.WorldObjects
                 else
                     return ContainerType.NonContainer;
             }
-        }
-
-        public void Examine(Session examiner)
-        {
-            // TODO : calculate if we were successful
-            var success = true;
-            GameEventIdentifyObjectResponse identifyResponse = new GameEventIdentifyObjectResponse(examiner, this, success);
-            examiner.Network.EnqueueSend(identifyResponse);
         }
 
         public void ReadBookPage(Session reader, uint pageNum)
@@ -771,13 +739,34 @@ namespace ACE.Server.WorldObjects
         public Range GetDamageMod(Creature wielder)
         {
             var baseDamage = GetBaseDamage();
-            var damageMod = wielder.EnchantmentManager.GetDamageMod();
-            var varianceMod = wielder.EnchantmentManager.GetVarianceMod();
+            var weapon = wielder.GetEquippedWeapon();
+
+            var damageMod = 0;
+            var varianceMod = 1.0f;
+
+            // get weapon item enchantments and wielder auras
+            if (weapon == null)
+            {
+                damageMod = wielder.EnchantmentManager.GetDamageMod();
+                varianceMod = wielder.EnchantmentManager.GetVarianceMod();
+            }
+            else if (weapon.IsEnchantable)
+            {
+                damageMod = weapon.EnchantmentManager.GetDamageMod() + wielder.EnchantmentManager.GetDamageMod();
+                varianceMod = weapon.EnchantmentManager.GetVarianceMod() * wielder.EnchantmentManager.GetVarianceMod();
+            }
 
             var baseVariance = 1.0f - (baseDamage.Min / baseDamage.Max);
 
-            var weapon = wielder.GetEquippedWeapon();
             var damageBonus = weapon != null ? (float)(weapon.GetProperty(PropertyFloat.DamageMod) ?? 1.0f) : 1.0f;
+            if (weapon == null)
+            {
+                damageBonus *= wielder.EnchantmentManager.GetDamageModifier();
+            }
+            else if (weapon.IsEnchantable)
+            {
+                damageBonus *= wielder.EnchantmentManager.GetDamageModifier() * weapon.EnchantmentManager.GetDamageModifier();
+            }
 
             // additives first, then multipliers?
             var maxDamageMod = (baseDamage.Max + damageMod) * damageBonus;
@@ -807,7 +796,7 @@ namespace ACE.Server.WorldObjects
 
             DamageType damageTypes;
             var attackType = creature.GetAttackType();
-            if (attackType == AttackType.Melee || ammo == null || !weapon.IsAmmoLauncher)
+            if (attackType == CombatType.Melee || ammo == null || !weapon.IsAmmoLauncher)
                 damageTypes = (DamageType)(weapon.GetProperty(PropertyInt.DamageType) ?? 0);
             else
                 damageTypes = (DamageType)(ammo.GetProperty(PropertyInt.DamageType) ?? 0);
@@ -946,5 +935,12 @@ namespace ACE.Server.WorldObjects
             if (broadcast)
                 EnqueueBroadcastMotion(CurrentMotionState);
         }
+
+        /// <summary>
+        /// Returns TRUE if this WorldObject is a generic linkspot
+        /// Linkspots are used for things like Houses,
+        /// where the portal destination should be populated at runtime.
+        /// </summary>
+        public bool IsLinkSpot => WeenieType == WeenieType.Generic && WeenieClassName.Equals("portaldestination");
     }
 }

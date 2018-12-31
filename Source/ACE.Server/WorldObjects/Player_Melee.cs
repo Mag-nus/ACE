@@ -1,11 +1,11 @@
 using System;
+using System.Collections.Generic;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Server.Entity;
 using ACE.Server.Entity.Actions;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Physics.Animation;
-using MAttackType = ACE.Entity.Enum.AttackType;
 
 namespace ACE.Server.WorldObjects
 {
@@ -19,10 +19,16 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public WorldObject MeleeTarget;
 
+        private float _powerLevel;
+
         /// <summary>
         /// The power bar level, a value between 0-1
         /// </summary>
-        public float PowerLevel;
+        public float PowerLevel
+        {
+            get => IsExhausted ? 0.0f : _powerLevel;
+            set => _powerLevel = value;
+        }
 
         public override PowerAccuracy GetPowerRange()
         {
@@ -65,7 +71,10 @@ namespace ACE.Server.WorldObjects
             }
 
             if (MeleeTarget == null)
+            {
                 MeleeTarget = target;
+                AttackTarget = MeleeTarget;
+            }
             else
                 return;
 
@@ -79,11 +88,21 @@ namespace ACE.Server.WorldObjects
             //Console.WriteLine("Angle: " + angle);
 
             // turn / moveto if required
-            Rotate(target);
-            MoveTo(target);
+            if (IsStickyDistance(target) && IsDirectVisible(target))
+            {
+                var rotateTime = Rotate(target);
+                var actionChain = new ActionChain();
+                actionChain.AddDelaySeconds(rotateTime * 0.8f);
+                actionChain.AddAction(this, () => Attack(target));
+                actionChain.EnqueueChain();
+                //Rotate(target);
+                //Attack(target);
+            }
+            else
+                MoveTo(target);
 
             // do melee attack
-            Attack(target);
+            //Attack(target);
         }
 
         /// <summary>
@@ -95,6 +114,8 @@ namespace ACE.Server.WorldObjects
 
             MeleeTarget = null;
             MissileTarget = null;
+
+            PhysicsObj.cancel_moveto();
         }
 
         /// <summary>
@@ -109,7 +130,7 @@ namespace ACE.Server.WorldObjects
             if (creature == null || !creature.IsAlive)
                 return;
 
-            var animLength = DoSwingMotion(target);
+            var animLength = DoSwingMotion(target, out var attackFrames);
             if (animLength == 0)
                 return;
 
@@ -125,11 +146,20 @@ namespace ACE.Server.WorldObjects
             var staminaCost = GetAttackStamina(GetPowerRange());
             UpdateVitalDelta(Stamina, -staminaCost);
 
+            if (numStrikes != attackFrames.Count)
+            {
+                //log.Warn($"{Name}.GetAttackFrames(): MotionTableId: {MotionTableId:X8}, MotionStance: {CurrentMotionState.Stance}, Motion: {GetSwingAnimation()}, AttackFrames.Count({attackFrames.Count}) != NumStrikes({numStrikes})");
+                numStrikes = attackFrames.Count;
+            }
+
+            var prevTime = 0.0f;
             for (var i = 0; i < numStrikes; i++)
             {
                 // are there animation hooks for damage frames?
-                if (numStrikes > 1 && !TwoHandedCombat)
-                    actionChain.AddDelaySeconds(swingTime);
+                //if (numStrikes > 1 && !TwoHandedCombat)
+                //actionChain.AddDelaySeconds(swingTime);
+                actionChain.AddDelaySeconds(attackFrames[i] * animLength - prevTime);
+                prevTime = attackFrames[i] * animLength;
 
                 actionChain.AddAction(this, () =>
                 {
@@ -143,11 +173,12 @@ namespace ACE.Server.WorldObjects
                     }
                 });
 
-                if (numStrikes == 1 || TwoHandedCombat)
-                    actionChain.AddDelaySeconds(swingTime);
+                //if (numStrikes == 1 || TwoHandedCombat)
+                    //actionChain.AddDelaySeconds(swingTime);
             }
 
-            actionChain.AddDelaySeconds(animLength - swingTime * numStrikes);
+            //actionChain.AddDelaySeconds(animLength - swingTime * numStrikes);
+            actionChain.AddDelaySeconds(animLength - prevTime);
 
             actionChain.AddAction(this, () =>
             {
@@ -171,12 +202,15 @@ namespace ACE.Server.WorldObjects
             });
 
             actionChain.EnqueueChain();
+
+            if (UnderLifestoneProtection)
+                LifestoneProtectionDispel();
         }
 
         /// <summary>
         /// Performs the player melee swing animation
         /// </summary>
-        public float DoSwingMotion(WorldObject target)
+        public float DoSwingMotion(WorldObject target, out List<float> attackFrames)
         {
             // get the proper animation speed for this attack,
             // based on weapon speed and player quickness
@@ -186,6 +220,10 @@ namespace ACE.Server.WorldObjects
 
             var swingAnimation = GetSwingAnimation();
             var animLength = MotionTable.GetAnimationLength(MotionTableId, CurrentMotionState.Stance, swingAnimation, animSpeed);
+            //Console.WriteLine($"AnimSpeed: {animSpeed}, AnimLength: {animLength}");
+
+            attackFrames = MotionTable.GetAttackFrames(MotionTableId, CurrentMotionState.Stance, swingAnimation);
+            //Console.WriteLine($"Attack frames: {string.Join(",", attackFrames)}");
 
             // broadcast player swing animation to clients
             var motion = new Motion(this, swingAnimation, animSpeed);
@@ -219,7 +257,7 @@ namespace ACE.Server.WorldObjects
                         var weapon = GetEquippedMeleeWeapon();
                         var attackType = GetWeaponAttackType(weapon);
 
-                        var action = PowerLevel < 0.33f && attackType.HasFlag(MAttackType.Thrust) ? "Thrust" : "Slash";
+                        var action = PowerLevel < 0.33f && attackType.HasFlag(AttackType.Thrust) ? "Thrust" : "Slash";
 
                         // handle multistrike weapons
                         action = MultiStrike(attackType, action);
@@ -234,7 +272,8 @@ namespace ACE.Server.WorldObjects
                         {
                             if (action.Contains("Double") || action.Contains("Triple"))
                                 action = action.Replace("Thrust", "Slash");
-                        } else if (CurrentMotionState.Stance == MotionStance.SwordShieldCombat)
+                        }
+                        else if (CurrentMotionState.Stance == MotionStance.SwordShieldCombat)
                         {
                             if (action.Contains("Double") || action.Contains("Triple"))
                                 action = action.Replace("Slash", "Thrust");
@@ -259,6 +298,23 @@ namespace ACE.Server.WorldObjects
                         return motion;
                     }
             }
+        }
+
+        public bool IsMeleeDistance(WorldObject target)
+        {
+            // always use spheres?
+            var cylDist = (float)Physics.Common.Position.CylinderDistance(PhysicsObj.GetRadius(), PhysicsObj.GetHeight(), PhysicsObj.Position,
+                target.PhysicsObj.GetRadius(), target.PhysicsObj.GetHeight(), target.PhysicsObj.Position);
+
+            return cylDist <= 0.6f;
+        }
+
+        public bool IsStickyDistance(WorldObject target)
+        {
+            var cylDist = (float)Physics.Common.Position.CylinderDistance(PhysicsObj.GetRadius(), PhysicsObj.GetHeight(), PhysicsObj.Position,
+                target.PhysicsObj.GetRadius(), target.PhysicsObj.GetHeight(), target.PhysicsObj.Position);
+
+            return cylDist <= 4.0f;
         }
     }
 }

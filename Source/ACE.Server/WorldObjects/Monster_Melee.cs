@@ -36,6 +36,9 @@ namespace ACE.Server.WorldObjects
         public float MeleeAttack()
         {
             var target = AttackTarget as Creature;
+            var targetPlayer = AttackTarget as Player;
+            var targetPet = AttackTarget as CombatPet;
+            var combatPet = this as CombatPet;
 
             if (target == null || !target.IsAlive)
             {
@@ -56,40 +59,58 @@ namespace ACE.Server.WorldObjects
             // select random body part @ current attack height
             var bodyPart = BodyParts.GetBodyPart(AttackHeight.Value);
 
-            DoSwingMotion(AttackTarget, maneuver, out float animLength);
+            DoSwingMotion(AttackTarget, maneuver, out float animLength, out var attackFrames);
             PhysicsObj.stick_to_object(AttackTarget.PhysicsObj.ID);
 
+            var numStrikes = attackFrames.Count;
+
             var actionChain = new ActionChain();
-            actionChain.AddDelaySeconds(animLength / 3.0f);     // TODO: get attack frame?
-            actionChain.AddAction(this, () =>
+
+            var prevTime = 0.0f;
+            for (var i = 0; i < numStrikes; i++)
             {
-                if (AttackTarget == null) return;
+                actionChain.AddDelaySeconds(attackFrames[i] * animLength - prevTime);
+                prevTime = attackFrames[i] * animLength;
 
-                var critical = false;
-                var damageType = DamageType.Undef;
-                var shieldMod = 1.0f;
-                var damage = CalculateDamage(ref damageType, maneuver, bodyPart, ref critical, ref shieldMod);
-
-                var player = AttackTarget as Player;
-
-                if (damage > 0.0f)
+                actionChain.AddAction(this, () =>
                 {
-                    player.TakeDamage(this, damageType, damage, bodyPart, critical);
+                    if (AttackTarget == null) return;
 
-                    if (shieldMod != 1.0f)
+                    var critical = false;
+                    var damageType = DamageType.Undef;
+                    var shieldMod = 1.0f;
+                    var damage = CalculateDamage(ref damageType, maneuver, bodyPart, ref critical, ref shieldMod);
+
+                    if (damage != null)
                     {
-                        var shieldSkill = player.GetCreatureSkill(Skill.Shield);
-                        Proficiency.OnSuccessUse(player, shieldSkill, shieldSkill.Current); // ?
+                        if (combatPet != null || targetPet != null)
+                        {
+                            // combat pet inflicting or receiving damage
+                            //Console.WriteLine($"{target.Name} taking {Math.Round(damage)} {damageType} damage from {Name}");
+                            target.TakeDamage(this, damageType, damage.Value);
+                            EmitSplatter(target, damage.Value);
+                        }
+                        else
+                        {
+                            // this is a player taking damage
+                            targetPlayer.TakeDamage(this, damageType, damage.Value, bodyPart, critical);
+
+                            if (shieldMod != 1.0f)
+                            {
+                                var shieldSkill = targetPlayer.GetCreatureSkill(Skill.Shield);
+                                Proficiency.OnSuccessUse(targetPlayer, shieldSkill, shieldSkill.Current); // ?
+                            }
+                        }
                     }
-                }
-                else
-                    player.OnEvade(this, AttackType.Melee);
-            });
+                    else
+                        target.OnEvade(this, CombatType.Melee);
+                });
+            }
             actionChain.EnqueueChain();
 
             // TODO: figure out exact speed / delay formula
-            var meleeDelay = Physics.Common.Random.RollDice(MeleeDelayMin, MeleeDelayMax);
-            NextAttackTime = Timers.RunningTime + animLength + meleeDelay;;
+            var meleeDelay = ThreadSafeRandom.Next(MeleeDelayMin, MeleeDelayMax);
+            NextAttackTime = Timers.RunningTime + animLength + meleeDelay;
             return animLength;
         }
 
@@ -98,11 +119,14 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public CombatManeuver GetCombatManeuver()
         {
+            if (CombatTable == null) return null;
+
             //ShowCombatTable();
 
             // for some reason, the combat maneuvers table can return stance motions that don't exist in the motion table
             // ie. skeletons (combat maneuvers table 0x30000000, motion table 0x09000025)
             // for sword combat, they have double and triple strikes (dagger / two-handed only?)
+            var weapon = GetEquippedMeleeWeapon();
 
             var stanceManeuvers = CombatTable.CMT.Where(m => m.Style == (MotionCommand)CurrentMotionState.Stance).ToList();
 
@@ -120,10 +144,24 @@ namespace ACE.Server.WorldObjects
 
             while (true)    // limiter?
             {
-                var rng = Physics.Common.Random.RollDice(0, stanceManeuvers.Count - 1);
+                var rng = ThreadSafeRandom.Next(0, stanceManeuvers.Count - 1);
                 //Console.WriteLine("Selecting combat maneuver #" + rng);
 
                 var combatManeuver = stanceManeuvers[rng];
+
+                var motion = combatManeuver.Motion.ToString();
+
+                // todo: use motion mapping, avoid string search
+
+                if (motion.Contains("Slash") && (weapon == null || (weapon.MAttackType & AttackType.Slash) == 0))
+                    continue;
+                if (motion.Contains("Thrust") && (weapon == null || (weapon.MAttackType & AttackType.Thrust) == 0))
+                    continue;
+
+                if (motion.StartsWith("Double") && (weapon == null || (weapon.MAttackType & AttackType.DoubleStrike) == 0))
+                    continue;
+                if (motion.StartsWith("Triple") && (weapon == null || (weapon.MAttackType & AttackType.TripleStrike) == 0))
+                    continue;
 
                 // ensure combat maneuver exists for this monster's motion table
                 motions.TryGetValue((uint)combatManeuver.Motion, out var motionData);
@@ -148,10 +186,12 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Perform the melee attack swing animation
         /// </summary>
-        public void DoSwingMotion(WorldObject target, CombatManeuver maneuver, out float animLength)
+        public void DoSwingMotion(WorldObject target, CombatManeuver maneuver, out float animLength, out List<float> attackFrames)
         {
             var animSpeed = GetAnimSpeed();
             animLength = MotionTable.GetAnimationLength(MotionTableId, CurrentMotionState.Stance, maneuver.Motion, animSpeed);
+
+            attackFrames = MotionTable.GetAttackFrames(MotionTableId, CurrentMotionState.Stance, maneuver.Motion);
 
             var motion = new Motion(this, maneuver.Motion, animSpeed);
             motion.MotionState.TurnSpeed = 2.25f;
@@ -199,7 +239,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public Range GetBaseDamage(BiotaPropertiesBodyPart attackPart)
         {
-            if (CurrentAttack == AttackType.Missile && GetMissileAmmo() != null)
+            if (CurrentAttack == CombatType.Missile && GetMissileAmmo() != null)
                 return GetMissileDamage();
 
             // use weapon damage for every attack?
@@ -221,25 +261,25 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// Returns the chance for player to avoid monster attack
+        /// Returns the chance for creature to avoid monster attack
         /// </summary>
         public float GetEvadeChance()
         {
             // get monster attack skill
-            var player = AttackTarget as Player;
+            var target = AttackTarget as Creature;
             var attackSkill = GetCreatureSkill(GetCurrentAttackSkill()).Current;
             var offenseMod = GetWeaponOffenseModifier(this);
             attackSkill = (uint)Math.Round(attackSkill * offenseMod);
 
-            if (IsExhausted)
-                attackSkill = GetExhaustedSkill(attackSkill);
+            //if (IsExhausted)
+                //attackSkill = GetExhaustedSkill(attackSkill);
 
-            // get player defense skill
-            var defenseSkill = CurrentAttack == AttackType.Missile ? Skill.MissileDefense : Skill.MeleeDefense;
+            // get creature defense skill
+            var defenseSkill = CurrentAttack == CombatType.Missile ? Skill.MissileDefense : Skill.MeleeDefense;
             var defenseMod = defenseSkill == Skill.MeleeDefense ? GetWeaponMeleeDefenseModifier(AttackTarget as Creature) : 1.0f;
-            var difficulty = (uint)Math.Round(player.GetCreatureSkill(defenseSkill).Current * defenseMod);
+            var difficulty = (uint)Math.Round(target.GetCreatureSkill(defenseSkill).Current * defenseMod);
 
-            if (player.IsExhausted) difficulty = 0;
+            if (target.IsExhausted) difficulty = 0;
 
             /*var baseStr = offenseMod != 1.0f ? $" (base: {GetCreatureSkill(GetCurrentAttackSkill()).Current})" : "";
             Console.WriteLine("Attack skill: " + attackSkill + baseStr);
@@ -252,44 +292,58 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// Calculates the player damage for a physical monster attack
+        /// Calculates the creature damage for a physical monster attack
         /// </summary>
-        /// <param name="bodyPart">The player body part the monster is targeting</param>
+        /// <param name="bodyPart">The creature body part the monster is targeting</param>
         /// <param name="criticalHit">Is TRUE if monster rolls a critical hit</param>
-        public float CalculateDamage(ref DamageType damageType, CombatManeuver maneuver, BodyPart bodyPart, ref bool criticalHit, ref float shieldMod)
+        public float? CalculateDamage(ref DamageType damageType, CombatManeuver maneuver, BodyPart bodyPart, ref bool criticalHit, ref float shieldMod)
         {
+            // check lifestone protection
+            var player = AttackTarget as Player;
+            if (player != null && player.UnderLifestoneProtection)
+            {
+                player.HandleLifestoneProtection();
+                return null;
+            }
+
             // evasion chance
             var evadeChance = GetEvadeChance();
-            if (Physics.Common.Random.RollDice(0.0f, 1.0f) < evadeChance)
-                return 0.0f;
+            if (ThreadSafeRandom.Next(0.0f, 1.0f) < evadeChance)
+                return null;
 
             // get base damage
             var attackPart = GetAttackPart(maneuver);
             damageType = GetDamageType(attackPart);
             var damageRange = GetBaseDamage(attackPart);
-            var baseDamage = Physics.Common.Random.RollDice(damageRange.Min, damageRange.Max);
+            var baseDamage = ThreadSafeRandom.Next(damageRange.Min, damageRange.Max);
 
             var damageRatingMod = GetRatingMod(EnchantmentManager.GetDamageRating());
 
-            var player = AttackTarget as Player;
             var recklessnessMod = player != null ? player.GetRecklessnessMod() : 1.0f;
+            var target = AttackTarget as Creature;
+            var targetPet = AttackTarget as CombatPet;
+
+            // handle pet damage type
+            var pet = this as CombatPet;
+            if (pet != null)
+                damageType = pet.DamageType;
 
             // monster weapon / attributes
             var weapon = GetEquippedWeapon();
 
             // critical hit
             var critical = 0.1f;
-            if (Physics.Common.Random.RollDice(0.0f, 1.0f) < critical)
+            if (ThreadSafeRandom.Next(0.0f, 1.0f) < critical)
                 criticalHit = true;
 
             // attribute damage modifier (verify)
-            var attributeMod = GetAttributeMod(AttackType.Melee);
+            var attributeMod = GetAttributeMod(CombatType.Melee);
 
             // get armor piece
             var armor = GetArmor(bodyPart);
 
             // get armor modifiers
-            var armorMod = GetArmorMod(armor, damageType);
+            var armorMod = GetArmorMod(armor, weapon, damageType);
 
             // get resistance modifiers (protect/vuln)
             var resistanceMod = AttackTarget.EnchantmentManager.GetResistanceMod(damageType);
@@ -312,18 +366,18 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
-        /// Returns the player armor for a body part
+        /// Returns the creature armor for a body part
         /// </summary>
         public List<WorldObject> GetArmor(BodyPart bodyPart)
         {
-            var player = AttackTarget as Player;
+            var target = AttackTarget as Creature;
 
             //Console.WriteLine("BodyPart: " + bodyPart);
             //Console.WriteLine("===");
 
             var bodyLocation = BodyParts.GetFlags(BodyParts.GetEquipMask(bodyPart));
 
-            var equipped = player.EquippedObjects.Values.Where(e => e is Clothing && BodyParts.HasAny(e.CurrentWieldedLocation, bodyLocation)).ToList();
+            var equipped = target.EquippedObjects.Values.Where(e => e is Clothing && BodyParts.HasAny(e.CurrentWieldedLocation, bodyLocation)).ToList();
 
             return equipped;
         }
@@ -332,16 +386,16 @@ namespace ACE.Server.WorldObjects
         /// Returns the percent of damage absorbed by layered armor + clothing
         /// </summary>
         /// <param name="armors">The list of armor/clothing covering the targeted body part</param>
-        public float GetArmorMod(List<WorldObject> armors, DamageType damageType)
+        public float GetArmorMod(List<WorldObject> armors, WorldObject damageSource, DamageType damageType)
         {
             var effectiveAL = 0.0f;
 
             foreach (var armor in armors)
-                effectiveAL += GetArmorMod(armor, damageType);
+                effectiveAL += GetArmorMod(armor, damageSource, damageType);
 
             // life spells
             // additive: armor/imperil
-            var bodyArmorMod = AttackTarget.EnchantmentManager.GetBodyArmorMod();
+            var bodyArmorMod = damageSource != null && damageSource.IgnoreMagicResist ? 0 : AttackTarget.EnchantmentManager.GetBodyArmorMod();
             //Console.WriteLine("==");
             //Console.WriteLine("Armor Self: " + bodyArmorMod);
             effectiveAL += bodyArmorMod;
@@ -358,7 +412,7 @@ namespace ACE.Server.WorldObjects
         /// Returns the effective AL for 1 piece of armor/clothing
         /// </summary>
         /// <param name="armor">A piece of armor or clothing</param>
-        public float GetArmorMod(WorldObject armor, DamageType damageType)
+        public float GetArmorMod(WorldObject armor, WorldObject damageSource, DamageType damageType)
         {
             // get base armor/resistance level
             var baseArmor = armor.GetProperty(PropertyInt.ArmorLevel) ?? 0;
@@ -371,13 +425,13 @@ namespace ACE.Server.WorldObjects
             Console.WriteLine("Base RL: " + resistance);*/
 
             // armor level additives
-            var player = AttackTarget as Player;
-            var armorMod = armor.EnchantmentManager.GetArmorMod();
+            var target = AttackTarget as Creature;
+            var armorMod = damageSource != null && damageSource.IgnoreMagicArmor ? 0 : armor.EnchantmentManager.GetArmorMod();
             // Console.WriteLine("Impen: " + armorMod);
             var effectiveAL = baseArmor + armorMod;
 
             // resistance additives
-            var armorBane = armor.EnchantmentManager.GetArmorModVsType(damageType);
+            var armorBane = damageSource != null && damageSource.IgnoreMagicArmor ? 0 : armor.EnchantmentManager.GetArmorModVsType(damageType);
             // Console.WriteLine("Bane: " + armorBane);
             var effectiveRL = (float)(resistance + armorBane);
 
@@ -460,7 +514,7 @@ namespace ACE.Server.WorldObjects
             if (parts == null)
                 parts = Biota.BiotaPropertiesBodyPart.Where(b => b.DVal != 0 && b.BH != 0).ToList();
 
-            var part = parts[Physics.Common.Random.RollDice(0, parts.Count - 1)];
+            var part = parts[ThreadSafeRandom.Next(0, parts.Count - 1)];
 
             return part;
         }

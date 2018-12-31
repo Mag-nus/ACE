@@ -44,7 +44,7 @@ namespace ACE.Server.Managers
         /// <summary>
         /// Returns TRUE If this object has a vitae penalty
         /// </summary>
-        public bool HasVitae => WorldObject.Biota.HasEnchantment((uint)Spell.Vitae, WorldObject.BiotaDatabaseLock);
+        public bool HasVitae => WorldObject.Biota.HasEnchantment((uint)SpellId.Vitae, WorldObject.BiotaDatabaseLock);
 
         /// <summary>
         /// Constructs a new EnchantmentManager for a WorldObject
@@ -321,7 +321,7 @@ namespace ACE.Server.Managers
         /// </summary>
         public virtual void RemoveAllEnchantments()
         {
-            var spellsToExclude = new Collection<int> { (int)Spell.Vitae };
+            var spellsToExclude = new Collection<int> { (int)SpellId.Vitae };
 
             WorldObject.Biota.RemoveAllEnchantments(spellsToExclude, WorldObject.BiotaDatabaseLock);
             WorldObject.ChangesDetected = true;
@@ -334,7 +334,7 @@ namespace ACE.Server.Managers
         /// </summary>
         public BiotaPropertiesEnchantmentRegistry GetVitae()
         {
-            return GetEnchantment((uint)Spell.Vitae);
+            return GetEnchantment((uint)SpellId.Vitae);
         }
 
         /// <summary>
@@ -372,7 +372,7 @@ namespace ACE.Server.Managers
                 // TODO refactor this so it uses the existing Add() method.
 
                 // add entry for new vitae
-                vitae = BuildEntry((uint)Spell.Vitae);
+                vitae = BuildEntry((uint)SpellId.Vitae);
                 vitae.EnchantmentCategory = (uint)EnchantmentMask.Vitae;
                 vitae.LayerId = 0;
                 vitae.StatModValue = 1.0f - (float)PropertyManager.GetDouble("vitae_penalty").Item;
@@ -525,7 +525,7 @@ namespace ACE.Server.Managers
                 var minDispelNum = (int)Math.Round(dispelNum * numberVariance);
 
                 // factor in rng variance
-                dispelNum = Physics.Common.Random.RollDice(minDispelNum, maxDispelNum);
+                dispelNum = ThreadSafeRandom.Next(minDispelNum, maxDispelNum);
             }
 
             // randomize the filtered spell list
@@ -681,7 +681,7 @@ namespace ACE.Server.Managers
             var enchantments = GetEnchantments_TopLayer(EnchantmentTypeFlags.Additive, (uint)statModKey);
 
             var modifier = 0;
-            foreach (var enchantment in enchantments)
+            foreach (var enchantment in enchantments.Where(e => ((EnchantmentTypeFlags)e.StatModType & EnchantmentTypeFlags.Skill) == 0))
                 modifier += (int)enchantment.StatModValue;
 
             return modifier;
@@ -817,6 +817,9 @@ namespace ACE.Server.Managers
         /// </summary>
         public virtual int GetDamageMod()
         {
+            if (!WorldObject.IsEnchantable)
+                return 0;
+
             // BD8 seems to be the only one with aura in db?
             var aura = GetAdditiveMod(PropertyInt.WeaponAuraDamage);
             if (aura != 0) return aura;
@@ -829,6 +832,9 @@ namespace ACE.Server.Managers
         /// </summary>
         public virtual float GetDamageModifier()
         {
+            if (!WorldObject.IsEnchantable)
+                return 1.0f;
+
             return GetMultiplicativeMod(PropertyFloat.DamageMod);
         }
 
@@ -837,6 +843,9 @@ namespace ACE.Server.Managers
         /// </summary>
         public virtual float GetAttackMod()
         {
+            if (!WorldObject.IsEnchantable)
+                return 0.0f;
+
             var aura = GetAdditiveMod(PropertyFloat.WeaponAuraOffense);
             if (aura != 0) return aura;
 
@@ -848,6 +857,9 @@ namespace ACE.Server.Managers
         /// </summary>
         public virtual int GetWeaponSpeedMod()
         {
+            if (!WorldObject.IsEnchantable)
+                return 0;
+
             var aura = GetAdditiveMod(PropertyInt.WeaponAuraSpeed);
             if (aura != 0) return aura;
 
@@ -859,6 +871,9 @@ namespace ACE.Server.Managers
         /// </summary>
         public virtual float GetDefenseMod()
         {
+            if (!WorldObject.IsEnchantable)
+                return 0;
+
             var aura = GetAdditiveMod(PropertyFloat.WeaponAuraDefense);
             if (aura != 0) return aura;
 
@@ -870,6 +885,9 @@ namespace ACE.Server.Managers
         /// </summary>
         public virtual float GetVarianceMod()
         {
+            if (!WorldObject.IsEnchantable)
+                return 1.0f;
+
             return GetMultiplicativeMod(PropertyFloat.DamageVariance);
         }
 
@@ -878,6 +896,9 @@ namespace ACE.Server.Managers
         /// </summary>
         public virtual int GetArmorMod()
         {
+            if (!WorldObject.IsEnchantable)
+                return 0;
+
             return GetAdditiveMod(PropertyInt.ArmorLevel);
         }
 
@@ -886,6 +907,9 @@ namespace ACE.Server.Managers
         /// </summary>
         public virtual float GetArmorModVsType(DamageType damageType)
         {
+            if (!WorldObject.IsEnchantable)
+                return 0.0f;
+
             var typeFlags = EnchantmentTypeFlags.Float | EnchantmentTypeFlags.SingleStat | EnchantmentTypeFlags.Additive;
             var key = GetImpenBaneKey(damageType);
             var enchantments = GetEnchantments_TopLayer(typeFlags, (uint)key);
@@ -1110,6 +1134,9 @@ namespace ACE.Server.Managers
             {
                 var damager = kvp.Key;
                 var amount = kvp.Value;
+
+                if (creature.Invincible ?? false)
+                    amount = 0;
 
                 var damageSourcePlayer = damager as Player;
                 if (damageSourcePlayer != null)

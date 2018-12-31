@@ -44,16 +44,29 @@ namespace ACE.Server.WorldObjects
         {
             if (target.Health.Current == target.Health.MaxValue)
             {
-                healer.Session.Network.EnqueueSend(new GameEventUseDone(healer.Session, WeenieError.None));
+                healer.Session.Network.EnqueueSend(new GameEventWeenieErrorWithString(healer.Session, WeenieErrorWithString._IsAtFullHealth, target.Name));
+                healer.SendUseDoneEvent();
                 return;
             }
-            DoHealMotion(healer, target);
+
+            if (!healer.Equals(target))
+            {
+                // perform moveto
+                var moveToChain = new ActionChain();
+                moveToChain.AddChain(healer.CreateMoveToChain(target, out var thisMoveToChainNumber));
+                moveToChain.AddAction(healer, () => DoHealMotion(healer, target));
+                moveToChain.EnqueueChain();
+            }
+            else
+                DoHealMotion(healer, target);
         }
 
         public void DoHealMotion(Player healer, Player target)
         {
-            var motion = new Motion(healer, MotionCommand.SkillHealSelf);
-            var animLength = MotionTable.GetAnimationLength(healer.MotionTableId, healer.CurrentMotionState.Stance, MotionCommand.SkillHealSelf);
+            var motionCommand = healer.Equals(target) ? MotionCommand.SkillHealSelf : MotionCommand.SkillHealOther;
+
+            var motion = new Motion(healer, motionCommand);
+            var animLength = MotionTable.GetAnimationLength(healer.MotionTableId, healer.CurrentMotionState.Stance, motionCommand);
 
             var actionChain = new ActionChain();
             actionChain.AddAction(healer, () => healer.EnqueueBroadcastMotion(motion));
@@ -132,7 +145,7 @@ namespace ACE.Server.WorldObjects
             difficulty = (int)Math.Round((target.Health.MaxValue - target.Health.Current) * 2 * combatMod);
 
             var skillCheck = SkillCheck.GetSkillChance(effectiveSkill, difficulty);
-            return skillCheck >= Physics.Common.Random.RollDice(0.0f, 1.0f);
+            return skillCheck >= ThreadSafeRandom.Next(0.0f, 1.0f);
         }
 
         /// <summary>
@@ -147,13 +160,13 @@ namespace ACE.Server.WorldObjects
             // todo: determine applicable range from pcaps
             var healMin = healBase * 0.2f;      // ??
             var healMax = healBase * 0.5f;
-            var healAmount = Physics.Common.Random.RollDice(healMin, healMax);
+            var healAmount = ThreadSafeRandom.Next(healMin, healMax);
 
             // verify this scales healing amount, and not difficulty
             healAmount *= target.EnchantmentManager.GetHealingResistRatingMod();
 
             // chance for critical healing
-            criticalHeal = Physics.Common.Random.RollDice(0.0f, 1.0f) < 0.1f;
+            criticalHeal = ThreadSafeRandom.Next(0.0f, 1.0f) < 0.1f;
             if (criticalHeal) healAmount *= 2;
 
             // cap to missing health

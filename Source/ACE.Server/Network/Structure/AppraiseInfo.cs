@@ -66,10 +66,7 @@ namespace ACE.Server.Network.Structure
         public AppraiseInfo(WorldObject wo, Player examiner, bool success = true)
         {
             //Console.WriteLine("Appraise: " + wo.Guid);
-
             Success = success;
-            if (!Success)
-                return;
 
             // get wielder, if applicable
             var wielder = GetWielder(wo);
@@ -140,6 +137,9 @@ namespace ACE.Server.Network.Structure
         {
             SpellBook = new List<AppraisalSpellBook>();
 
+            if (wo is Creature)
+                return;
+
             // add primary spell, if exists
             if (wo.SpellDID.HasValue)
                 SpellBook.Add(new AppraisalSpellBook { SpellId = (ushort)wo.SpellDID.Value, EnchantmentState = AppraisalSpellBook._EnchantmentState.Off });
@@ -151,7 +151,7 @@ namespace ACE.Server.Network.Structure
         private void AddSpells(List<AppraisalSpellBook> activeSpells, WorldObject worldObject, WorldObject wielder = null)
         {
             List<BiotaPropertiesEnchantmentRegistry> wielderEnchantments = null;
-            if (worldObject == null) return;
+            if (worldObject == null || !worldObject.IsEnchantable) return;
 
             // get all currently active item enchantments on the item
             var woEnchantments = worldObject.EnchantmentManager.GetEnchantments(MagicSchool.ItemEnchantment);
@@ -258,7 +258,7 @@ namespace ACE.Server.Network.Structure
 
         private void BuildCreature(Creature creature)
         {
-            CreatureProfile = new CreatureProfile(creature);
+            CreatureProfile = new CreatureProfile(creature, Success);
 
             // only creatures?
             ResistHighlight = ResistMaskHelper.GetHighlightMask(creature);
@@ -269,11 +269,15 @@ namespace ACE.Server.Network.Structure
 
         private void BuildWeapon(WorldObject weapon, WorldObject wielder)
         {
-            if ((weapon as Caster) == null)
-                WeaponProfile = new WeaponProfile(weapon, wielder);
+            var weaponProfile = new WeaponProfile(weapon, wielder);
 
-            WeaponHighlight = WeaponMaskHelper.GetHighlightMask(weapon, wielder);
-            WeaponColor = WeaponMaskHelper.GetColorMask(weapon, wielder);
+            //WeaponHighlight = WeaponMaskHelper.GetHighlightMask(weapon, wielder);
+            //WeaponColor = WeaponMaskHelper.GetColorMask(weapon, wielder);
+            WeaponHighlight = WeaponMaskHelper.GetHighlightMask(weaponProfile);
+            WeaponColor = WeaponMaskHelper.GetColorMask(weaponProfile);
+
+            if (!(weapon is Caster))
+                WeaponProfile = weaponProfile;
 
             // item enchantments can also be on wielder currently
             AddSpells(SpellBook, weapon, wielder);

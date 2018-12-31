@@ -9,6 +9,7 @@ using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
+using ACE.Server.Managers;
 
 namespace ACE.Server.WorldObjects
 {
@@ -197,6 +198,17 @@ namespace ACE.Server.WorldObjects
                     ChangesDetected = true;
             }
         }
+        public void IncProperty(PropertyFloat property, double value)
+        {
+            if (ephemeralPropertyFloats.ContainsKey(property))
+                ephemeralPropertyFloats[property] += value;
+            else
+            {
+                Biota.SetProperty(property, value, BiotaDatabaseLock, biotaPropertyFloats, out var biotaChanged);
+                if (biotaChanged)
+                    ChangesDetected = true;
+            }
+        }
         public void SetProperty(PropertyInstanceId property, uint value)
         {
             if (ephemeralPropertyInstanceIds.ContainsKey(property))
@@ -212,6 +224,17 @@ namespace ACE.Server.WorldObjects
         {
             if (ephemeralPropertyInts.ContainsKey(property))
                 ephemeralPropertyInts[property] = value;
+            else
+            {
+                Biota.SetProperty(property, value, BiotaDatabaseLock, biotaPropertyInts, out var biotaChanged);
+                if (biotaChanged)
+                    ChangesDetected = true;
+            }
+        }
+        public void IncProperty(PropertyInt property, int value)
+        {
+            if (ephemeralPropertyInts.ContainsKey(property))
+                ephemeralPropertyInts[property] += value;
             else
             {
                 Biota.SetProperty(property, value, BiotaDatabaseLock, biotaPropertyInts, out var biotaChanged);
@@ -949,6 +972,7 @@ namespace ACE.Server.WorldObjects
             }
         }
 
+
         public Usable? Usable
         {
             get => (Usable?)GetProperty(PropertyInt.ItemUseable);
@@ -977,6 +1001,66 @@ namespace ACE.Server.WorldObjects
         {
             get => (CombatUse?)GetProperty(PropertyInt.CombatUse);
             set { if (!value.HasValue) RemoveProperty(PropertyInt.CombatUse); else SetProperty(PropertyInt.CombatUse, (int)value.Value); }
+        }
+
+        public int? Damage
+        {
+            get => GetProperty(PropertyInt.Damage);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.Damage); else SetProperty(PropertyInt.Damage, value.Value); }
+        }
+
+        public double? DamageMod
+        {
+            get => GetProperty(PropertyFloat.DamageMod);
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.DamageMod); else SetProperty(PropertyFloat.DamageMod, value.Value); }
+        }
+
+        public double? DamageVariance
+        {
+            get => GetProperty(PropertyFloat.DamageVariance);
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.DamageVariance); else SetProperty(PropertyFloat.DamageVariance, value.Value); }
+        }
+
+        public int? WeaponTime
+        {
+            get => GetProperty(PropertyInt.WeaponTime);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.WeaponTime); else SetProperty(PropertyInt.WeaponTime, value.Value); }
+        }
+
+        public double? WeaponDefense
+        {
+            get => GetProperty(PropertyFloat.WeaponDefense);
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.WeaponDefense); else SetProperty(PropertyFloat.WeaponDefense, value.Value); }
+        }
+
+        public double? WeaponOffense
+        {
+            get => GetProperty(PropertyFloat.WeaponOffense);
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.WeaponOffense); else SetProperty(PropertyFloat.WeaponOffense, value.Value); }
+        }
+
+        public double? ManaConversionMod
+        {
+            get => GetProperty(PropertyFloat.ManaConversionMod);
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.ManaConversionMod); else SetProperty(PropertyFloat.ManaConversionMod, value.Value); }
+        }
+
+        public double? ElementalDamageMod
+        {
+            get => GetProperty(PropertyFloat.ElementalDamageMod);
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.ElementalDamageMod); else SetProperty(PropertyFloat.ElementalDamageMod, value.Value); }
+        }
+
+        public Skill WieldSkillType
+        {
+            get => (Skill)(GetProperty(PropertyInt.WieldSkillType) ?? 0);
+            set { if (value == Skill.None) RemoveProperty(PropertyInt.WieldSkillType); else SetProperty(PropertyInt.WieldSkillType, (int)value); }
+        }
+
+        public int? ItemAllegianceRankLimit
+        {
+            get => GetProperty(PropertyInt.ItemAllegianceRankLimit);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.ItemAllegianceRankLimit); else SetProperty(PropertyInt.ItemAllegianceRankLimit, value.Value); }
         }
 
         /// <summary>
@@ -1096,16 +1180,11 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInstanceId.House); else SetProperty(PropertyInstanceId.House, value.Value); }
         }
 
-        /// <summary>
-        /// Housing links to another packet, that needs sent.. The HouseRestrictions ACL Control list that contains all the housing data
-        /// </summary>
         public uint? HouseOwner
         {
             get => GetProperty(PropertyInstanceId.HouseOwner);
             set { if (!value.HasValue) RemoveProperty(PropertyInstanceId.HouseOwner); else SetProperty(PropertyInstanceId.HouseOwner, value.Value); }
         }
-
-        public uint? HouseRestrictions { get; set; }
 
         /// <summary>
         /// The timestamp the player originally purchased house
@@ -1116,10 +1195,28 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt.HousePurchaseTimestamp); else SetProperty(PropertyInt.HousePurchaseTimestamp, value.Value); }
         }
 
+        public int HouseStatus
+        {
+            get => GetProperty(PropertyInt.HouseStatus) ?? 0;
+            set { if (value == 0) RemoveProperty(PropertyInt.HouseStatus); else SetProperty(PropertyInt.HouseStatus, value); }
+        }
+
+        public HouseType? HouseType
+        {
+            get => (HouseType?)GetProperty(PropertyInt.HouseType);
+            set { if (value.HasValue) RemoveProperty(PropertyInt.HouseType); else SetProperty(PropertyInt.HouseType, (int)value.Value); }
+        }
+
         public int? HookItemType
         {
             get => GetProperty(PropertyInt.HookItemType);
             set { if (!value.HasValue) RemoveProperty(PropertyInt.HookItemType); else SetProperty(PropertyInt.HookItemType, value.Value); }
+        }
+
+        public int? HookPlacement
+        {
+            get => GetProperty(PropertyInt.HookPlacement);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.HookPlacement); else SetProperty(PropertyInt.HookPlacement, value.Value); }
         }
 
         public uint? Monarch
@@ -1150,6 +1247,18 @@ namespace ACE.Server.WorldObjects
         {
             get => (MaterialType?)GetProperty(PropertyInt.MaterialType);
             set { if (!value.HasValue) RemoveProperty(PropertyInt.MaterialType); else SetProperty(PropertyInt.MaterialType, (int)value.Value); }
+        }
+
+        public int? Attuned
+        {
+            get => GetProperty(PropertyInt.Attuned);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.Attuned); else SetProperty(PropertyInt.Attuned, value.Value); }
+        }
+
+        public int? Bonded
+        {
+            get => GetProperty(PropertyInt.Bonded);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.Bonded); else SetProperty(PropertyInt.Bonded, value.Value); }
         }
 
 
@@ -1281,7 +1390,13 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt.Gender); else SetProperty(PropertyInt.Gender, value.Value); }
         }
 
-        public string HeritageGroup
+        public HeritageGroup HeritageGroup
+        {
+            get => (HeritageGroup)(GetProperty(PropertyInt.HeritageGroup) ?? 0);
+            set { if (value == HeritageGroup.Invalid) RemoveProperty(PropertyInt.HeritageGroup); else SetProperty(PropertyInt.HeritageGroup, (int)value); }
+        }
+
+        public string HeritageGroupName
         {
             get => GetProperty(PropertyString.HeritageGroup);
             set { if (value == null) RemoveProperty(PropertyString.HeritageGroup); else SetProperty(PropertyString.HeritageGroup, value); }
@@ -1368,6 +1483,30 @@ namespace ACE.Server.WorldObjects
         {
             get => GetProperty(PropertyInt.Level);
             set { if (!value.HasValue) RemoveProperty(PropertyInt.Level); else SetProperty(PropertyInt.Level, value.Value); }
+        }
+
+        public int? UseRequiresLevel
+        {
+            get => GetProperty(PropertyInt.UseRequiresLevel);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.UseRequiresLevel); else SetProperty(PropertyInt.UseRequiresLevel, value.Value); }
+        }
+
+        public int? UseRequiresSkill
+        {
+            get => GetProperty(PropertyInt.UseRequiresSkill);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.UseRequiresSkill); else SetProperty(PropertyInt.UseRequiresSkill, value.Value); }
+        }
+
+        public int? UseRequiresSkillLevel
+        {
+            get => GetProperty(PropertyInt.UseRequiresSkillLevel);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.UseRequiresSkillLevel); else SetProperty(PropertyInt.UseRequiresSkillLevel, value.Value); }
+        }
+
+        public int? UseRequiresSkillSpec
+        {
+            get => GetProperty(PropertyInt.UseRequiresSkillSpec);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.UseRequiresSkillSpec); else SetProperty(PropertyInt.UseRequiresSkillSpec, value.Value); }
         }
 
         public double? ArmorModVsSlash
@@ -1594,6 +1733,12 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt.CreatureType); else SetProperty(PropertyInt.CreatureType, (int)value.Value); }
         }
 
+        public CreatureType? FriendType
+        {
+            get => (CreatureType?)GetProperty(PropertyInt.FriendType);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.FriendType); else SetProperty(PropertyInt.FriendType, (int)value.Value); }
+        }
+
         public string LongDesc
         {
             get => GetProperty(PropertyString.LongDesc);
@@ -1777,6 +1922,11 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyFloat.Shade); else SetProperty(PropertyFloat.Shade, value.Value); }
         }
 
+        public int NumTimesTinkered
+        {
+            get => GetProperty(PropertyInt.NumTimesTinkered) ?? 0;
+            set { if (value == 0) RemoveProperty(PropertyInt.NumTimesTinkered); else SetProperty(PropertyInt.NumTimesTinkered, value); }
+        }
 
 
         // ========================================
@@ -2029,10 +2179,23 @@ namespace ACE.Server.WorldObjects
             set { if (value == -1) RemoveProperty(PropertyInt.PkLevelModifier); else SetProperty(PropertyInt.PkLevelModifier, value); }
         }
 
-        public PlayerKillerStatus PlayerKillerStatus
+        private PlayerKillerStatus _playerKillerStatus
         {
             get => (PlayerKillerStatus?)GetProperty(PropertyInt.PlayerKillerStatus) ?? PlayerKillerStatus.NPK;
             set => SetProperty(PropertyInt.PlayerKillerStatus, (int)value);
+        }
+
+        public PlayerKillerStatus PlayerKillerStatus
+        {
+            get
+            {
+                var pk_server = PropertyManager.GetBool("pk_server").Item;
+                if (pk_server && GetProperty(PropertyFloat.MinimumTimeSincePk) == null)
+                    return PlayerKillerStatus.PK;
+                else
+                    return _playerKillerStatus;
+            }
+            set => _playerKillerStatus = value;
         }
 
         public CloakStatus? CloakStatus

@@ -22,6 +22,10 @@ namespace ACE.Server.WorldObjects
             var wieldedArmor = SelectWieldedArmor();
 
             var wieldedWeapons = SelectWieldedWeapons();
+            var wieldedShield = SelectWieldedShield();
+
+            if (wieldedShield != null && (wieldedWeapons.Count == 0 || !wieldedWeapons[0].IsAmmoLauncher))
+                wieldedWeapons.Add(wieldedShield);
 
             return wieldedWeapons;
         }
@@ -207,11 +211,23 @@ namespace ACE.Server.WorldObjects
             weapons.Shuffle();
             return weapons.FirstOrDefault();
 
-            /*var rng = Physics.Common.Random.RollDice(0, weapons.Count);
+            /*var rng = ThreadSafeRandom.Next(0, weapons.Count);
             if (rng == weapons.Count)
                 return null;    // choose no weapon? lugians should have ~33% chance to select rock, according to retail pcaps
 
             return weapons[rng];*/
+        }
+
+        public WorldObject SelectWieldedShield()
+        {
+            var shields = Inventory.Values.Where(wo => wo.IsShield).ToList();
+
+            if (shields.Count == 0)
+                return null;
+
+            // select a random shield
+            var rng = ThreadSafeRandom.Next(0, shields.Count - 1);
+            return shields[rng];
         }
 
         public void DebugTreasure()
@@ -251,8 +267,8 @@ namespace ACE.Server.WorldObjects
                 {
                     //Console.WriteLine($"{Name} equipping {item.Name}");
 
-                    if (item.ValidLocations != null)
-                        TryEquipObject(item, (int)item.ValidLocations);
+                    if (item.ValidLocations != null && TryEquipObject(item, (int)item.ValidLocations))
+                        SetChild(item, (int)item.ValidLocations, out var placementID, out var parentLocation);
                 }
             }
         }
