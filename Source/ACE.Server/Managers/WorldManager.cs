@@ -334,6 +334,13 @@ namespace ACE.Server.Managers
             WorldActive = true;
             var worldTickTimer = new Stopwatch();
 
+            var playerTickRM = new RateMonitor();
+            var icmqRM = new RateMonitor();
+            var pewqRM = new RateMonitor();
+            var dmRM = new RateMonitor();
+            var ugwRM = new RateMonitor();
+            var dswRM = new RateMonitor();
+
             while (!pendingWorldStop)
             {
                 /*
@@ -365,17 +372,41 @@ namespace ACE.Server.Managers
 
                 worldTickTimer.Restart();
 
+                playerTickRM.RegisterEventStart();
                 PlayerManager.Tick();
+                //log.Debug("playerTickRM.RegisterEventEnd");
+                var last = playerTickRM.RegisterEventEnd();
+                if (last > .5) log.Warn("PlayerManager.Tick(): " + playerTickRM);
 
+                icmqRM.RegisterEventStart();
+                //log.Debug("InboundClientMessageQueue.RunActions");
                 InboundClientMessageQueue.RunActions();
+                last = icmqRM.RegisterEventEnd();
+                if (last > .5) log.Warn("InboundClientMessageQueue.RunActions(): " + icmqRM);
 
+                pewqRM.RegisterEventStart();
+                //log.Debug("playerEnterWorldQueue.RunActions");
                 playerEnterWorldQueue.RunActions();
+                last = pewqRM.RegisterEventEnd();
+                if (last > .5) log.Warn("playerEnterWorldQueue.RunActions(): " + pewqRM);
 
+                dmRM.RegisterEventStart();
+                //log.Debug("DelayManager.RunActions");
                 DelayManager.RunActions();
+                last = dmRM.RegisterEventEnd();
+                if (last > .5) log.Warn("DelayManager.RunActions(): " + dmRM);
 
+                ugwRM.RegisterEventStart();
+                //log.Debug("UpdateGameWorld");
                 var gameWorldUpdated = UpdateGameWorld();
+                last = ugwRM.RegisterEventEnd();
+                if (last > .5) log.Warn("UpdateGameWorld(): " + ugwRM);
 
+                dswRM.RegisterEventStart();
+                //log.Debug("DoSessionWork");
                 int sessionCount = DoSessionWork();
+                last = dswRM.RegisterEventEnd();
+                if (last > .5) log.Warn("DoSessionWork(): " + dswRM);
 
                 // We only relax the CPU if our game world is able to update at the target rate.
                 // We do not sleep if our game world just updated. This is to prevent the scenario where our game world can't keep up. We don't want to add further delays.
