@@ -301,6 +301,9 @@ namespace ACE.Server.Managers
 
             session.SetPlayer(player);
 
+            // CUSTOM
+            Factories.PlayerFactory.MakeSurePlayerHasFullStackForWeenies(player, Factories.PlayerFactory.CommonSpellComponents);
+
             session.Player.PlayerEnterWorld();
 
             if (character.TotalLogins <= 1 || PropertyManager.GetBool("alwaysshowwelcome").Item)

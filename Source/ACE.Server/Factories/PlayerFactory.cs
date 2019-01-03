@@ -533,13 +533,15 @@ namespace ACE.Server.Factories
             // todo Armor that covers everything + has all spells
         }
 
+        public static readonly HashSet<uint> CommonSpellComponents = new HashSet<uint> { 691, 689, 686, 688, 687, 690, 8897, 7299, 37155, 20631 };
+
         private static void AddCommonInventory(Player player)
         {
             // MMD
             AddWeeniesToInventory(player, new HashSet<uint> { 20630 });
 
             // Spell Components
-            AddWeeniesToInventory(player, new HashSet<uint> { 691, 689, 686, 688, 687, 690, 8897, 7299, 37155, 20631 });
+            AddWeeniesToInventory(player, CommonSpellComponents);
 
             // Focusing Stone
             AddWeeniesToInventory(player, new HashSet<uint> { 8904 });
@@ -566,6 +568,43 @@ namespace ACE.Server.Factories
                     loot.StackSize = stackSize;
                     loot.EncumbranceVal = (loot.StackUnitEncumbrance ?? 0) * (stackSize ?? 1);
                     loot.Value = (loot.StackUnitValue ?? 0) * (stackSize ?? 1);
+                }
+
+                player.TryAddToInventory(loot);
+            }
+        }
+
+        public static void MakeSurePlayerHasFullStackForWeenies(Player player, HashSet<uint> weenieIds)
+        {
+            foreach (uint weenieId in weenieIds)
+            {
+                var amountFound = 0;
+                var maxStackSize = 0;
+
+                foreach (var item in player.GetAllPossessions())
+                {
+                    if (item.WeenieClassId == weenieId)
+                    {
+                        amountFound += item.StackSize ?? 1;
+                        maxStackSize = item.MaxStackSize ?? 1;
+                    }
+                }
+
+                if (amountFound > 0 && amountFound >= maxStackSize)
+                    continue;
+
+                var loot = WorldObjectFactory.CreateNewWorldObject(weenieId);
+
+                if (loot == null) // weenie doesn't exist
+                    continue;
+
+                if (loot.MaxStackSize > 1)
+                {
+                    var amountToAdd = loot.MaxStackSize - amountFound;
+
+                    loot.StackSize = amountToAdd;
+                    loot.EncumbranceVal = (loot.StackUnitEncumbrance ?? 0) * (amountToAdd ?? 1);
+                    loot.Value = (loot.StackUnitValue ?? 0) * (amountToAdd ?? 1);
                 }
 
                 player.TryAddToInventory(loot);
