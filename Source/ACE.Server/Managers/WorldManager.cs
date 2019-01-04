@@ -347,12 +347,13 @@ namespace ACE.Server.Managers
             WorldActive = true;
             var worldTickTimer = new Stopwatch();
 
+            ulong tickCount = 0;
             var playerTickRM = new RateMonitor();
-            var icmqRM = new RateMonitor();
-            var pewqRM = new RateMonitor();
-            var dmRM = new RateMonitor();
-            var ugwRM = new RateMonitor();
-            var dswRM = new RateMonitor();
+            var inboundClientMessageQueueRM = new RateMonitor();
+            var playerEnterWorldQueueRM = new RateMonitor();
+            var delayManagerRM = new RateMonitor();
+            var updateGameWorldRM = new RateMonitor();
+            var doSessionWorkRM = new RateMonitor();
 
             while (!pendingWorldStop)
             {
@@ -385,41 +386,48 @@ namespace ACE.Server.Managers
 
                 worldTickTimer.Restart();
 
+                tickCount++;
                 playerTickRM.RegisterEventStart();
                 PlayerManager.Tick();
                 //log.Debug("playerTickRM.RegisterEventEnd");
                 var last = playerTickRM.RegisterEventEnd();
-                if (last > .5) log.Warn("PlayerManager.Tick(): " + playerTickRM);
+                if (last > .5) log.Warn("PlayerManager.Tick(): ".PadRight(40) + playerTickRM);
+                if ((tickCount % 100000) == 0) log.Info("PlayerManager.Tick(): ".PadRight(40) + playerTickRM);
 
-                icmqRM.RegisterEventStart();
+                inboundClientMessageQueueRM.RegisterEventStart();
                 //log.Debug("InboundClientMessageQueue.RunActions");
                 InboundClientMessageQueue.RunActions();
-                last = icmqRM.RegisterEventEnd();
-                if (last > .5) log.Warn("InboundClientMessageQueue.RunActions(): " + icmqRM);
+                last = inboundClientMessageQueueRM.RegisterEventEnd();
+                if (last > .5) log.Warn("InboundClientMessageQueue.RunActions(): ".PadRight(40) + inboundClientMessageQueueRM);
+                if ((tickCount % 100000) == 0) log.Info("InboundClientMessageQueue.RunActions(): ".PadRight(40) + inboundClientMessageQueueRM);
 
-                pewqRM.RegisterEventStart();
+                playerEnterWorldQueueRM.RegisterEventStart();
                 //log.Debug("playerEnterWorldQueue.RunActions");
                 playerEnterWorldQueue.RunActions();
-                last = pewqRM.RegisterEventEnd();
-                if (last > .5) log.Warn("playerEnterWorldQueue.RunActions(): " + pewqRM);
+                last = playerEnterWorldQueueRM.RegisterEventEnd();
+                if (last > .5) log.Warn("playerEnterWorldQueue.RunActions(): ".PadRight(40) + playerEnterWorldQueueRM);
+                if ((tickCount % 100000) == 0) log.Info("playerEnterWorldQueue.RunActions(): ".PadRight(40) + playerEnterWorldQueueRM);
 
-                dmRM.RegisterEventStart();
+                delayManagerRM.RegisterEventStart();
                 //log.Debug("DelayManager.RunActions");
                 DelayManager.RunActions();
-                last = dmRM.RegisterEventEnd();
-                if (last > .5) log.Warn("DelayManager.RunActions(): " + dmRM);
+                last = delayManagerRM.RegisterEventEnd();
+                if (last > .5) log.Warn("DelayManager.RunActions(): ".PadRight(40) + delayManagerRM);
+                if ((tickCount % 100000) == 0) log.Info("DelayManager.RunActions(): ".PadRight(40) + delayManagerRM);
 
-                ugwRM.RegisterEventStart();
+                updateGameWorldRM.RegisterEventStart();
                 //log.Debug("UpdateGameWorld");
                 var gameWorldUpdated = UpdateGameWorld();
-                last = ugwRM.RegisterEventEnd();
-                if (last > .5) log.Warn("UpdateGameWorld(): " + ugwRM);
+                last = updateGameWorldRM.RegisterEventEnd();
+                if (last > .5) log.Warn("UpdateGameWorld(): ".PadRight(40) + updateGameWorldRM);
+                if ((tickCount % 100000) == 0) log.Info("UpdateGameWorld(): ".PadRight(40) + updateGameWorldRM);
 
-                dswRM.RegisterEventStart();
+                doSessionWorkRM.RegisterEventStart();
                 //log.Debug("DoSessionWork");
                 int sessionCount = DoSessionWork();
-                last = dswRM.RegisterEventEnd();
-                if (last > .5) log.Warn("DoSessionWork(): " + dswRM);
+                last = doSessionWorkRM.RegisterEventEnd();
+                if (last > .5) log.Warn("DoSessionWork(): ".PadRight(40) + doSessionWorkRM);
+                if ((tickCount % 100000) == 0) log.Info("DoSessionWork(): ".PadRight(40) + doSessionWorkRM);
 
                 // We only relax the CPU if our game world is able to update at the target rate.
                 // We do not sleep if our game world just updated. This is to prevent the scenario where our game world can't keep up. We don't want to add further delays.
@@ -554,6 +562,11 @@ namespace ACE.Server.Managers
             return newPosition;
         }
 
+        static ulong sessionTickCount = 0;
+        static readonly RateMonitor tickInboundRM = new RateMonitor();
+        static readonly RateMonitor tickOutboundRM = new RateMonitor();
+        static readonly RateMonitor dropSessionRM = new RateMonitor();
+
         /// <summary>
         /// Processes all inbound GameAction messages.<para />
         /// Dispatches all outgoing messages.<para />
@@ -568,21 +581,34 @@ namespace ACE.Server.Managers
             {
                 sessionCount = sessions.Count;
 
+                sessionTickCount++;
+                tickInboundRM.RegisterEventStart();
                 // The session tick inbound processes all inbound GameAction messages
                 foreach (var s in sessions)
                     s.TickInbound();
+                var last = tickInboundRM.RegisterEventEnd();
+                if (last > .5) log.Warn("TickInbound(): ".PadRight(40) + tickInboundRM);
+                if ((sessionTickCount % 100000) == 0) log.Info("TickInbound(): ".PadRight(40) + tickInboundRM);
 
                 // Do not combine the above and below loops. All inbound messages should be processed first and then all outbound messages should be processed second.
 
+                tickOutboundRM.RegisterEventStart();
                 // The session tick outbound processes pending actions and handles outgoing messages
                 foreach (var s in sessions)
                     s.TickOutbound();
+                last = tickOutboundRM.RegisterEventEnd();
+                if (last > .5) log.Warn("TickOutbound(): ".PadRight(40) + tickOutboundRM);
+                if ((sessionTickCount % 100000) == 0) log.Info("TickOutbound(): ".PadRight(40) + tickOutboundRM);
 
+                dropSessionRM.RegisterEventStart();
                 // Removes sessions in the NetworkTimeout state, including sessions that have reached a timeout limit.
                 var deadSessions = sessions.FindAll(s => s.State == SessionState.NetworkTimeout);
 
                 foreach (var session in deadSessions)
                     session.DropSession(string.IsNullOrEmpty(session.BootSessionReason) ? "Network Timeout" : session.BootSessionReason);
+                last = dropSessionRM.RegisterEventEnd();
+                if (last > .5) log.Warn("DropSession(): ".PadRight(40) + dropSessionRM);
+                if ((sessionTickCount % 100000) == 0) log.Info("DropSession(): ".PadRight(40) + dropSessionRM);
             }
             finally
             {
