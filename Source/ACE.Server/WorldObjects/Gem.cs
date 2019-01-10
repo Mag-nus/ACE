@@ -74,10 +74,15 @@ namespace ACE.Server.WorldObjects
                     castMessage = "The gem casts Asheron's Lesser Benediction on you";
                 */
 
-                player.CreateItemSpell(this, (uint)SpellDID);
+                if (SpellDID.HasValue)
+                {
+                    var spell = new Server.Entity.Spell((uint)SpellDID);
+
+                    TryCastSpell(spell, player, this);
+                }
 
                 if ((GetProperty(PropertyBool.UnlimitedUse) ?? false) == false)
-                    player.TryConsumeFromInventoryWithNetworking(this);
+                    player.TryConsumeFromInventoryWithNetworking(this, 1);
 
                 player.SendUseDoneEvent();
                 return;
