@@ -545,6 +545,24 @@ namespace ACE.Server.Factories
 
             // Focusing Stone
             AddWeeniesToInventory(player, new HashSet<uint> { 8904 });
+            var stone = player.Inventory.FirstOrDefault(k => k.Value.WeenieClassId == 8904).Value;
+            stone.ItemCurMana = stone.ItemMaxMana; // fill er up
+
+            // prevent VT default choice
+            player.TryRemoveFromInventory(player.Inventory.FirstOrDefault(k => k.Value.Name.Contains("Training Wand")).Key, false);
+
+            // make way for bling
+            player.TryDequipObject(player.EquippedObjects.FirstOrDefault(k => k.Value.Name.Contains("Leather Boots")).Key);
+
+            // bling
+            foreach (var item in new WorldObject[] {
+                (Clothing)WorldObjectFactory.CreateNewWorldObject(DatabaseManager.World.GetCachedWeenie(5893)),  // hoary robe
+                (Clothing)WorldObjectFactory.CreateNewWorldObject(DatabaseManager.World.GetCachedWeenie(29525)), // Noble Gauntlets of Speed
+                (Clothing)WorldObjectFactory.CreateNewWorldObject(DatabaseManager.World.GetCachedWeenie(14594)), // helm of the elements
+            })
+            {
+                player.TryEquipObject(item, item.GetProperty(PropertyInt.ValidLocations) ?? 0);
+            }
 
             // todo Drudge Scrying Orb
 
