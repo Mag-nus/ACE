@@ -549,10 +549,10 @@ namespace ACE.Server.Factories
             stone.ItemCurMana = stone.ItemMaxMana; // fill er up
 
             // prevent VT default choice
-            player.TryRemoveFromInventory(player.Inventory.FirstOrDefault(k => k.Value.Name.Contains("Training Wand")).Key, false);
+            player.TryRemoveFromInventory(player.Inventory.FirstOrDefault(k => k.Value.Name.Contains("Training Wand")).Key);
 
             // make way for bling
-            player.TryDequipObject(player.EquippedObjects.FirstOrDefault(k => k.Value.Name.Contains("Leather Boots")).Key);
+            player.TryDequipObject(player.EquippedObjects.FirstOrDefault(k => k.Value.Name.Contains("Leather Boots")).Key, out _, out _);
 
             // bling
             foreach (var item in new WorldObject[] {
@@ -561,7 +561,7 @@ namespace ACE.Server.Factories
                 (Clothing)WorldObjectFactory.CreateNewWorldObject(DatabaseManager.World.GetCachedWeenie(14594)), // helm of the elements
             })
             {
-                player.TryEquipObject(item, item.GetProperty(PropertyInt.ValidLocations) ?? 0);
+                player.TryEquipObject(item, (EquipMask)(item.GetProperty(PropertyInt.ValidLocations) ?? 0));
             }
 
             // todo Drudge Scrying Orb
