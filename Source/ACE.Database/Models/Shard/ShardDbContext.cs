@@ -585,7 +585,7 @@ namespace ACE.Database.Models.Shard
 
                 entity.Property(e => e.Display)
                     .HasColumnName("display")
-                    .HasColumnType("int(10)");
+                    .HasColumnType("bit(1)");
 
                 entity.Property(e => e.EmoteId)
                     .HasColumnName("emote_Id")
@@ -1250,6 +1250,10 @@ namespace ACE.Database.Models.Shard
                     .IsRequired()
                     .HasColumnName("name")
                     .HasColumnType("varchar(255)");
+
+                entity.Property(e => e.SpellbookFilters)
+                    .HasColumnName("spellbook_Filters")
+                    .HasDefaultValueSql("'16383'");
 
                 entity.Property(e => e.TotalLogins)
                     .HasColumnName("total_Logins")

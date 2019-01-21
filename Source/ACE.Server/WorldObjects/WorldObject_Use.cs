@@ -1,7 +1,6 @@
-using System.Numerics;
-
+using ACE.Common;
 using ACE.Entity.Enum;
-using ACE.Server.Entity;
+using ACE.Entity.Enum.Properties;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 
@@ -9,20 +8,50 @@ namespace ACE.Server.WorldObjects
 {
     partial class WorldObject
     {
+        private double? useTimestamp;
+        protected double? UseTimestamp
+        {
+            get { return useTimestamp; }
+            set { useTimestamp = Time.GetUnixTime(); }
+        }
+
+        protected double? ResetInterval
+        {
+            get => GetProperty(PropertyFloat.ResetInterval);
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.ResetInterval); else SetProperty(PropertyFloat.ResetInterval, value.Value); }
+        }
+
+        protected bool DefaultLocked { get; set; }
+
+        protected bool DefaultOpen { get; set; }
+
+
         /// <summary>
         /// Used to determine how close you need to be to use an item.
         /// </summary>
         public bool IsWithinUseRadiusOf(WorldObject wo)
         {
-            var originDist = Vector3.Distance(Location.ToGlobal(), wo.Location.ToGlobal());
+            /*var matchIndoor = Location.Indoors == wo.Location.Indoors;
+            var globalPos = matchIndoor ? Location.ToGlobal() : Location.Pos;
+            var targetGlobalPos = matchIndoor ? wo.Location.ToGlobal() : wo.Location.Pos;
+
+            var originDist = Vector3.Distance(globalPos, targetGlobalPos);
             var radSum = PhysicsObj.GetRadius() + wo.PhysicsObj.GetRadius();
-            var radDist = originDist - radSum;
+            var radDist = originDist - radSum;*/
             var useRadius = wo.UseRadius ?? 0.6f;
+
+            var cylDist = GetCylinderDistance(wo);
 
             // if (this is Player player)
             //    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"OriginDist: {originDist}, RadDist: {radDist}, MyRadius: {PhysicsObj.GetRadius()}, TargetRadius: {wo.PhysicsObj.GetRadius()}, MyUseRadius: {UseRadius ?? 0}, TargetUseRadius: {wo.UseRadius ?? 0}", ChatMessageType.System));
 
-            return radDist <= useRadius;
+            return cylDist <= useRadius;
+        }
+
+        public float GetCylinderDistance(WorldObject wo)
+        {
+            return (float)Physics.Common.Position.CylinderDistance(PhysicsObj.GetRadius(), PhysicsObj.GetHeight(), PhysicsObj.Position,
+                wo.PhysicsObj.GetRadius(), wo.PhysicsObj.GetHeight(), wo.PhysicsObj.Position);
         }
 
         /// <summary>

@@ -35,6 +35,7 @@ namespace ACE.Server
 
         public static void Main(string[] args)
         {
+            AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
             AppDomain.CurrentDomain.ProcessExit += new EventHandler(OnProcessExit);
 
             // Init our text encoding options. This will allow us to use more than standard ANSI text, which the client also supports.
@@ -113,24 +114,17 @@ namespace ACE.Server
             log.Info("Initializing WorldManager...");
             WorldManager.Initialize();
 
-            if (ConfigManager.Config.Server.LandblockPreloading)
-            {
-                log.Info("Preloading Landblocks...");
-                LandblockManager.PreloadConfigLandblocks();
-            }
-            else
-            {
-                log.Info("Preloading Landblocks Disabled...");
-                log.Warn("Events may not function correctly as Preloading of Landblocks has disabled.");
-            }
-
-
             log.Info("Initializing EventManager...");
             EventManager.Initialize();
 
             // This should be last
             log.Info("Initializing CommandManager...");
             CommandManager.Initialize();
+        }
+
+        private static void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
+        {
+            log.Error(e.ExceptionObject);
         }
 
         private static void OnProcessExit(object sender, EventArgs e)

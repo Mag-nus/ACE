@@ -169,8 +169,19 @@ namespace ACE.Server.WorldObjects
                         TryCreateInInventoryWithNetworking(wo);
 
                     foreach (var gen in genlist)
-                        TryCreateInInventoryWithNetworking(gen);
+                    {
+                        var service = gen.GetProperty(PropertyBool.VendorService) ?? false;
 
+                        if (!service)
+                        {
+                            TryCreateInInventoryWithNetworking(gen);
+                        }
+                        else
+                        {
+                            var spell = new Spell(gen.SpellDID ?? 0);
+                            TryCastSpell(spell, this, null, false, false);
+                        }
+                    }
                     Session.Network.EnqueueSend(new GameMessageSound(Guid, Sound.PickUpItem));
                 }
                 else // not enough cash.
@@ -178,7 +189,6 @@ namespace ACE.Server.WorldObjects
                     valid = false;
                 }
             }
-
             vendor.BuyItems_FinalTransaction(this, uqlist, valid);
         }
 
@@ -252,7 +262,7 @@ namespace ACE.Server.WorldObjects
                     var itemName = (item.StackSize ?? 1) > 1 ? item.GetPluralName() : item.Name;
                     Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, $"The {itemName} cannot be sold"));     // TODO: find retail messages
                 }
-                Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session));
+                Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, Guid.Full));
             }
 
             if (sellList.Count > 0)

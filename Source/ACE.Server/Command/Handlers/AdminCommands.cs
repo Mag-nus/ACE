@@ -1084,13 +1084,13 @@ namespace ACE.Server.Command.Handlers
 
                     if (!string.IsNullOrWhiteSpace(lockCode))
                     {
-                        res = @lock.Unlock(lockCode);
+                        res = @lock.Unlock(session.Player.Guid.Full, lockCode);
                         ChatPacket.SendServerMessage(session, $"Crack {wo.WeenieType} via {lockCode} result: {res}.{opening}", ChatMessageType.Broadcast);
                     }
                     else if (resistLockpick.HasValue && resistLockpick > 0)
                     {
                         var difficulty = 0;
-                        res = @lock.Unlock((uint)(resistLockpick * 2), ref difficulty);
+                        res = @lock.Unlock(session.Player.Guid.Full, (uint)(resistLockpick * 2), ref difficulty);
                         ChatPacket.SendServerMessage(session, $"Crack {wo.WeenieType} with skill {resistLockpick}*2 result: {res}.{opening}", ChatMessageType.Broadcast);
                     }
                     else
@@ -1426,7 +1426,8 @@ namespace ACE.Server.Command.Handlers
                     worldObject.PaletteTemplate = wearable.Palette;
                 if (wearable.Shade > 0)
                     worldObject.Shade = wearable.Shade;
-                player.TryEquipObjectWithNetworking(worldObject, worldObject.GetProperty(PropertyInt.ValidLocations) ?? 0);
+
+                player.TryEquipObjectWithNetworking(worldObject, worldObject.ValidLocations ?? 0);
             }
 
             var containables = weenie.WeeniePropertiesCreateList.Where(x => x.DestinationType == (int)DestinationType.Contain || x.DestinationType == (int)DestinationType.Shop

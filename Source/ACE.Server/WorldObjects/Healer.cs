@@ -53,17 +53,16 @@ namespace ACE.Server.WorldObjects
             if (!healer.Equals(target))
             {
                 // perform moveto
-                var moveToChain = new ActionChain();
-                moveToChain.AddChain(healer.CreateMoveToChain(target, out var thisMoveToChainNumber));
-                moveToChain.AddAction(healer, () => DoHealMotion(healer, target));
-                moveToChain.EnqueueChain();
+                healer.CreateMoveToChain(target, out var thisMoveToChainNumber, (success) => DoHealMotion(healer, target, success));
             }
             else
-                DoHealMotion(healer, target);
+                DoHealMotion(healer, target, true);
         }
 
-        public void DoHealMotion(Player healer, Player target)
+        public void DoHealMotion(Player healer, Player target, bool success)
         {
+            if (!success) return;
+
             var motionCommand = healer.Equals(target) ? MotionCommand.SkillHealSelf : MotionCommand.SkillHealOther;
 
             var motion = new Motion(healer, motionCommand);
@@ -106,6 +105,9 @@ namespace ACE.Server.WorldObjects
             healer.UpdateVitalDelta(healer.Stamina, (int)(-staminaCost));
             target.UpdateVitalDelta(target.Health, healAmount);
             target.DamageHistory.OnHeal(healAmount);
+
+            if (target.Fellowship != null)
+                target.Fellowship.OnVitalUpdate(target);
 
             var healingSkill = healer.GetCreatureSkill(Skill.Healing);
             Proficiency.OnSuccessUse(healer, healingSkill, (uint)difficulty);
