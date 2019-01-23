@@ -32,7 +32,7 @@ using Position = ACE.Entity.Position;
 
 namespace ACE.Server.Managers
 {
-    public static class WorldManager
+    public class WorldManager
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
@@ -64,7 +64,8 @@ namespace ACE.Server.Managers
         /// Handles ClientMessages in InboundMessageManager
         /// </summary>
         public static readonly ActionQueue InboundClientMessageQueue = new ActionQueue();
-        private static readonly ActionQueue playerEnterWorldQueue = new ActionQueue();
+
+        private static readonly ActionQueue actionQueue = new ActionQueue();
         public static readonly DelayManager DelayManager = new DelayManager(); // TODO get rid of this. Each WO should have its own delayManager
 
         static WorldManager()
@@ -289,7 +290,7 @@ namespace ACE.Server.Managers
             {
                 log.Debug($"GetPossessedBiotasInParallel for {character.Name} took {(DateTime.UtcNow - start).TotalMilliseconds:N0} ms");
 
-                playerEnterWorldQueue.EnqueueAction(new ActionEventDelegate(() => DoPlayerEnterWorld(session, character, offlinePlayer.Biota, biotas)));
+                actionQueue.EnqueueAction(new ActionEventDelegate(() => DoPlayerEnterWorld(session, character, offlinePlayer.Biota, biotas)));
             });
         }
 
@@ -335,6 +336,11 @@ namespace ACE.Server.Managers
             session.Network.EnqueueSend(new GameMessageSystemChat(motdString, ChatMessageType.Broadcast));
         }
 
+        public static void EnqueueAction(IAction action)
+        {
+            actionQueue.EnqueueAction(action);
+        }
+
         private static readonly RateLimiter updateGameWorldRateLimiter = new RateLimiter(60, TimeSpan.FromSeconds(1));
 
         /// <summary>
@@ -354,7 +360,7 @@ namespace ACE.Server.Managers
             ulong tickCount = 0;
             var playerTickRM = new RateMonitor();
             var inboundClientMessageQueueRM = new RateMonitor();
-            var playerEnterWorldQueueRM = new RateMonitor();
+            var actionQueueRM = new RateMonitor();
             var delayManagerRM = new RateMonitor();
             var updateGameWorldRM = new RateMonitor();
             var doSessionWorkRM = new RateMonitor();
@@ -405,12 +411,13 @@ namespace ACE.Server.Managers
                 if (last > .5) log.Warn("InboundClientMessageQueue.RunActions(): ".PadRight(40) + inboundClientMessageQueueRM);
                 if ((tickCount % 100000) == 0) log.Info("InboundClientMessageQueue.RunActions(): ".PadRight(40) + inboundClientMessageQueueRM);
 
-                playerEnterWorldQueueRM.RegisterEventStart();
-                //log.Debug("playerEnterWorldQueue.RunActions");
-                playerEnterWorldQueue.RunActions();
-                last = playerEnterWorldQueueRM.RegisterEventEnd();
-                if (last > .5) log.Warn("playerEnterWorldQueue.RunActions(): ".PadRight(40) + playerEnterWorldQueueRM);
-                if ((tickCount % 100000) == 0) log.Info("playerEnterWorldQueue.RunActions(): ".PadRight(40) + playerEnterWorldQueueRM);
+                actionQueueRM.RegisterEventStart();
+                //log.Debug("actionQueue.RunActions");
+                // This will consist of PlayerEnterWorld actions, as well as other game world actions that require thread safety
+                actionQueue.RunActions();
+                last = actionQueueRM.RegisterEventEnd();
+                if (last > .5) log.Warn("actionQueue.RunActions(): ".PadRight(40) + actionQueueRM);
+                if ((tickCount % 100000) == 0) log.Info("actionQueue.RunActions(): ".PadRight(40) + actionQueueRM);
 
                 delayManagerRM.RegisterEventStart();
                 //log.Debug("DelayManager.RunActions");
@@ -629,10 +636,11 @@ namespace ACE.Server.Managers
 
                 dropSessionRM.RegisterEventStart();
                 // Removes sessions in the NetworkTimeout state, including sessions that have reached a timeout limit.
-                var deadSessions = sessions.FindAll(s => s.State == SessionState.NetworkTimeout);
-
-                foreach (var session in deadSessions)
-                    session.DropSession(string.IsNullOrEmpty(session.BootSessionReason) ? "Network Timeout" : session.BootSessionReason);
+                for (int i = sessions.Count - 1; i >= 0; i--)
+                {
+                    if (sessions[i].State == SessionState.NetworkTimeout)
+                        sessions[i].DropSession(string.IsNullOrEmpty(sessions[i].BootSessionReason) ? "Network Timeout" : sessions[i].BootSessionReason);
+                }
                 last = dropSessionRM.RegisterEventEnd();
                 if (last > .5) log.Warn("DropSession(): ".PadRight(40) + dropSessionRM);
                 if ((sessionTickCount % 100000) == 0) log.Info("DropSession(): ".PadRight(40) + dropSessionRM);
