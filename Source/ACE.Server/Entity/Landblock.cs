@@ -107,8 +107,10 @@ namespace ACE.Server.Entity
         public List<ModelMesh> Scenery { get; private set; }
 
 
-        public Landblock(LandblockId id)
+        public Landblock(LandblockId id, bool sync = false)
         {
+            //Console.WriteLine($"Loading landblock {(id.Raw | 0xFFFF):X8}");
+
             Id = id;
 
             CellLandblock = DatManager.CellDat.ReadFromDat<CellLandblock>(Id.Raw >> 16 | 0xFFFF);
@@ -116,18 +118,30 @@ namespace ACE.Server.Entity
 
             lastActiveTime = DateTime.UtcNow;
 
-            Task.Run(() =>
+            if (sync)
             {
-                _landblock = LScape.get_landblock(Id.Raw);
-
-                CreateWorldObjects();
-
-                SpawnDynamicShardObjects();
-
-                SpawnEncounters();
-            });
+                LoadLandblock(sync);
+            }
+            else
+            {
+                Task.Run(() => LoadLandblock(sync));
+            }
 
             //LoadMeshes(objects);
+        }
+
+        private void LoadLandblock(bool sync)
+        {
+            _landblock = LScape.get_landblock(Id.Raw);
+
+            if (sync)
+                CreateWorldObjects();
+            else
+                actionQueue.EnqueueAction(new ActionEventDelegate(CreateWorldObjects));
+
+            SpawnDynamicShardObjects();
+
+            SpawnEncounters();
         }
 
         /// <summary>
@@ -143,28 +157,25 @@ namespace ACE.Server.Entity
             // for mansion linking
             var houses = new List<House>();
 
-            actionQueue.EnqueueAction(new ActionEventDelegate(() =>
+            foreach (var fo in factoryObjects)
             {
-                foreach (var fo in factoryObjects)
+                WorldObject parent = null;
+                if (fo.WeenieType == WeenieType.House && fo.HouseType == HouseType.Mansion)
                 {
-                    WorldObject parent = null;
-                    if (fo.WeenieType == ACE.Entity.Enum.WeenieType.House && fo.HouseType == ACE.Entity.Enum.HouseType.Mansion)
+                    var house = fo as House;
+                    houses.Add(house);
+                    house.LinkedHouses.Add(houses[0]);
+
+                    if (houses.Count > 1)
                     {
-                        var house = fo as House;
-                        houses.Add(house);
-                        house.LinkedHouses.Add(houses[0]);
-
-                        if (houses.Count > 1)
-                        {
-                            houses[0].LinkedHouses.Add(house);
-                            parent = houses[0];
-                        }
+                        houses[0].LinkedHouses.Add(house);
+                        parent = houses[0];
                     }
-
-                    AddWorldObject(fo);
-                    fo.ActivateLinks(objects, shardObjects, parent);
                 }
-            }));
+
+                AddWorldObject(fo);
+                fo.ActivateLinks(objects, shardObjects, parent);
+            }
         }
 
         /// <summary>
@@ -312,7 +323,7 @@ namespace ACE.Server.Entity
                 var first = sortedWorldObjectsByNextHeartBeat.First.Value;
 
                 // If they wanted to run before or at now
-                if (first.NextHeartBeatTime < currentUnixTime) // We don't check <= incase min.CachedHeartbeatInterval is 0 (infinite loop)
+                if (first.NextHeartBeatTime <= currentUnixTime)
                 {
                     sortedWorldObjectsByNextHeartBeat.RemoveFirst();
                     first.HeartBeat(currentUnixTime);
@@ -395,6 +406,8 @@ namespace ACE.Server.Entity
         private void InsertWorldObjectIntoSortedHeartBeatList(WorldObject worldObject)
         {
             // If you want to add checks to exclude certain object types from heartbeating, you would do it here
+            if (worldObject.NextHeartBeatTime == double.MaxValue)
+                return;
 
             if (sortedWorldObjectsByNextHeartBeat.Count == 0)
             {
@@ -515,7 +528,8 @@ namespace ACE.Server.Entity
             wo.CurrentLandblock = null;
 
             // Weenies can come with a default of 0 or -1. If they still have that value, we want to retain it.
-            if (wo.TimeToRot.HasValue && wo.TimeToRot != 0 && wo.TimeToRot != -1)
+            // We also want to make sure fromPickup is true so that we're not clearing out TimeToRot on server shutdown (unloads all landblocks and removed all objects).
+            if (fromPickup && wo.TimeToRot.HasValue && wo.TimeToRot != 0 && wo.TimeToRot != -1)
                 wo.TimeToRot = null;
 
             if (!adjacencyMove)
@@ -679,7 +693,7 @@ namespace ACE.Server.Entity
 
             foreach (var wo in worldObjects.Values)
             {
-                if (wo.IsStaticThatShouldPersistToShard() || wo.IsDecayableThatShouldPersistToShard())
+                if (wo.IsStaticThatShouldPersistToShard() || wo.IsDynamicThatShouldPersistToShard())
                     AddWorldObjectToBiotasSaveCollection(wo, biotas);
             }
 

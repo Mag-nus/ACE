@@ -659,7 +659,7 @@ namespace ACE.Server.Network
 
         private void SendPacketRaw(ServerPacket packet)
         {
-            byte[] buffer = ArrayPool<byte>.Shared.Rent(PacketHeader.HeaderSize + ServerPacket.MaxPacketSize);
+            byte[] buffer = ArrayPool<byte>.Shared.Rent((int)(PacketHeader.HeaderSize + (packet.Data?.Length ?? 0) + (packet.Fragments.Count * PacketFragment.MaxFragementSize)));
 
             try
             {

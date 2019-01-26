@@ -249,7 +249,8 @@ namespace ACE.Server.WorldObjects
 
             AddGeneratorProfiles();
 
-            if (IsGenerator && RegenerationInterval > 0)
+            // mosswartfood is both a creature and a generator with a HeartbeatInterval of 5 and a RegenerationInterval of 0
+            if (!(this is Creature) && IsGenerator)
                 HeartbeatInterval = RegenerationInterval;
 
             BaseDescriptionFlags = ObjectDescriptionFlag.Attackable;
@@ -717,11 +718,6 @@ namespace ACE.Server.WorldObjects
             return adjusted;
         }
 
-        public virtual void Activate(WorldObject activator)
-        {
-            // empty base, override in child objects
-        }
-
         public virtual void Open(WorldObject opener)
         {
             // empty base, override in child objects
@@ -947,5 +943,7 @@ namespace ACE.Server.WorldObjects
         public bool IsLinkSpot => WeenieType == WeenieType.Generic && WeenieClassName.Equals("portaldestination");
 
         public static readonly float LocalBroadcastRange = 96.0f;
+
+        public SetPosition ScatterPos;
     }
 }

@@ -121,6 +121,10 @@ namespace ACE.Server.Entity
                 if (delay == 0)
                     delay = _generator.GeneratorProfiles[0].Biota.Delay ?? 0;   // only for link generators?
 
+                // 11556 - Cultist Altar
+                if (_generator.RegenerationInterval == 0)
+                    delay = 0;
+
                 if (_generator is Chest) delay = 0.0f;
 
                 //Console.WriteLine($"QueueGenerator({_generator.Name}): RegenerationInterval: {_generator.RegenerationInterval} - Delay: {delay}");
@@ -239,6 +243,13 @@ namespace ACE.Server.Entity
                     continue;
                 }
 
+                // if specific and outdoors, verify walkable slope
+                if ((RegenLocationType & RegenLocationType.Specific) != 0 && !obj.Location.Indoors && !obj.Location.IsWalkable())
+                {
+                    //Console.WriteLine($"*** WARNING *** {_generator.Name} spawned {obj.Name} @ {obj.Location.ToLOCString()} on unwalkable slope");
+                    continue;
+                }
+
                 obj.EnterWorld();
             }
 
@@ -263,22 +274,16 @@ namespace ACE.Server.Entity
 
             else if ((regenLocationType & RegenLocationType.Scatter) != 0)
             {
-                // spawns at random position within radius of generator
                 float genRadius = (float)(_generator.GetProperty(PropertyFloat.GeneratorRadius) ?? 0f);
-                var random_x = ThreadSafeRandom.Next(-genRadius, genRadius);
-                var random_y = ThreadSafeRandom.Next(-genRadius, genRadius);
                 obj.Location = new ACE.Entity.Position(_generator.Location);
-                var newPos = obj.Location.Pos + new Vector3(random_x, random_y, 0.0f);
-                if (!_generator.Location.Indoors)
-                {
-                    // Based on GDL scatter
-                    newPos.X = Math.Clamp(newPos.X, 0.5f, 191.5f);
-                    newPos.Y = Math.Clamp(newPos.Y, 0.5f, 191.5f);
-                    obj.Location.SetPosition(newPos);
-                    newPos.Z = LScape.get_landblock(obj.Location.Cell).GetZ(newPos);
-                }
-                obj.Location.SetPosition(newPos);
-                obj.Location.LandblockId = new LandblockId(obj.Location.GetCell());
+
+                // we are going to delay this scatter logic until the physics engine,
+                // where the remnants of this function are in the client (SetScatterPositionInternal)
+
+                // this is due to each randomized position being required to go through the full InitialPlacement process, to verify success
+                // if InitialPlacement fails, then we retry up to maxTries
+
+                obj.ScatterPos = new SetPosition(new Physics.Common.Position(obj.Location), SetPositionFlags.RandomScatter, genRadius);
             }
 
             else if ((regenLocationType & RegenLocationType.Contain) != 0)
