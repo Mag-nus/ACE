@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 
 using log4net;
 
+using ACE.Database.Entity;
 using ACE.Database.Models.World;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
@@ -483,8 +484,26 @@ namespace ACE.Database
         }
 
 
-        public List<HousePortal> GetHousePortals(uint houseId)
+        public List<HouseListResults> GetHousesAll()
         {
+            using (var context = new WorldDbContext())
+            {
+                var query = from weenie in context.Weenie
+                            join winst in context.LandblockInstance on weenie.ClassId equals winst.WeenieClassId
+                            where weenie.Type == (int)WeenieType.SlumLord
+                            select new HouseListResults(weenie, winst);
+
+                return query.ToList();
+            }
+        }
+
+        private readonly ConcurrentDictionary<uint, List<HousePortal>> cachedHousePortals = new ConcurrentDictionary<uint, List<HousePortal>>();
+
+        public List<HousePortal> GetCachedHousePortals(uint houseId)
+        {
+            if (cachedHousePortals.TryGetValue(houseId, out var value))
+                return value;
+
             using (var context = new WorldDbContext())
             {
                 var results = context.HousePortal
@@ -492,18 +511,44 @@ namespace ACE.Database
                     .Where(p => p.HouseId == houseId)
                     .ToList();
 
+                cachedHousePortals[houseId] = results;
+
                 return results;
             }
         }
 
-        public List<HousePortal> GetHousePortalsByLandblock(uint landblockId)
+        /// <summary>
+        /// This takes under ? second to complete.
+        /// </summary>
+        public void CacheAllHousePortals()
         {
+            using (var context = new WorldDbContext())
+            {
+                var results = context.HousePortal
+                    .AsNoTracking()
+                    .GroupBy(r => r.HouseId)
+                    .ToList();
+
+                foreach (var result in results)
+                    cachedHousePortals[result.Key] = result.ToList();
+            }
+        }
+
+        private readonly ConcurrentDictionary<uint, List<HousePortal>> cachedHousePortalsByLandblock = new ConcurrentDictionary<uint, List<HousePortal>>();
+
+        public List<HousePortal> GetCachedHousePortalsByLandblock(uint landblockId)
+        {
+            if (cachedHousePortalsByLandblock.TryGetValue(landblockId, out var value))
+                return value;
+
             using (var context = new WorldDbContext())
             {
                 var results = context.HousePortal
                     .AsNoTracking()
                     .Where(p => landblockId == p.ObjCellId >> 16)
                     .ToList();
+
+                cachedHousePortalsByLandblock[landblockId] = results;
 
                 return results;
             }

@@ -52,6 +52,12 @@ namespace ACE.Server.Entity
         /// </summary>
         public bool Permaload = false;
 
+        /// <summary>
+        /// This must be true before a player enters a landblock.
+        /// This prevents a player from possibly pasing through a door that hasn't spawned in yet, and other scenarios.
+        /// </summary>
+        public bool CreateWorldObjectsCompleted { get; private set; }
+
         private DateTime lastActiveTime;
 
         private readonly Dictionary<ObjectGuid, WorldObject> worldObjects = new Dictionary<ObjectGuid, WorldObject>();
@@ -61,7 +67,8 @@ namespace ACE.Server.Entity
         // Cache used for Tick efficiency
         private readonly List<Player> players = new List<Player>();
         private readonly LinkedList<Creature> sortedCreaturesByNextTick = new LinkedList<Creature>();
-        private readonly LinkedList<WorldObject> sortedWorldObjectsByNextHeartBeat = new LinkedList<WorldObject>();
+        private readonly LinkedList<WorldObject> sortedWorldObjectsByNextHeartbeat = new LinkedList<WorldObject>();
+        private readonly LinkedList<WorldObject> sortedGeneratorsByNextGeneratorHeartbeat = new LinkedList<WorldObject>();
 
         public List<Landblock> Adjacents = new List<Landblock>();
 
@@ -107,7 +114,7 @@ namespace ACE.Server.Entity
         public List<ModelMesh> Scenery { get; private set; }
 
 
-        public Landblock(LandblockId id, bool sync = false)
+        public Landblock(LandblockId id)
         {
             //Console.WriteLine($"Loading landblock {(id.Raw | 0xFFFF):X8}");
 
@@ -118,30 +125,18 @@ namespace ACE.Server.Entity
 
             lastActiveTime = DateTime.UtcNow;
 
-            if (sync)
+            Task.Run(() =>
             {
-                LoadLandblock(sync);
-            }
-            else
-            {
-                Task.Run(() => LoadLandblock(sync));
-            }
+                _landblock = LScape.get_landblock(Id.Raw);
+
+                CreateWorldObjects();
+
+                SpawnDynamicShardObjects();
+
+                SpawnEncounters();
+            });
 
             //LoadMeshes(objects);
-        }
-
-        private void LoadLandblock(bool sync)
-        {
-            _landblock = LScape.get_landblock(Id.Raw);
-
-            if (sync)
-                CreateWorldObjects();
-            else
-                actionQueue.EnqueueAction(new ActionEventDelegate(CreateWorldObjects));
-
-            SpawnDynamicShardObjects();
-
-            SpawnEncounters();
         }
 
         /// <summary>
@@ -154,28 +149,43 @@ namespace ACE.Server.Entity
             var shardObjects = DatabaseManager.Shard.GetStaticObjectsByLandblock(Id.Landblock);
             var factoryObjects = WorldObjectFactory.CreateNewWorldObjects(objects, shardObjects);
 
-            // for mansion linking
-            var houses = new List<House>();
-
-            foreach (var fo in factoryObjects)
+            actionQueue.EnqueueAction(new ActionEventDelegate(() =>
             {
-                WorldObject parent = null;
-                if (fo.WeenieType == WeenieType.House && fo.HouseType == HouseType.Mansion)
-                {
-                    var house = fo as House;
-                    houses.Add(house);
-                    house.LinkedHouses.Add(houses[0]);
+                // for mansion linking
+                var houses = new List<House>();
 
-                    if (houses.Count > 1)
+                foreach (var fo in factoryObjects)
+                {
+                    WorldObject parent = null;
+                    if (fo.WeenieType == WeenieType.House)
                     {
-                        houses[0].LinkedHouses.Add(house);
-                        parent = houses[0];
+                        var house = fo as House;
+                        Houses.Add(house);
+
+                        if (fo.HouseType == HouseType.Mansion)
+                        {
+                            houses.Add(house);
+                            house.LinkedHouses.Add(houses[0]);
+
+                            if (houses.Count > 1)
+                            {
+                                houses[0].LinkedHouses.Add(house);
+                                parent = houses[0];
+                            }
+                        }
                     }
+
+                    AddWorldObject(fo);
+                    fo.ActivateLinks(objects, shardObjects, parent);
+
+                    if (fo.PhysicsObj != null)
+                        fo.PhysicsObj.Order = 0;
                 }
 
-                AddWorldObject(fo);
-                fo.ActivateLinks(objects, shardObjects, parent);
-            }
+                CreateWorldObjectsCompleted = true;
+
+                _landblock.SortObjects();
+            }));
         }
 
         /// <summary>
@@ -301,7 +311,7 @@ namespace ACE.Server.Entity
             foreach (var player in players)
                 player.Player_Tick(currentUnixTime);
 
-            while (sortedCreaturesByNextTick.Count > 0)
+            while (sortedCreaturesByNextTick.Count > 0) // Monster_Tick()
             {
                 var first = sortedCreaturesByNextTick.First.Value;
 
@@ -318,16 +328,33 @@ namespace ACE.Server.Entity
                 }
             }
 
-            while (sortedWorldObjectsByNextHeartBeat.Count > 0)
+            while (sortedWorldObjectsByNextHeartbeat.Count > 0) // Heartbeat()
             {
-                var first = sortedWorldObjectsByNextHeartBeat.First.Value;
+                var first = sortedWorldObjectsByNextHeartbeat.First.Value;
 
                 // If they wanted to run before or at now
-                if (first.NextHeartBeatTime <= currentUnixTime)
+                if (first.NextHeartbeatTime <= currentUnixTime)
                 {
-                    sortedWorldObjectsByNextHeartBeat.RemoveFirst();
-                    first.HeartBeat(currentUnixTime);
-                    InsertWorldObjectIntoSortedHeartBeatList(first); // WorldObjects can have heartbeats at different intervals
+                    sortedWorldObjectsByNextHeartbeat.RemoveFirst();
+                    first.Heartbeat(currentUnixTime);
+                    InsertWorldObjectIntoSortedHeartbeatList(first); // WorldObjects can have heartbeats at different intervals
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            while (sortedGeneratorsByNextGeneratorHeartbeat.Count > 0) // GeneratorHeartbeat()
+            {
+                var first = sortedGeneratorsByNextGeneratorHeartbeat.First.Value;
+
+                // If they wanted to run before or at now
+                if (first.NextGeneratorHeartbeatTime <= currentUnixTime)
+                {
+                    sortedGeneratorsByNextGeneratorHeartbeat.RemoveFirst();
+                    first.GeneratorHeartbeat(currentUnixTime);
+                    InsertWorldObjectIntoSortedGeneratorHeartbeatList(first); // Generators can have heartbeats at different intervals
                 }
                 else
                 {
@@ -378,7 +405,8 @@ namespace ACE.Server.Entity
                     else if (kvp.Value is Creature creature)
                         sortedCreaturesByNextTick.AddLast(creature);
 
-                    InsertWorldObjectIntoSortedHeartBeatList(kvp.Value);
+                    InsertWorldObjectIntoSortedHeartbeatList(kvp.Value);
+                    InsertWorldObjectIntoSortedGeneratorHeartbeatList(kvp.Value);
                 }
 
                 pendingAdditions.Clear();
@@ -395,7 +423,8 @@ namespace ACE.Server.Entity
                         else if (wo is Creature creature)
                             sortedCreaturesByNextTick.Remove(creature);
 
-                        sortedWorldObjectsByNextHeartBeat.Remove(wo);
+                        sortedWorldObjectsByNextHeartbeat.Remove(wo);
+                        sortedGeneratorsByNextGeneratorHeartbeat.Remove(wo);
                     }
                 }
 
@@ -403,38 +432,72 @@ namespace ACE.Server.Entity
             }
         }
 
-        private void InsertWorldObjectIntoSortedHeartBeatList(WorldObject worldObject)
+        private void InsertWorldObjectIntoSortedHeartbeatList(WorldObject worldObject)
         {
             // If you want to add checks to exclude certain object types from heartbeating, you would do it here
-            if (worldObject.NextHeartBeatTime == double.MaxValue)
+            if (worldObject.NextHeartbeatTime == double.MaxValue)
                 return;
 
-            if (sortedWorldObjectsByNextHeartBeat.Count == 0)
+            if (sortedWorldObjectsByNextHeartbeat.Count == 0)
             {
-                sortedWorldObjectsByNextHeartBeat.AddFirst(worldObject);
+                sortedWorldObjectsByNextHeartbeat.AddFirst(worldObject);
                 return;
             }
 
-            if (sortedWorldObjectsByNextHeartBeat.Last.Value.NextHeartBeatTime <= worldObject.NextHeartBeatTime)
+            if (sortedWorldObjectsByNextHeartbeat.Last.Value.NextHeartbeatTime <= worldObject.NextHeartbeatTime)
             {
-                sortedWorldObjectsByNextHeartBeat.AddLast(worldObject);
+                sortedWorldObjectsByNextHeartbeat.AddLast(worldObject);
                 return;
             }
 
-            var currentNode = sortedWorldObjectsByNextHeartBeat.First;
+            var currentNode = sortedWorldObjectsByNextHeartbeat.First;
 
             while (currentNode != null)
             {
-                if (worldObject.NextHeartBeatTime <= currentNode.Value.NextHeartBeatTime)
+                if (worldObject.NextHeartbeatTime <= currentNode.Value.NextHeartbeatTime)
                 {
-                    sortedWorldObjectsByNextHeartBeat.AddBefore(currentNode, worldObject);
+                    sortedWorldObjectsByNextHeartbeat.AddBefore(currentNode, worldObject);
                     return;
                 }
 
                 currentNode = currentNode.Next;
             }
 
-            sortedWorldObjectsByNextHeartBeat.AddLast(worldObject); // This line really shouldn't be hit
+            sortedWorldObjectsByNextHeartbeat.AddLast(worldObject); // This line really shouldn't be hit
+        }
+
+        private void InsertWorldObjectIntoSortedGeneratorHeartbeatList(WorldObject worldObject)
+        {
+            // If you want to add checks to exclude certain object types from heartbeating, you would do it here
+            if (worldObject.NextGeneratorHeartbeatTime == double.MaxValue)
+                return;
+
+            if (sortedGeneratorsByNextGeneratorHeartbeat.Count == 0)
+            {
+                sortedGeneratorsByNextGeneratorHeartbeat.AddFirst(worldObject);
+                return;
+            }
+
+            if (sortedGeneratorsByNextGeneratorHeartbeat.Last.Value.NextGeneratorHeartbeatTime <= worldObject.NextGeneratorHeartbeatTime)
+            {
+                sortedGeneratorsByNextGeneratorHeartbeat.AddLast(worldObject);
+                return;
+            }
+
+            var currentNode = sortedGeneratorsByNextGeneratorHeartbeat.First;
+
+            while (currentNode != null)
+            {
+                if (worldObject.NextGeneratorHeartbeatTime <= currentNode.Value.NextGeneratorHeartbeatTime)
+                {
+                    sortedGeneratorsByNextGeneratorHeartbeat.AddBefore(currentNode, worldObject);
+                    return;
+                }
+
+                currentNode = currentNode.Next;
+            }
+
+            sortedGeneratorsByNextGeneratorHeartbeat.AddLast(worldObject); // This line really shouldn't be hit
         }
 
         public void EnqueueAction(IAction action)
@@ -781,10 +844,12 @@ namespace ACE.Server.Entity
                 if (isHouseDungeon != null)
                     return isHouseDungeon.Value;
 
-                isHouseDungeon = IsDungeon ? DatabaseManager.World.GetHousePortalsByLandblock(Id.Landblock).Count > 0 : false;
+                isHouseDungeon = IsDungeon ? DatabaseManager.World.GetCachedHousePortalsByLandblock(Id.Landblock).Count > 0 : false;
 
                 return isHouseDungeon.Value;
             }
         }
+
+        public List<House> Houses = new List<House>();
     }
 }

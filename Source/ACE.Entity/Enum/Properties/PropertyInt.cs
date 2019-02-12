@@ -541,7 +541,11 @@ namespace ACE.Entity.Enum.Properties
         [ServerOnly]
         CurrentLoyaltyAtLastLogoff              = 9008,
         [ServerOnly]
-        CurrentLeadershipAtLastLogoff           = 9009
+        CurrentLeadershipAtLastLogoff           = 9009,
+        [ServerOnly]
+        AllegianceOfficerRank                   = 9010,
+        [ServerOnly]
+        HouseRentTimestamp                      = 9011,
     }
 
     public static class PropertyIntExtensions
@@ -666,6 +670,15 @@ namespace ACE.Entity.Enum.Properties
                 case PropertyInt.GeneratorStartTime:
                 case PropertyInt.GeneratorEndTime:
                     return DateTimeOffset.FromUnixTimeSeconds(value).DateTime.ToUniversalTime().ToString(CultureInfo.InvariantCulture);
+
+                case PropertyInt.ArmorType:
+                    return System.Enum.GetName(typeof(ArmorType), value);
+                case PropertyInt.ParentLocation:
+                    return System.Enum.GetName(typeof(ParentLocation), value);
+                case PropertyInt.PlacementPosition:
+                    return System.Enum.GetName(typeof(Placement), value);
+                case PropertyInt.HouseStatus:
+                    return System.Enum.GetName(typeof(HouseStatus), value);
             }
 
             return null;

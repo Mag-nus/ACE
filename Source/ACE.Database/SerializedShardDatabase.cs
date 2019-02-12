@@ -321,6 +321,17 @@ namespace ACE.Database
             return _wrappedDatabase.GetAllPlayerBiotasInParallel();
         }
 
+        public List<Biota> GetHousesOwned()
+        {
+            return _wrappedDatabase.GetHousesOwned();
+        }
+
+        public uint? GetAllegianceID(uint monarchID)
+        {
+            return _wrappedDatabase.GetAllegianceID(monarchID);
+        }
+
+
 
         // ******************************************************************* OLD CODE BELOW ********************************
         // ******************************************************************* OLD CODE BELOW ********************************

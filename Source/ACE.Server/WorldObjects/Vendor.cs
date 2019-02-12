@@ -30,6 +30,8 @@ namespace ACE.Server.WorldObjects
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public Dictionary<ObjectGuid, WorldObject> DefaultItemsForSale = new Dictionary<ObjectGuid, WorldObject>();
+
+        // unique items purchased from other players
         public Dictionary<ObjectGuid, WorldObject> UniqueItemsForSale = new Dictionary<ObjectGuid, WorldObject>();
 
         public Dictionary<ObjectGuid, WorldObject> AllItemsForSale => DefaultItemsForSale.Concat(UniqueItemsForSale).ToDictionary(i => i.Key, i => i.Value);
@@ -119,15 +121,50 @@ namespace ACE.Server.WorldObjects
             }
         }
 
+        public void AddDefaultItem(WorldObject item)
+        {
+            var existing = GetDefaultItemsByWcid(item.WeenieClassId);
+
+            // add to existing stack?
+            if (existing.Count > 0)
+            {
+                var stackLeft = existing.FirstOrDefault(i => (i.StackSize ?? 1) < (i.MaxStackSize ?? 1));
+                if (stackLeft != null)
+                {
+                    stackLeft.StackSize = (stackLeft.StackSize ?? 1) + 1;
+                    return;
+                }
+            }
+
+            // create new item
+            item.ContainerId = Guid.Full;
+
+            item.CalculateObjDesc();
+
+            DefaultItemsForSale.Add(item.Guid, item);
+        }
+
+        public List<WorldObject> GetDefaultItemsByWcid(uint wcid)
+        {
+            return DefaultItemsForSale.Values.Where(i => i.WeenieClassId == wcid).ToList();
+        }
+
         /// <summary>
         /// Used to convert Weenie based objects / not used for unique items
         /// </summary>
         private List<WorldObject> ItemProfileToWorldObjects(ItemProfile itemprofile)
         {
             List<WorldObject> worldobjects = new List<WorldObject>();
+
             while (itemprofile.Amount > 0)
             {
                 WorldObject wo = WorldObjectFactory.CreateNewWorldObject(itemprofile.WeenieClassId);
+
+                if (itemprofile.Palette.HasValue)
+                    wo.PaletteTemplate = itemprofile.Palette;
+                if (itemprofile.Shade.HasValue)
+                    wo.Shade = itemprofile.Shade;
+
                 // can we stack this ?
                 if (wo.MaxStackSize.HasValue)
                 {
@@ -166,17 +203,9 @@ namespace ACE.Server.WorldObjects
         /// <param name="action">The action performed by the player</param>
         private void ApproachVendor(Player player, VendorType action = VendorType.Undef)
         {
-            // default inventory
-            List<WorldObject> vendorlist = new List<WorldObject>();
+            var vendorList = AllItemsForSale.Values.ToList();
 
-            foreach (KeyValuePair<ObjectGuid, WorldObject> wo in DefaultItemsForSale)
-                vendorlist.Add(wo.Value);
-
-            // unique inventory - items sold by other players
-            foreach (KeyValuePair<ObjectGuid, WorldObject> wo in UniqueItemsForSale)
-                vendorlist.Add(wo.Value);
-
-            player.Session.Network.EnqueueSend(new GameEventApproachVendor(player.Session, this, vendorlist));
+            player.Session.Network.EnqueueSend(new GameEventApproachVendor(player.Session, this, vendorList));
 
             var rotateTime = Rotate(player); // vendor rotates to player
 
@@ -209,6 +238,8 @@ namespace ACE.Server.WorldObjects
                 if (DefaultItemsForSale.ContainsKey(new ObjectGuid(item.ObjectGuid)))
                 {
                     item.WeenieClassId = DefaultItemsForSale[new ObjectGuid(item.ObjectGuid)].WeenieClassId;
+                    item.Palette = DefaultItemsForSale[new ObjectGuid(item.ObjectGuid)].PaletteTemplate;
+                    item.Shade = DefaultItemsForSale[new ObjectGuid(item.ObjectGuid)].Shade;
                     filteredlist.Add(item);
                 }
 

@@ -92,7 +92,7 @@ namespace ACE.Server.WorldObjects
 
             InitializePropertyDictionaries();
             SetEphemeralValues();
-            InitializeHeartBeat();
+            InitializeHeartbeats();
 
             CreationTimestamp = (int)Time.GetUnixTime();
         }
@@ -110,7 +110,7 @@ namespace ACE.Server.WorldObjects
 
             InitializePropertyDictionaries();
             SetEphemeralValues();
-            InitializeHeartBeat();
+            InitializeHeartbeats();
         }
 
         /// <summary>
@@ -248,10 +248,6 @@ namespace ACE.Server.WorldObjects
                 ephemeralPositions[(PositionType)x.PositionType] = new Position(x.ObjCellId, x.OriginX, x.OriginY, x.OriginZ, x.AnglesX, x.AnglesY, x.AnglesZ, x.AnglesW);
 
             AddGeneratorProfiles();
-
-            // mosswartfood is both a creature and a generator with a HeartbeatInterval of 5 and a RegenerationInterval of 0
-            if (!(this is Creature) && IsGenerator)
-                HeartbeatInterval = RegenerationInterval;
 
             BaseDescriptionFlags = ObjectDescriptionFlag.Attackable;
 
@@ -555,7 +551,7 @@ namespace ACE.Server.WorldObjects
             foreach (var item in obj.GetAllPropertyDataId())
                 sb.AppendLine($"PropertyDataId.{Enum.GetName(typeof(PropertyDataId), item.Key)} ({(int)item.Key}) = {item.Value}");
             foreach (var item in obj.GetAllPropertyFloat())
-                sb.AppendLine($"PropertyDouble.{Enum.GetName(typeof(PropertyFloat), item.Key)} ({(int)item.Key}) = {item.Value}");
+                sb.AppendLine($"PropertyFloat.{Enum.GetName(typeof(PropertyFloat), item.Key)} ({(int)item.Key}) = {item.Value}");
             foreach (var item in obj.GetAllPropertyInstanceId())
                 sb.AppendLine($"PropertyInstanceId.{Enum.GetName(typeof(PropertyInstanceId), item.Key)} ({(int)item.Key}) = {item.Value}");
             foreach (var item in obj.GetAllPropertyInt())
@@ -945,5 +941,18 @@ namespace ACE.Server.WorldObjects
         public static readonly float LocalBroadcastRange = 96.0f;
 
         public SetPosition ScatterPos;
+
+        public Skill ConvertToMoASkill(Skill skill)
+        {
+            if (this is Player player)
+            {
+                if (SkillExtensions.RetiredMelee.Contains(skill))
+                    return player.GetHighestMeleeSkill();
+                if (SkillExtensions.RetiredMissile.Contains(skill))
+                    return Skill.MissileWeapons;
+            }
+
+            return skill;
+        }
     }
 }

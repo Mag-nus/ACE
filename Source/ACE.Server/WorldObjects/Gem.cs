@@ -46,7 +46,7 @@ namespace ACE.Server.WorldObjects
                 return baseRequirements;
 
             // are cooldown timers specific to gems, or should they be in base?
-            if (!player.CheckCooldown(this))
+            if (!player.EnchantmentManager.CheckCooldown(CooldownId))
             {
                 // TODO: werror/string not found, find exact message
 
@@ -75,10 +75,10 @@ namespace ACE.Server.WorldObjects
             if (!(activator is Player player))
                 return;
 
-            player.UpdateCooldown(this);
-
             if (UseCreateContractId == null)
             {
+                player.EnchantmentManager.StartCooldown(this);
+
                 if (SpellDID.HasValue)
                 {
                     var spell = new Server.Entity.Spell((uint)SpellDID);
@@ -144,7 +144,7 @@ namespace ACE.Server.WorldObjects
                 //const uint spellCategory = 0x8000; // FIXME: Not sure where we get this from
                 var spellBase = new SpellBase(0, CooldownDuration.Value, 0, -666);
                 // cooldown not being used in network packet?
-                var gem = new Enchantment(player, player.Guid.Full, spellBase, spellBase.Duration, layer, /*CooldownId.Value,*/ EnchantmentMask.Cooldown);
+                var gem = new Enchantment(player, spellBase, layer, /*CooldownId.Value,*/ EnchantmentMask.Cooldown);
                 player.Session.Network.EnqueueSend(new GameEventMagicUpdateEnchantment(player.Session, gem));
 
                 // Ok this was not known to us, so we used the contract - now remove it from inventory.

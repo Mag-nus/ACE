@@ -126,7 +126,6 @@ namespace ACE.Server.WorldObjects
 
             if (item != null)
             {
-                // verify: need test case for invisible items
                 if (item.CurrentLandblock != null && !item.Visibility && item.Guid != lastUsedContainerId)
                     CreateMoveToChain(item, (success) => TryUseItem(item, success));
                 else
@@ -161,43 +160,6 @@ namespace ACE.Server.WorldObjects
             actionChain.AddDelaySeconds(LastUseTime);
             actionChain.AddAction(this, () => SendUseDoneEvent());
             actionChain.EnqueueChain();
-        }
-
-        /// <summary>
-        /// Returns the amount of time until this item's cooldown expires
-        /// </summary>
-        public TimeSpan GetCooldown(WorldObject item)
-        {
-            if (!LastUseTracker.TryGetValue(item.CooldownId ?? 0, out var lastUseTime))
-                return TimeSpan.FromSeconds(0);
-
-            var nextUseTime = lastUseTime + TimeSpan.FromSeconds(item.CooldownDuration ?? 0);
-
-            if (DateTime.UtcNow < nextUseTime)
-                return nextUseTime - DateTime.UtcNow;
-            else
-                return TimeSpan.FromSeconds(0);
-        }
-
-        /// <summary>
-        /// Returns TRUE if this item can be activated at this time
-        /// </summary>
-        public bool CheckCooldown(WorldObject item)
-        {
-            return GetCooldown(item).TotalSeconds == 0.0f;
-        }
-
-        /// <summary>
-        /// Maintains the cooldown timers for an item
-        /// </summary>
-        public void UpdateCooldown(WorldObject item)
-        {
-            if (item.CooldownId == null) return;
-
-            if (!LastUseTracker.ContainsKey(item.CooldownId.Value))
-                LastUseTracker.Add(item.CooldownId.Value, DateTime.UtcNow);
-            else
-                LastUseTracker[item.CooldownId.Value] = DateTime.UtcNow;
         }
 
         /// <summary>

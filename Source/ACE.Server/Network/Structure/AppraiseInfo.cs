@@ -84,7 +84,7 @@ namespace ACE.Server.Network.Structure
             if (wo is Creature creature)
                 BuildCreature(creature);
 
-            if (wo is MeleeWeapon || wo is Missile || wo is MissileLauncher || wo is Ammunition || wo is Caster )
+            if (wo is MeleeWeapon || wo is Missile || wo is MissileLauncher || wo is Ammunition || wo is Caster)
                 BuildWeapon(wo, wielder);
 
             if (wo is Door || wo is Chest)
@@ -104,7 +104,13 @@ namespace ACE.Server.Network.Structure
 
                     if (!PropertiesInt.ContainsKey(PropertyInt.AppraisalLockpickSuccessPercent))
                         PropertiesInt.Add(PropertyInt.AppraisalLockpickSuccessPercent, (int)lockpickSuccessPercent);
-                }
+                }                
+            }
+
+            if (wo is Portal)
+            {
+                if (PropertiesInt.ContainsKey(PropertyInt.EncumbranceVal))
+                    PropertiesInt.Remove(PropertyInt.EncumbranceVal);
             }
 
             BuildFlags();
@@ -118,6 +124,23 @@ namespace ACE.Server.Network.Structure
             PropertiesFloat = wo.GetAllPropertyFloat().Where(x => ClientProperties.PropertiesDouble.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
             PropertiesString = wo.GetAllPropertyString().Where(x => ClientProperties.PropertiesString.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
             PropertiesDID = wo.GetAllPropertyDataId().Where(x => ClientProperties.PropertiesDataId.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
+
+            // handle character options
+            if (wo is Player player)
+            {
+                if (!player.GetCharacterOption(CharacterOption.AllowOthersToSeeYourDateOfBirth))
+                    PropertiesInt.Remove(PropertyInt.CreationTimestamp);
+                if (!player.GetCharacterOption(CharacterOption.AllowOthersToSeeYourAge))
+                    PropertiesInt.Remove(PropertyInt.Age);
+                if (!player.GetCharacterOption(CharacterOption.AllowOthersToSeeYourChessRank))
+                    PropertiesInt.Remove(PropertyInt.ChessRank);
+                if (!player.GetCharacterOption(CharacterOption.AllowOthersToSeeYourFishingSkill))
+                    PropertiesInt.Remove(PropertyInt.FakeFishingSkill);
+                if (!player.GetCharacterOption(CharacterOption.AllowOthersToSeeYourNumberOfDeaths))
+                    PropertiesInt.Remove(PropertyInt.NumDeaths);
+                if (!player.GetCharacterOption(CharacterOption.AllowOthersToSeeYourNumberOfTitles))
+                    PropertiesInt.Remove(PropertyInt.NumCharacterTitles);
+            }
 
             AddPropertyEnchantments(wo, wielder);
         }

@@ -25,7 +25,7 @@ namespace ACE.Database
 
         public bool Exists(bool retryUntilFound)
         {
-            var config = Common.ConfigManager.Config.MySql.World;
+            var config = Common.ConfigManager.Config.MySql.Shard;
 
             for (; ; )
             {
@@ -215,7 +215,7 @@ namespace ACE.Database
         {
             if (BiotaContexts.TryGetValue(biota, out var cachedContext))
             {
-                rwLock.EnterWriteLock();
+                rwLock.EnterReadLock();
                 try
                 {
                     SetBiotaPopulatedCollections(biota);
@@ -234,7 +234,7 @@ namespace ACE.Database
                 }
                 finally
                 {
-                    rwLock.ExitWriteLock();
+                    rwLock.ExitReadLock();
                 }
             }
 
@@ -242,7 +242,7 @@ namespace ACE.Database
 
             BiotaContexts.Add(biota, context);
 
-            rwLock.EnterWriteLock();
+            rwLock.EnterReadLock();
             try
             {
                 SetBiotaPopulatedCollections(biota);
@@ -263,7 +263,7 @@ namespace ACE.Database
             }
             finally
             {
-                rwLock.ExitWriteLock();
+                rwLock.ExitReadLock();
             }
         }
 
@@ -286,7 +286,7 @@ namespace ACE.Database
             {
                 BiotaContexts.Remove(biota);
 
-                rwLock.EnterWriteLock();
+                rwLock.EnterReadLock();
                 try
                 {
                     cachedContext.Biota.Remove(biota);
@@ -305,7 +305,7 @@ namespace ACE.Database
                 }
                 finally
                 {
-                    rwLock.ExitWriteLock();
+                    rwLock.ExitReadLock();
                 }
             }
 
@@ -516,6 +516,18 @@ namespace ACE.Database
             return dynamics.ToList();
         }
 
+        public List<Biota> GetHousesOwned()
+        {
+            using (var context = new ShardDbContext())
+            {
+                context.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
+
+                var results = context.Biota.Where(i => i.WeenieType == (int)WeenieType.SlumLord).ToList();
+
+                return results;
+            }
+        }
+
 
         public bool IsCharacterNameAvailable(string name)
         {
@@ -558,7 +570,7 @@ namespace ACE.Database
         {
             if (CharacterContexts.TryGetValue(character, out var cachedContext))
             {
-                rwLock.EnterWriteLock();
+                rwLock.EnterReadLock();
                 try
                 {
                     try
@@ -575,7 +587,7 @@ namespace ACE.Database
                 }
                 finally
                 {
-                    rwLock.ExitWriteLock();
+                    rwLock.ExitReadLock();
                 }
             }
 
@@ -583,7 +595,7 @@ namespace ACE.Database
 
             CharacterContexts.Add(character, context);
 
-            rwLock.EnterWriteLock();
+            rwLock.EnterReadLock();
             try
             {
                 context.Character.Add(character);
@@ -602,7 +614,7 @@ namespace ACE.Database
             }
             finally
             {
-                rwLock.ExitWriteLock();
+                rwLock.ExitReadLock();
             }
         }
 
@@ -645,6 +657,19 @@ namespace ACE.Database
             }
 
             return biotas.ToList();
+        }
+
+        public uint? GetAllegianceID(uint monarchID)
+        {
+            using (var context = new ShardDbContext())
+            {
+                var query = from biota in context.Biota
+                            join iid in context.BiotaPropertiesIID on biota.Id equals iid.ObjectId
+                            where biota.WeenieType == (int)WeenieType.Allegiance && iid.Type == (int)PropertyInstanceId.Monarch && iid.Value == monarchID
+                            select biota.Id;
+
+                return query.FirstOrDefault();
+            }
         }
     }
 }

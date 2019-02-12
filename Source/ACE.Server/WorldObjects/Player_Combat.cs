@@ -104,7 +104,8 @@ namespace ACE.Server.WorldObjects
                 var pkError = CheckPKStatusVsTarget(this, targetPlayer, null);
                 if (pkError != null)
                 {
-                    Session.Network.EnqueueSend(new GameEventWeenieErrorWithString(Session, (WeenieErrorWithString)pkError, target.Name));
+                    Session.Network.EnqueueSend(new GameEventWeenieErrorWithString(Session, pkError[0], target.Name));
+                    targetPlayer.Session.Network.EnqueueSend(new GameEventWeenieErrorWithString(targetPlayer.Session, pkError[1], Name));
                     return 0.0f;
                 }
             }
@@ -339,7 +340,10 @@ namespace ACE.Server.WorldObjects
             var sneakAttackMod = GetSneakAttackMod(target);
             sneakAttack = sneakAttackMod > 1.0f;
 
-            var damageRatingMod = AdditiveCombine(recklessnessMod, sneakAttackMod, GetRatingMod(EnchantmentManager.GetDamageRating()));
+            // heritage damge mod
+            var heritageMod = GetHeritageBonus(weapon) ? 1.05f : 1.0f;
+
+            var damageRatingMod = AdditiveCombine(heritageMod, recklessnessMod, sneakAttackMod, GetRatingMod(EnchantmentManager.GetDamageRating()), GetNegativeRatingMod(target.EnchantmentManager.GetDamageResistRating()));
             //Console.WriteLine("Damage rating: " + ModToRating(damageRatingMod));
 
             var damage = baseDamage * attributeMod * powerAccuracyMod * damageRatingMod;
@@ -349,8 +353,21 @@ namespace ACE.Server.WorldObjects
             var critical = GetWeaponPhysicalCritFrequencyModifier(this, attackSkill);
             if (ThreadSafeRandom.Next(0.0f, 1.0f) < critical)
             {
-                damage = baseDamageRange.Max * attributeMod * powerAccuracyMod * sneakAttackMod * (1.0f + GetWeaponCritMultiplierModifier(this, attackSkill));
-                criticalHit = true;
+                if (targetPlayer != null && targetPlayer.AugmentationCriticalDefense > 0)
+                {
+                    var protChance = targetPlayer.AugmentationCriticalDefense * 0.05f;
+                    if (ThreadSafeRandom.Next(0.0f, 1.0f) > protChance)
+                        criticalHit = true;
+                }
+                else
+                    criticalHit = true; 
+            }
+
+            if (criticalHit)
+            {
+                // not effective for criticals: recklessness
+                damageRatingMod = AdditiveCombine(heritageMod, sneakAttackMod, GetRatingMod(EnchantmentManager.GetDamageRating()), GetNegativeRatingMod(target.EnchantmentManager.GetDamageResistRating()));
+                damage = baseDamageRange.Max * attributeMod * powerAccuracyMod * damageRatingMod * (1.0f + GetWeaponCritMultiplierModifier(this, attackSkill));
             }
 
             // select random body part @ current attack height
@@ -403,7 +420,10 @@ namespace ACE.Server.WorldObjects
             var sneakAttackMod = GetSneakAttackMod(target);
             sneakAttack = sneakAttackMod > 1.0f;
 
-            var damageRatingMod = AdditiveCombine(recklessnessMod, sneakAttackMod, GetRatingMod(EnchantmentManager.GetDamageRating()));
+            // heritage damge mod
+            var heritageMod = GetHeritageBonus(weapon) ? 1.05f : 1.0f;
+
+            var damageRatingMod = AdditiveCombine(recklessnessMod, sneakAttackMod, heritageMod, GetRatingMod(EnchantmentManager.GetDamageRating()));
             //Console.WriteLine("Damage rating: " + ModToRating(damageRatingMod));
 
             var damage = baseDamage * attributeMod * powerAccuracyMod * damageRatingMod;
@@ -793,7 +813,7 @@ namespace ACE.Server.WorldObjects
         public Player GetKiller_PKLite()
         {
             if (PlayerKillerStatus == PlayerKillerStatus.PKLite)
-                return CurrentLandblock?.GetObject(new ObjectGuid(Killer ?? 0)) as Player;
+                return CurrentLandblock?.GetObject(new ObjectGuid(KillerId ?? 0)) as Player;
             else
                 return null;
         }

@@ -122,6 +122,19 @@ namespace ACE.Server.Managers
             return null;
         }
 
+        public static List<IPlayer> GetAllPlayers()
+        {
+            var offlinePlayers = GetAllOffline();
+            var onlinePlayers = GetAllOnline();
+
+            var allPlayers = new List<IPlayer>();
+
+            allPlayers.AddRange(offlinePlayers);
+            allPlayers.AddRange(onlinePlayers);
+
+            return allPlayers;
+        }
+
         public static List<OfflinePlayer> GetAllOffline()
         {
             var results = new List<OfflinePlayer>();
@@ -269,6 +282,7 @@ namespace ACE.Server.Managers
             }
 
             player.SendFriendStatusUpdates(false);
+            player.HandleAllegianceOnLogout();
 
             return true;
         }
@@ -401,8 +415,8 @@ namespace ACE.Server.Managers
             playersLock.EnterReadLock();
             try
             {
-                onlinePlayersResult = onlinePlayers.Values.Where(p => p.Monarch == monarch.Full);
-                offlinePlayersResult = offlinePlayers.Values.Where(p => p.Monarch == monarch.Full);
+                onlinePlayersResult = onlinePlayers.Values.Where(p => p.MonarchId == monarch.Full);
+                offlinePlayersResult = offlinePlayers.Values.Where(p => p.MonarchId == monarch.Full);
             }
             finally
             {

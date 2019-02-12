@@ -43,9 +43,7 @@ namespace ACE.Server.WorldObjects
         {
             var strength = Attributes[PropertyAttribute.Strength].Current;
 
-            var encumbranceAgumentations = 0; // todo
-
-            return (int)((150 * strength) + (encumbranceAgumentations * 30 * strength));
+            return (int)((150 * strength) + (AugmentationIncreasedCarryingCapacity * 30 * strength));
         }
 
         public bool HasEnoughBurdenToAddToInventory(WorldObject worldObject)
@@ -310,7 +308,14 @@ namespace ACE.Server.WorldObjects
             MyEquippedItems     = 0x02,
             Landblock           = 0x04,
             LastUsedContainer   = 0x08,
+            WieldedByOther      = 0x10,
+            LocationsICanMove   = MyInventory | MyEquippedItems | Landblock | LastUsedContainer,
             Everywhere          = 0xFF
+        }
+
+        public WorldObject FindObject(uint objectGuid, SearchLocations searchLocations)
+        {
+            return FindObject(new ObjectGuid(objectGuid), searchLocations, out Container foundInContainer, out Container rootOwner, out bool wasEquipped);
         }
 
         public WorldObject FindObject(uint objectGuid, SearchLocations searchLocations, out Container foundInContainer, out Container rootOwner, out bool wasEquipped)
@@ -386,6 +391,14 @@ namespace ACE.Server.WorldObjects
                         }
                     }
                 }
+            }
+
+            if (searchLocations.HasFlag(SearchLocations.WieldedByOther))
+            {
+                result = CurrentLandblock?.GetWieldedObject(objectGuid);
+
+                if (result != null)
+                    return result;
             }
 
             return null;
@@ -477,7 +490,7 @@ namespace ACE.Server.WorldObjects
         {
             OnPutItemInContainer(itemGuid, containerGuid, placement);
 
-            var item = FindObject(itemGuid, SearchLocations.Everywhere, out _, out var itemRootOwner, out var itemWasEquipped);
+            var item = FindObject(itemGuid, SearchLocations.LocationsICanMove, out _, out var itemRootOwner, out var itemWasEquipped);
             var container = FindObject(containerGuid, SearchLocations.MyInventory | SearchLocations.Landblock | SearchLocations.LastUsedContainer, out _, out var containerRootOwner, out _) as Container;
 
             if (item == null)
@@ -511,7 +524,7 @@ namespace ACE.Server.WorldObjects
 
             if (containerRootOwner != this) // Is our target on the landscape?
             {
-                if (itemRootOwner == this && (item.Attuned ?? 0) == 1)
+                if (itemRootOwner == this && (item.Attuned ?? 0) >= 1)
                 {
                     Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, itemGuid, WeenieError.AttunedItem));
                     return;
@@ -606,10 +619,7 @@ namespace ACE.Server.WorldObjects
                             {
                                 item.EmoteManager.OnDrop(this);
                                 EnqueueBroadcast(new GameMessageSound(Guid, Sound.DropItem));
-
-                                container.OnAddItem();  // adding item to container
                             }
-
                             else if (containerRootOwner == this)
                             {
                                 if (itemAsContainer != null) // We're picking up a pack
@@ -627,9 +637,6 @@ namespace ACE.Server.WorldObjects
 
                                 if (questSolve)
                                     QuestManager.Update(item.Quest);
-
-                                if (itemRootOwner != null)
-                                    itemRootOwner.OnRemoveItem();   // removing item from container
                             }
                         }
                         EnqueueBroadcastMotion(returnStance);
@@ -670,7 +677,7 @@ namespace ACE.Server.WorldObjects
                     Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full));
                 }
 
-                if (itemRootOwner != containerRootOwner)
+                if (itemRootOwner == this && containerRootOwner != this)
                 {
                     // We must update the database with the latest ContainerId and WielderId properties.
                     // If we don't, the player can drop the item, log out, and log back in. If the landblock hasn't queued a database save in that time,
@@ -721,7 +728,7 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            if ((item.Attuned ?? 0) == 1)
+            if ((item.Attuned ?? 0) >= 1)
             {
                 Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, itemGuid, WeenieError.AttunedItem));
                 return;
@@ -799,7 +806,7 @@ namespace ACE.Server.WorldObjects
                 return;
             }*/
 
-            var item = FindObject(new ObjectGuid(itemGuid), SearchLocations.Everywhere, out _, out var rootOwner, out var wasEquipped);
+            var item = FindObject(new ObjectGuid(itemGuid), SearchLocations.LocationsICanMove, out _, out var rootOwner, out var wasEquipped);
 
             if (item == null)
             {
@@ -895,12 +902,21 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-            EquipMask validLocations = item.ValidLocations ?? 0;
+            // TODO: this handles armor slots,
+            // trinkets and weapons would need to be handled a bit differently
 
-            if (!WieldedLocationIsAvailable(validLocations))
+            // TODO: slots view is bugged here
+            // for both slots view and non-slots view, the client is oddly sending 2 packets, similar to dual wielding weapon swapping
+            // for non-slots view, the 2 packets it sends both have the full coverage slots in wieldedLocation
+            // for slots view, it sends the correct packet first, with the full coverage, and then it sends a packet with coverage for just 1 slot
+            // this bugs out CurrentWieldedLocation, as it won't be covering all of the slots... so for armor/clothing we set wieldedLocation to item.ValidLocations here
+            if (item is Clothing)
+                wieldedLocation = item.ValidLocations ?? 0;
+
+            if (!WieldedLocationIsAvailable(item, wieldedLocation))
             {
                 // filtering to just armor here, or else trinkets and dual wielding breaks
-                var existing = GetEquippedArmor(validLocations).FirstOrDefault();
+                var existing = GetEquippedArmor(wieldedLocation).FirstOrDefault();
 
                 Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, $"You must remove your {existing.Name} to wear that"));
                 Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full));
@@ -1090,7 +1106,7 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            var stack = FindObject(new ObjectGuid(stackId), SearchLocations.Everywhere, out var stackFoundInContainer, out var stackRootOwner, out _);
+            var stack = FindObject(new ObjectGuid(stackId), SearchLocations.LocationsICanMove, out var stackFoundInContainer, out var stackRootOwner, out _);
             var container = FindObject(new ObjectGuid(containerId), SearchLocations.MyInventory | SearchLocations.Landblock | SearchLocations.LastUsedContainer, out _, out var containerRootOwner, out _) as Container;
 
             if (stack == null)
@@ -1317,7 +1333,7 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            var sourceStack = FindObject(mergeFromGuid, SearchLocations.Everywhere, out var sourceStackFoundInContainer, out var sourceStackRootOwner, out _);
+            var sourceStack = FindObject(mergeFromGuid, SearchLocations.LocationsICanMove, out var sourceStackFoundInContainer, out var sourceStackRootOwner, out _);
             var targetStack = FindObject(mergeToGuid, SearchLocations.MyInventory | SearchLocations.MyEquippedItems | SearchLocations.LastUsedContainer, out var targetStackFoundInContainer, out var targetStackRootOwner, out _);
 
             if (sourceStack == null)
@@ -1529,7 +1545,7 @@ namespace ACE.Server.WorldObjects
 
         private void GiveObjecttoPlayer(Player target, WorldObject item, Container itemFoundInContainer, Container itemRootOwner, bool itemWasEquipped, int amount)
         {
-            if ((item.Attuned ?? 0) == 1)
+            if ((item.Attuned ?? 0) >= 1)
             {
                 Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full, WeenieError.AttunedItem));
                 return;
@@ -1597,7 +1613,7 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            var acceptAll = target.GetProperty(PropertyBool.AiAcceptEverything) ?? false;
+            var acceptAll = (target.GetProperty(PropertyBool.AiAcceptEverything) ?? false) && (item.Attuned ?? 0) != (int)AttunedStatus.Sticky;
 
             var result = target.Biota.BiotaPropertiesEmote.FirstOrDefault(emote => emote.WeenieClassId == item.WeenieClassId);
 

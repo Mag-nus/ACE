@@ -86,6 +86,8 @@ namespace ACE.Server
             {
                 log.Info("Precaching Weenies...");
                 DatabaseManager.World.CacheAllWeeniesInParallel();
+                log.Info("Precaching House Portals...");
+                DatabaseManager.World.CacheAllHousePortals();
                 log.Info("Precaching Points Of Interest...");
                 DatabaseManager.World.CacheAllPointsOfInterest();
                 log.Info("Precaching Cookbooks...");
@@ -116,6 +118,9 @@ namespace ACE.Server
 
             log.Info("Initializing EventManager...");
             EventManager.Initialize();
+
+            log.Info("Initializing HouseManager...");
+            HouseManager.Initialize();
 
             // This should be last
             log.Info("Initializing CommandManager...");

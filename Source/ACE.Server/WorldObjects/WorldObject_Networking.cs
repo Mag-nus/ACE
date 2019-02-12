@@ -187,7 +187,7 @@ namespace ACE.Server.WorldObjects
                 writer.Write((uint?)HookItemType ?? 0);
 
             if ((weenieFlags & WeenieHeaderFlag.Monarch) != 0)
-                writer.Write(Monarch ?? 0);
+                writer.Write(MonarchId ?? 0);
 
             if ((weenieFlags & WeenieHeaderFlag.HookType) != 0)
                 writer.Write(HookType ?? 0);
@@ -755,7 +755,7 @@ namespace ACE.Server.WorldObjects
             if (hookItemTypeInt != null)
                 weenieHeaderFlag |= WeenieHeaderFlag.HookItemTypes;
 
-            if (Monarch != null)
+            if (MonarchId != null)
                 weenieHeaderFlag |= WeenieHeaderFlag.Monarch;
 
             if (HookType != null)
@@ -1191,12 +1191,16 @@ namespace ACE.Server.WorldObjects
         /// Sends network messages to all Players who currently know about this object
         /// within a maximum range
         /// </summary>
-        public void EnqueueBroadcast(GameMessage msg, float range)
+        public void EnqueueBroadcast(GameMessage msg, float range, bool useSquelch = false)
         {
             if (PhysicsObj == null || CurrentLandblock == null) return;
 
-            if (this is Player self)
+            Player self = null;
+            if (this is Player)
+            {
+                self = this as Player;
                 self.Session.Network.EnqueueSend(msg);
+            }
 
             var isDungeon = CurrentLandblock._landblock != null && CurrentLandblock._landblock.IsDungeon;
 
@@ -1204,6 +1208,9 @@ namespace ACE.Server.WorldObjects
 
             foreach (var player in PhysicsObj.ObjMaint.VoyeurTable.Values.Select(v => (Player)v.WeenieObj.WorldObject))
             {
+                if (self != null && useSquelch && player.Squelches.Contains(self))
+                    continue;
+
                 if (isDungeon && Location.Landblock != player.Location.Landblock)
                     continue;
 

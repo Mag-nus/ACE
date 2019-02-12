@@ -49,6 +49,9 @@ namespace ACE.Server.WorldObjects
                 return 0.0f;
             }
 
+            if (CurrentMotionState.Stance == MotionStance.NonCombat)
+                DoAttackStance();
+
             // choose a random combat maneuver
             var maneuver = GetCombatManeuver();
             if (maneuver == null)
@@ -343,7 +346,16 @@ namespace ACE.Server.WorldObjects
             // critical hit
             var critical = 0.1f;
             if (ThreadSafeRandom.Next(0.0f, 1.0f) < critical)
-                criticalHit = true;
+            {
+                if (player != null && player.AugmentationCriticalDefense > 0)
+                {
+                    var protChance = player.AugmentationCriticalDefense * 0.25f;
+                    if (ThreadSafeRandom.Next(0.0f, 1.0f) > protChance)
+                        criticalHit = true;
+                }
+                else
+                    criticalHit = true;
+            }
 
             // attribute damage modifier (verify)
             var attributeMod = GetAttributeMod(weapon);
