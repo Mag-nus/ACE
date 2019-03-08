@@ -9,6 +9,7 @@ using ACE.Database.Models.Shard;
 using ACE.Database.Models.World;
 using ACE.Entity;
 using ACE.Entity.Enum;
+using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
 using ACE.Server.Factories;
 using ACE.Server.Network.GameEvent.Events;
@@ -139,7 +140,7 @@ namespace ACE.Server.WorldObjects
             if (!cachedHookReferences.TryGetValue(WeenieClassId, out var hook))
             {
                 var weenie = DatabaseManager.World.GetCachedWeenie(WeenieClassId);
-                hook = WorldObjectFactory.CreateWorldObject(weenie, new ObjectGuid(0));
+                hook = WorldObjectFactory.CreateWorldObject(weenie, ObjectGuid.Invalid);
 
                 cachedHookReferences[WeenieClassId] = hook;
             }

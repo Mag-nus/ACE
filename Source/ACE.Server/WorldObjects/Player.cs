@@ -50,6 +50,8 @@ namespace ACE.Server.WorldObjects
             Character.Name = GetProperty(PropertyString.Name);
             CharacterChangesDetected = true;
 
+            SetEphemeralValues();
+
             // Make sure properties this WorldObject requires are not null.
             AvailableExperience = AvailableExperience ?? 0;
             TotalExperience = TotalExperience ?? 0;
@@ -57,8 +59,6 @@ namespace ACE.Server.WorldObjects
             Attackable = true;
 
             SetProperty(PropertyString.DateOfBirth, $"{DateTime.UtcNow:dd MMMM yyyy}");
-
-            SetEphemeralValues();
         }
 
         /// <summary>
@@ -66,22 +66,15 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public Player(Biota biota, IEnumerable<Biota> inventory, IEnumerable<Biota> wieldedItems, Character character, Session session) : base(biota)
         {
-            SortBiotasIntoInventory(inventory);
-            AddBiotasToEquippedObjects(wieldedItems);
-
             Character = character;
             Session = session;
 
             SetEphemeralValues();
 
-            // THIS IS A TEMPORARY PATCH TO COPY OVER EXISTING CHARACTER OPTIONS FROM THE BIOTA TO THE CHARACTER OBJECT.
-            // This can be removed in time. 2018-09-01 Mag-nus
-            if (Character.CharacterOptions1 == 0 && Character.CharacterOptions2 == 0)
-            {
-                Character.CharacterOptions1 = GetProperty((PropertyInt)9003) ?? 1355064650;
-                Character.CharacterOptions2 = GetProperty((PropertyInt)9004) ?? 34560;
-                CharacterChangesDetected = true;
-            }
+            SortBiotasIntoInventory(inventory);
+            AddBiotasToEquippedObjects(wieldedItems);
+
+            UpdateCoinValue(false);
         }
 
         public override void InitPhysicsObj()
@@ -131,8 +124,6 @@ namespace ACE.Server.WorldObjects
                 if (AdvocateLevel > 4)
                     IsPsr = true; // Enable AdvocateTeleport via MapClick
             }
-
-            UpdateCoinValue(false);
 
             QuestManager = new QuestManager(this);
 
@@ -242,8 +233,7 @@ namespace ACE.Server.WorldObjects
                                     {
                                         for (int i = 0; i < item.Biota.BiotaPropertiesSpellBook.Count; i++)
                                         {
-                                            // TODO: layering
-                                            RemoveItemSpell(item.Guid, (uint)item.Biota.BiotaPropertiesSpellBook.ElementAt(i).Spell);
+                                            RemoveItemSpell(item, (uint)item.Biota.BiotaPropertiesSpellBook.ElementAt(i).Spell);
                                         }
                                     });
                                     actionChain.EnqueueChain();
@@ -325,8 +315,6 @@ namespace ACE.Server.WorldObjects
                 // selectedTarget = ObjectGuid.Invalid;
                 RequestedAppraisalTarget = null;
                 CurrentAppraisalTarget = null;
-
-                SendUseDoneEvent();
                 return;
             }
 
@@ -837,7 +825,7 @@ namespace ACE.Server.WorldObjects
             StartJump = new ACE.Entity.Position(Location);
 
             var strength = Strength.Current;
-            var capacity = EncumbranceSystem.EncumbranceCapacity((int)strength, 0);     // TODO: augs
+            var capacity = EncumbranceSystem.EncumbranceCapacity((int)strength, AugmentationIncreasedCarryingCapacity);
             var burden = EncumbranceSystem.GetBurden(capacity, EncumbranceVal ?? 0);
 
             // calculate stamina cost for this jump

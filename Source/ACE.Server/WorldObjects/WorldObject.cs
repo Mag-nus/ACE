@@ -59,8 +59,6 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public Landblock CurrentLandblock { get; internal set; }
 
-        public int ManaGiven { get; set; }
-
         public DateTime? ItemManaDepletionMessageTimestamp { get; set; } = null;
         public DateTime? ItemManaConsumptionTimestamp { get; set; } = null;
 
@@ -250,8 +248,6 @@ namespace ACE.Server.WorldObjects
             AddGeneratorProfiles();
 
             BaseDescriptionFlags = ObjectDescriptionFlag.Attackable;
-
-            EncumbranceVal = EncumbranceVal ?? (StackUnitEncumbrance ?? 0) * (StackSize ?? 1);
 
             EmoteManager = new EmoteManager(this);
             EnchantmentManager = new EnchantmentManagerWithCaching(this);
@@ -497,7 +493,7 @@ namespace ACE.Server.WorldObjects
                         sb.AppendLine($"{prop.Name} = {obj.CurrentWieldedLocation}" + " (" + (uint)obj.CurrentWieldedLocation + ")");
                         break;
                     case "priority":
-                        sb.AppendLine($"{prop.Name} = {obj.Priority}" + " (" + (uint)obj.Priority + ")");
+                        sb.AppendLine($"{prop.Name} = {obj.ClothingPriority}" + " (" + (uint)obj.ClothingPriority + ")");
                         break;
                     case "radarcolor":
                         sb.AppendLine($"{prop.Name} = {obj.RadarColor}" + " (" + (uint)obj.RadarColor + ")");
@@ -823,7 +819,7 @@ namespace ACE.Server.WorldObjects
                 return DamageType.Bludgeon;
 
             DamageType damageTypes;
-            var attackType = creature.GetAttackType();
+            var attackType = creature.GetCombatType();
             if (attackType == CombatType.Melee || ammo == null || !weapon.IsAmmoLauncher)
                 damageTypes = (DamageType)(weapon.GetProperty(PropertyInt.DamageType) ?? 0);
             else
@@ -848,11 +844,22 @@ namespace ACE.Server.WorldObjects
             return damageTypes;
         }
 
+        private bool isDestroyed;
+
         /// <summary>
-        /// If this is a container or a creature, all of the inventory and/or equipped objects will also be destroyed.
+        /// If this is a container or a creature, all of the inventory and/or equipped objects will also be destroyed.<para />
+        /// An object should only be destroyed once.
         /// </summary>
-        public virtual void Destroy()
+        public virtual void Destroy(bool raiseNotifyOfDestructionEvent = true)
         {
+            if (isDestroyed)
+            {
+                log.WarnFormat("Item 0x{0:X8}:{1} called destroy more than once.", Guid.Full, Name);
+                return;
+            }
+
+            isDestroyed = true;
+
             if (this is Container container)
             {
                 foreach (var item in container.Inventory.Values)
@@ -865,9 +872,14 @@ namespace ACE.Server.WorldObjects
                     item.Destroy();
             }
 
-            NotifyOfEvent(RegenerationType.Destruction);
+            if (raiseNotifyOfDestructionEvent)
+                NotifyOfEvent(RegenerationType.Destruction);
+
             CurrentLandblock?.RemoveWorldObject(Guid);
             RemoveBiotaFromDatabase();
+
+            if (Guid.IsDynamic())
+                GuidManager.RecycleDynamicGuid(Guid);
         }
 
         public string GetPluralName()

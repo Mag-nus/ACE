@@ -8,6 +8,7 @@ using ACE.DatLoader;
 using ACE.DatLoader.FileTypes;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
+using ACE.Server.Entity;
 using ACE.Server.Managers;
 using ACE.Server.Network.Enum;
 using ACE.Server.WorldObjects;
@@ -18,8 +19,8 @@ namespace ACE.Server.Network.Structure
     {
         public enum _EnchantmentState : uint
         {
-            Off = 0x00000000u,
-            On = 0x80000000u
+            Off = 0x00000000,
+            On  = 0x80000000
         }
 
         public ushort SpellId { get; set; }
@@ -69,7 +70,7 @@ namespace ACE.Server.Network.Structure
             Success = success;
 
             // get wielder, if applicable
-            var wielder = GetWielder(wo);
+            var wielder = GetWielder(wo, examiner);
 
             BuildProperties(wo, wielder);
             BuildSpells(wo);
@@ -125,9 +126,9 @@ namespace ACE.Server.Network.Structure
             PropertiesString = wo.GetAllPropertyString().Where(x => ClientProperties.PropertiesString.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
             PropertiesDID = wo.GetAllPropertyDataId().Where(x => ClientProperties.PropertiesDataId.Contains((ushort)x.Key)).ToDictionary(x => x.Key, x => x.Value);
 
-            // handle character options
             if (wo is Player player)
             {
+                // handle character options
                 if (!player.GetCharacterOption(CharacterOption.AllowOthersToSeeYourDateOfBirth))
                     PropertiesInt.Remove(PropertyInt.CreationTimestamp);
                 if (!player.GetCharacterOption(CharacterOption.AllowOthersToSeeYourAge))
@@ -140,7 +141,26 @@ namespace ACE.Server.Network.Structure
                     PropertiesInt.Remove(PropertyInt.NumDeaths);
                 if (!player.GetCharacterOption(CharacterOption.AllowOthersToSeeYourNumberOfTitles))
                     PropertiesInt.Remove(PropertyInt.NumCharacterTitles);
+
+                // handle dynamic properties for appraisal
+                if (player.Allegiance != null)
+                {
+                    if (player.AllegianceNode.IsMonarch)
+                    {
+                        PropertiesInt[PropertyInt.AllegianceFollowers] = player.AllegianceNode.TotalFollowers;
+                    }
+                    else
+                    {
+                        var monarch = player.Allegiance.Monarch;
+                        var patron = player.AllegianceNode.Patron;
+
+                        PropertiesString[PropertyString.MonarchsTitle] = AllegianceTitle.GetTitle((HeritageGroup)(monarch.Player.Heritage ?? 0), (Gender)(monarch.Player.Gender ?? 0), monarch.Rank) + " " + monarch.Player.Name;
+                        PropertiesString[PropertyString.PatronsTitle] = AllegianceTitle.GetTitle((HeritageGroup)(patron.Player.Heritage ?? 0), (Gender)(patron.Player.Gender ?? 0), patron.Rank) + " " + patron.Player.Name;
+                    }
+                }
             }
+
+
 
             AddPropertyEnchantments(wo, wielder);
         }
@@ -335,12 +355,12 @@ namespace ACE.Server.Network.Structure
             AddSpells(SpellBook, weapon, wielder);
         }
 
-        private WorldObject GetWielder(WorldObject weapon)
+        private WorldObject GetWielder(WorldObject weapon, Player examiner)
         {
             if (weapon.WielderId == null)
                 return null;
 
-            return PlayerManager.GetOnlinePlayer(weapon.WielderId.Value);
+            return examiner.FindObject(weapon.WielderId.Value, Player.SearchLocations.Landblock);
         }
 
         /// <summary>

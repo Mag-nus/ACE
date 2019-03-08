@@ -94,8 +94,7 @@ namespace ACE.Server.WorldObjects
 
             dieChain.AddAction(this, () =>
             {
-                NotifyOfEvent(RegenerationType.Destruction);
-                LandblockManager.RemoveObject(this);
+                Destroy();
                 CreateCorpse(topDamager);
             });
 
@@ -277,7 +276,7 @@ namespace ACE.Server.WorldObjects
                         continue;
 
                     if (trophy.StackSize > 1)
-                        wo.StackSize = (ushort)trophy.StackSize;
+                        wo.SetStackSize(trophy.StackSize);
 
                     if (trophy.Palette > 0)
                         wo.PaletteTemplate = trophy.Palette;

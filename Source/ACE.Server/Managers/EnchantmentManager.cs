@@ -84,6 +84,12 @@ namespace ACE.Server.Managers
             {
                 var spell = new Spell(enchantment.SpellId);
 
+                if (spell.NotFound)
+                {
+                    Console.WriteLine($"EnchantmentManager.GetEnchantments({magicSchool}): couldn't find spell {enchantment.SpellId} for {WorldObject.Name}");
+                    continue;
+                }
+
                 if (spell.School == magicSchool)
                     spells.Add(enchantment);
             }
@@ -94,9 +100,9 @@ namespace ACE.Server.Managers
         /// <summary>
         /// Returns all of the enchantments for a category
         /// </summary>
-        public List<BiotaPropertiesEnchantmentRegistry> GetEnchantments(uint categoryID)
+        public List<BiotaPropertiesEnchantmentRegistry> GetEnchantments(SpellCategory spellCategory)
         {
-            return WorldObject.Biota.GetEnchantmentsByCategory((ushort)categoryID, WorldObject.BiotaDatabaseLock);
+            return WorldObject.Biota.GetEnchantmentsByCategory((ushort)spellCategory, WorldObject.BiotaDatabaseLock);
         }
 
         /// <summary>
@@ -271,6 +277,9 @@ namespace ACE.Server.Managers
         /// </summary>
         public virtual void Remove(BiotaPropertiesEnchantmentRegistry entry, bool sound = true)
         {
+            if (entry == null)
+                return;
+
             var spellID = entry.SpellId;
 
             if (WorldObject.Biota.TryRemoveEnchantment(entry, out _, WorldObject.BiotaDatabaseLock))
@@ -317,8 +326,6 @@ namespace ACE.Server.Managers
             WorldObject.ChangesDetected = true;
         }
 
-
-
         /// <summary>
         /// Returns the vitae enchantment
         /// </summary>
@@ -332,7 +339,7 @@ namespace ACE.Server.Managers
         /// </summary>
         public float GetMinVitae(uint level)
         {
-            var propVitae = PropertyManager.GetDouble("vitae_min").Item;
+            var propVitae = 1.0 - PropertyManager.GetDouble("vitae_penalty_max").Item;
 
             var maxPenalty = (level - 1) * 3;
             if (maxPenalty < 1)
@@ -420,6 +427,9 @@ namespace ACE.Server.Managers
         /// </summary>
         public virtual void Dispel(BiotaPropertiesEnchantmentRegistry entry)
         {
+            if (entry == null)
+                return;
+
             var spellID = entry.SpellId;
 
             if (WorldObject.Biota.TryRemoveEnchantment(entry, out _, WorldObject.BiotaDatabaseLock))
@@ -434,6 +444,9 @@ namespace ACE.Server.Managers
         /// </summary>
         public virtual void Dispel(List<BiotaPropertiesEnchantmentRegistry> entries)
         {
+            if (entries == null || entries.Count == 0)
+                return;
+
             foreach (var entry in entries)
             {
                 if (WorldObject.Biota.TryRemoveEnchantment(entry, out _, WorldObject.BiotaDatabaseLock))
@@ -656,14 +669,20 @@ namespace ACE.Server.Managers
         /// <summary>
         /// Returns the sum of the StatModValues for an EnchantmentTypeFlag
         /// </summary>
-        public int GetModifier(EnchantmentTypeFlags type)
+        public int GetModifier(EnchantmentTypeFlags type, bool? positive = null)
         {
             var enchantments = GetEnchantments_TopLayer(type);
 
             var modifier = 0;
             foreach (var enchantment in enchantments)
-                modifier += (int)enchantment.StatModValue;
+            {
+                var statModVal = (int)enchantment.StatModValue;
 
+                if (positive == null || positive.Value && statModVal > 0 || !positive.Value && statModVal < 0)
+                {
+                    modifier += statModVal;
+                }
+            }
             return modifier;
         }
 
@@ -728,6 +747,15 @@ namespace ACE.Server.Managers
         public virtual int GetBodyArmorMod()
         {
             return GetModifier(EnchantmentTypeFlags.BodyArmorValue);
+        }
+
+        /// <summary>
+        /// Returns either the positive body armor from life spells (ie. Armor Self)
+        /// or the negative body armor (ie. Imperil)
+        /// </summary>
+        public virtual int GetBodyArmorMod(bool positive)
+        {
+            return GetModifier(EnchantmentTypeFlags.BodyArmorValue, positive);
         }
 
         /// <summary>
@@ -1013,7 +1041,10 @@ namespace ACE.Server.Managers
         /// </summary>
         public virtual int GetDamageRating()
         {
-            var damageRating = GetRating(PropertyInt.DamageRating);
+            // get from base properties (monsters)?
+            var damageRating = WorldObject.DamageRating ?? 0;
+
+            damageRating += GetRating(PropertyInt.DamageRating);
 
             if (WorldObject is Player player && player.AugmentationDamageBonus > 0)
                 damageRating += player.AugmentationDamageBonus * 3;
@@ -1026,7 +1057,9 @@ namespace ACE.Server.Managers
 
         public virtual int GetDamageResistRating()
         {
-            var damageResistanceRating = GetRating(PropertyInt.DamageResistRating);
+            var damageResistanceRating = WorldObject.DamageResistRating ?? 0;
+
+            damageResistanceRating += GetRating(PropertyInt.DamageResistRating);
 
             if (WorldObject is Player player && player.AugmentationDamageReduction > 0)
                 damageResistanceRating += player.AugmentationDamageReduction * 3;
@@ -1208,7 +1241,7 @@ namespace ACE.Server.Managers
                     else
                         heritageMod = player.GetHeritageBonus(player.GetEquippedWeapon()) ? 1.05f : 1.0f;
                 }
-                var damageRatingMod = Creature.AdditiveCombine(heritageMod, Creature.GetRatingMod(damager.EnchantmentManager.GetDamageRating()));
+                var damageRatingMod = Creature.AdditiveCombine(heritageMod, Creature.GetPositiveRatingMod(damager.EnchantmentManager.GetDamageRating()));
                 var damageResistRatingMod = Creature.GetNegativeRatingMod(GetDamageResistRating());
                 //Console.WriteLine("DR: " + Creature.ModToRating(damageRatingMod));
                 //Console.WriteLine("DRR: " + Creature.NegativeModToRating(damageResistRatingMod));
