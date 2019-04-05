@@ -242,6 +242,14 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Returns the total # of inventory items matching a wcid
+        /// </summary>
+        public int GetNumInventoryItemsOfWCID(uint weenieClassId)
+        {
+            return GetInventoryItemsOfWCID(weenieClassId).Select(i => i.StackSize ?? 1).Sum();
+        }
+
+        /// <summary>
         /// Returns all of the trade notes from inventory + side packs
         /// </summary>
         public List<WorldObject> GetTradeNotes()
@@ -327,8 +335,14 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
+            if (Inventory.ContainsKey(worldObject.Guid))
+            {
+                container = null;
+                return false;
+            }
+
             worldObject.Location = null;
-            worldObject.Placement = null;
+            worldObject.Placement = ACE.Entity.Enum.Placement.Resting;
 
             worldObject.OwnerId = Guid.Full;
             worldObject.ContainerId = Guid.Full;
@@ -439,6 +453,15 @@ namespace ACE.Server.WorldObjects
             if (!(wo is Player player))
                 return;
 
+            // If we have a previous container open, let's close it
+            if (player.LastOpenedContainerId != ObjectGuid.Invalid && player.LastOpenedContainerId != Guid)
+            {
+                var lastOpenedContainer = CurrentLandblock?.GetObject(player.LastOpenedContainerId) as Container;
+
+                if (lastOpenedContainer != null && lastOpenedContainer.IsOpen && lastOpenedContainer.Viewer == player.Guid.Full)
+                    lastOpenedContainer.Close(player);
+            }
+
             if (!IsOpen)
             {
                 Open(player);
@@ -458,6 +481,8 @@ namespace ACE.Server.WorldObjects
         {
             if (IsOpen) return;
 
+            player.LastOpenedContainerId = Guid;
+
             IsOpen = true;
 
             Viewer = player.Guid.Full;
@@ -467,7 +492,12 @@ namespace ACE.Server.WorldObjects
             SendInventory(player);
         }
 
-        public void SendInventory(Player player)
+        protected virtual float DoOnOpenMotionChanges()
+        {
+            return 0;
+        }
+
+        private void SendInventory(Player player)
         {
             // send createobject for all objects in this container's inventory to player
             var itemsToSend = new List<GameMessage>();
@@ -484,18 +514,13 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-            player.Session.Network.EnqueueSend(itemsToSend.ToArray());
-
             player.Session.Network.EnqueueSend(new GameEventViewContents(player.Session, this));
 
             // send sub-containers
             foreach (var container in Inventory.Values.Where(i => i is Container))
                 player.Session.Network.EnqueueSend(new GameEventViewContents(player.Session, (Container)container));
-        }
 
-        protected virtual float DoOnOpenMotionChanges()
-        {
-            return 0;
+            player.Session.Network.EnqueueSend(itemsToSend.ToArray());
         }
 
         public virtual void Close(Player player)
@@ -503,36 +528,44 @@ namespace ACE.Server.WorldObjects
             if (!IsOpen) return;
 
             var animTime = DoOnCloseMotionChanges();
-            var actionChain = new ActionChain();
-            actionChain.AddDelaySeconds(animTime / 2.0f);
-            actionChain.AddAction(this, () =>
+
+            if (animTime <= 0)
+                FinishClose(player);
+            else
             {
-                IsOpen = false;
-                Viewer = 0;
-
-                if (player != null)
-                {
-                    player.Session.Network.EnqueueSend(new GameEventCloseGroundContainer(player.Session, this));
-
-                    if (player.lastUsedContainerId == Guid)
-                        player.lastUsedContainerId = ObjectGuid.Invalid;
-
-                    // send deleteobject for all objects in this container's inventory to player
-                    // this seems logical, but it bugs out the client for re-opening chests w/ respawned items
-                    /*var itemsToSend = new List<GameMessage>();
-
-                    foreach (var item in Inventory.Values)
-                        itemsToSend.Add(new GameMessageDeleteObject(item));
-
-                    player.Session.Network.EnqueueSend(itemsToSend.ToArray());*/
-                }
-            });
-            actionChain.EnqueueChain();
+                var actionChain = new ActionChain();
+                actionChain.AddDelaySeconds(animTime / 2.0f);
+                actionChain.AddAction(this, () => FinishClose(player));
+                actionChain.EnqueueChain();
+            }
         }
 
         protected virtual float DoOnCloseMotionChanges()
         {
             return 0;
+        }
+
+        private void FinishClose(Player player)
+        {
+            IsOpen = false;
+            Viewer = 0;
+
+            if (player != null)
+            {
+                player.Session.Network.EnqueueSend(new GameEventCloseGroundContainer(player.Session, this));
+
+                if (player.LastOpenedContainerId == Guid)
+                    player.LastOpenedContainerId = ObjectGuid.Invalid;
+
+                // send deleteobject for all objects in this container's inventory to player
+                // this seems logical, but it bugs out the client for re-opening chests w/ respawned items
+                /*var itemsToSend = new List<GameMessage>();
+
+                foreach (var item in Inventory.Values)
+                    itemsToSend.Add(new GameMessageDeleteObject(item));
+
+                player.Session.Network.EnqueueSend(itemsToSend.ToArray());*/
+            }
         }
 
         public virtual void Reset()

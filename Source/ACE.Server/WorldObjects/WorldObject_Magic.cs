@@ -153,6 +153,9 @@ namespace ACE.Server.WorldObjects
             if (targetPlayer == null)
                 return null;
 
+            if (player.PlayerKillerStatus == PlayerKillerStatus.Free || targetPlayer.PlayerKillerStatus == PlayerKillerStatus.Free)
+                return null;
+
             if (spell == null || spell.IsHarmful)
             {
                 // Ensure that a non-PK cannot cast harmful spells on another player
@@ -291,7 +294,7 @@ namespace ACE.Server.WorldObjects
             {
                 if (player != null)
                 {
-                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{creature.Name} resists {spell.Name}", ChatMessageType.Magic));
+                    player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{creature.Name} resists your spell", ChatMessageType.Magic));
                     player.Session.Network.EnqueueSend(new GameMessageSound(player.Guid, Sound.ResistSpell, 1.0f));
                 }
                 if (targetPlayer != null)
@@ -339,7 +342,11 @@ namespace ACE.Server.WorldObjects
                     int minBoostValue = Math.Min(spell.Boost, spell.MaxBoost);
                     int maxBoostValue = Math.Max(spell.Boost, spell.MaxBoost);
 
+                    var resistanceType = minBoostValue > 0 ? GetBoostResistanceType(spell.VitalDamageType) : GetDrainResistanceType(spell.VitalDamageType);
+
                     int tryBoost = ThreadSafeRandom.Next(minBoostValue, maxBoostValue);
+                    tryBoost = (int)Math.Round(tryBoost * spellTarget.GetResistanceMod(resistanceType, this));
+
                     int boost = tryBoost;
                     damage = tryBoost < 0 ? (uint)Math.Abs(tryBoost) : 0;
 
@@ -420,20 +427,21 @@ namespace ACE.Server.WorldObjects
 
                     // Calculate vital changes
                     uint srcVitalChange, destVitalChange;
-                    ResistanceType resistanceDrain, resistanceBoost;
-                    resistanceDrain = GetDrainResistanceType(spell.Source);
 
-                    // should drain resistance be taken into account here,
-                    // or only after the destVitalChange calc?
-                    srcVitalChange = (uint)Math.Round(source.GetCurrentCreatureVital(spell.Source) * spell.Proportion * source.GetResistanceMod(resistanceDrain));
+                    // Drain Resistances - allows one to partially resist drain health/stamina/mana and harm attacks (not including other life transfer spells).
+                    var isDrain = spell.TransferFlags.HasFlag(TransferFlags.TargetSource | TransferFlags.CasterDestination);
+                    var drainMod = isDrain ? (float)source.GetResistanceMod(GetDrainResistanceType(spell.Source), caster) : 1.0f;
+
+                    srcVitalChange = (uint)Math.Round(source.GetCurrentCreatureVital(spell.Source) * spell.Proportion * drainMod);
 
                     if (spell.TransferCap != 0)
                     {
                         if (srcVitalChange > spell.TransferCap)
                             srcVitalChange = (uint)spell.TransferCap;
                     }
-                    resistanceBoost = GetBoostResistanceType(spell.Destination);
-                    destVitalChange = (uint)Math.Round(srcVitalChange * (1.0f - spell.LossPercent) * destination.GetResistanceMod(resistanceBoost));
+                    var boostMod = isDrain ? (float)destination.GetResistanceMod(GetBoostResistanceType(spell.Destination), caster) : 1.0f;
+
+                    destVitalChange = (uint)Math.Round(srcVitalChange * (1.0f - spell.LossPercent) * boostMod);
 
                     // scale srcVitalChange to destVitalChange?
 
@@ -535,19 +543,19 @@ namespace ACE.Server.WorldObjects
 
                     if (spell.Name.Contains("Blight"))
                     {
-                        var tryDamage = (int)Math.Round(caster.GetCurrentCreatureVital(PropertyAttribute2nd.Mana) * spell.DrainPercentage / caster.GetResistanceMod(ResistanceType.ManaDrain));
+                        var tryDamage = (int)Math.Round(caster.GetCurrentCreatureVital(PropertyAttribute2nd.Mana) * spell.DrainPercentage);
                         damage = (uint)-caster.UpdateVitalDelta(caster.Mana, -tryDamage);
                         damageType = DamageType.Mana;
                     }
                     else if (spell.Name.Contains("Tenacity"))
                     {
-                        var tryDamage = (int)Math.Round(caster.GetCurrentCreatureVital(PropertyAttribute2nd.Stamina) * spell.DrainPercentage / caster.GetResistanceMod(ResistanceType.StaminaDrain));
+                        var tryDamage = (int)Math.Round(caster.GetCurrentCreatureVital(PropertyAttribute2nd.Stamina) * spell.DrainPercentage);
                         damage = (uint)-caster.UpdateVitalDelta(caster.Stamina, -tryDamage);
                         damageType = DamageType.Stamina;
                     }
                     else
                     {
-                        var tryDamage = (int)Math.Round(caster.GetCurrentCreatureVital(PropertyAttribute2nd.Health) * spell.DrainPercentage / caster.GetResistanceMod(ResistanceType.HealthDrain));
+                        var tryDamage = (int)Math.Round(caster.GetCurrentCreatureVital(PropertyAttribute2nd.Health) * spell.DrainPercentage);
                         damage = (uint)-caster.UpdateVitalDelta(caster.Health, -tryDamage);
                         caster.DamageHistory.Add(this, DamageType.Health, damage);
                         damageType = DamageType.Health;
@@ -1066,7 +1074,14 @@ namespace ACE.Server.WorldObjects
             var difficultyMod = Math.Max(difficulty, 25);   // fix difficulty for level 1 spells?
 
             if (spell.IsHarmful)
+            {
                 Proficiency.OnSuccessUse(player, player.GetCreatureSkill(Skill.CreatureEnchantment), (target as Creature).GetCreatureSkill(Skill.MagicDefense).Current);
+
+                // handle target procs
+                var sourceCreature = this as Creature;
+                if (sourceCreature != null && targetCreature != null && sourceCreature != targetCreature)
+                    sourceCreature.TryProcEquippedItems(targetCreature, false);
+            }
             else
                 Proficiency.OnSuccessUse(player, player.GetCreatureSkill(Skill.CreatureEnchantment), difficultyMod);
 
@@ -1115,19 +1130,6 @@ namespace ACE.Server.WorldObjects
         public EnchantmentStatus CreateEnchantment(WorldObject target, WorldObject caster, Spell spell)
         {
             var enchantmentStatus = new EnchantmentStatus(spell);
-            double duration;
-
-            // what should the default duration be? -1 or 0?
-            // changed from spell -> spellStatMod for void magic...
-            if (caster is Creature)
-                duration = spell.Duration;
-            else
-            {
-                if (caster.WeenieType == WeenieType.Gem)
-                    duration = spell.Duration;
-                else
-                    duration = -1;
-            }
 
             // create enchantment
             var addResult = target.EnchantmentManager.Add(spell, caster);
@@ -1155,26 +1157,26 @@ namespace ACE.Server.WorldObjects
 
             string message = null;
 
-            if (spell.Duration != -1)
+            if (caster is Creature)
             {
-                if (caster is Creature)
-                {
-                    if (caster.Guid == Guid)
-                        message = $"You cast {spell.Name} on {targetName}{suffix}";
-                    else
-                        message = $"{caster.Name} casts {spell.Name} on {targetName}{suffix}"; // for the sentinel command `/buff [target player name]`
-                }
+                if (caster.Guid == Guid)
+                    message = $"You cast {spell.Name} on {targetName}{suffix}";
                 else
-                {
-                    if (target.Name != caster.Name)
-                        message = $"{caster.Name} casts {spell.Name} on you{suffix}";
-                    else
-                        message = null;
-                }
+                    message = $"{caster.Name} casts {spell.Name} on {targetName}{suffix}"; // for the sentinel command `/buff [target player name]`
             }
+            else
+            {
+                if (target.Name != caster.Name)
+                    message = $"{caster.Name} casts {spell.Name} on you{suffix}";
+                else
+                    message = null;
+            }
+
             if (target is Player)
             {
                 playerTarget.Session.Network.EnqueueSend(new GameEventMagicUpdateEnchantment(playerTarget.Session, new Enchantment(playerTarget, addResult.Enchantment)));
+
+                playerTarget.HandleMaxVitalUpdate(spell);
 
                 if (playerTarget != this)
                     playerTarget.Session.Network.EnqueueSend(new GameMessageSystemChat($"{Name} cast {spell.Name} on you{suffix}", ChatMessageType.Magic));
@@ -1654,16 +1656,57 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Returns the drain resistance for a damage type
+        /// </summary>
+        private static ResistanceType GetDrainResistanceType(DamageType damageType)
+        {
+            switch (damageType)
+            {
+                case DamageType.Health:
+                    return ResistanceType.HealthDrain;
+                case DamageType.Stamina:
+                    return ResistanceType.StaminaDrain;
+                case DamageType.Mana:
+                    return ResistanceType.ManaDrain;
+                default:
+                    return ResistanceType.Undef;
+            }
+        }
+
+        /// <summary>
+        /// Returns the boost resistance for a damage type
+        /// </summary>
+        private static ResistanceType GetBoostResistanceType(DamageType damageType)
+        {
+            switch (damageType)
+            {
+                case DamageType.Health:
+                    return ResistanceType.HealthBoost;
+                case DamageType.Stamina:
+                    return ResistanceType.StaminaBoost;
+                case DamageType.Mana:
+                    return ResistanceType.ManaBoost;
+                default:
+                    return ResistanceType.Undef;
+            }
+        }
+
+        /// <summary>
         /// Returns the drain resistance type for a vital
         /// </summary>
         private static ResistanceType GetDrainResistanceType(PropertyAttribute2nd vital)
         {
-            if (vital == PropertyAttribute2nd.Mana)
-                return ResistanceType.ManaDrain;
-            else if (vital == PropertyAttribute2nd.Stamina)
-                return ResistanceType.StaminaDrain;
-            else
-                return ResistanceType.HealthDrain;
+            switch (vital)
+            {
+                case PropertyAttribute2nd.Health:
+                    return ResistanceType.HealthDrain;
+                case PropertyAttribute2nd.Stamina:
+                    return ResistanceType.StaminaDrain;
+                case PropertyAttribute2nd.Mana:
+                    return ResistanceType.ManaDrain;
+                default:
+                    return ResistanceType.Undef;
+            }
         }
 
         /// <summary>
@@ -1671,20 +1714,17 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         private static ResistanceType GetBoostResistanceType(PropertyAttribute2nd vital)
         {
-            if (vital == PropertyAttribute2nd.Mana)
-                return ResistanceType.ManaBoost;
-            else if (vital == PropertyAttribute2nd.Stamina)
-                return ResistanceType.StaminaBoost;
-            else
-                return ResistanceType.HealthBoost;
-        }
-
-        /// <summary>
-        /// Returns TRUE if this object's spellbook contains input spell
-        /// </summary>
-        public bool SpellbookContains(uint spellID)
-        {
-            return Biota.BiotaPropertiesSpellBook.Any(i => i.Spell == spellID);
+            switch (vital)
+            {
+                case PropertyAttribute2nd.Health:
+                    return ResistanceType.HealthBoost;
+                case PropertyAttribute2nd.Stamina:
+                    return ResistanceType.StaminaBoost;
+                case PropertyAttribute2nd.Mana:
+                    return ResistanceType.ManaBoost;
+                default:
+                    return ResistanceType.Undef;
+            }
         }
     }
 }

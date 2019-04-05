@@ -7,6 +7,7 @@ using System.Text;
 using log4net;
 
 using ACE.Common;
+using ACE.Common.Extensions;
 using ACE.Database.Models.Shard;
 using ACE.Database.Models.World;
 using ACE.Entity;
@@ -77,6 +78,8 @@ namespace ACE.Server.WorldObjects
 
         public WorldObject ProjectileSource;
         public WorldObject ProjectileTarget;
+
+        public WorldObject Wielder;
 
         public WorldObject() { }
 
@@ -263,23 +266,27 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool Teleporting { get; set; } = false;
 
-        public bool HandleNPCReceiveItem(WorldObject item, WorldObject giver)
+        public bool HandleNPCReceiveItem(WorldObject item, WorldObject giver, out BiotaPropertiesEmote emote)
         {
-            // NPC accepts this item
-            var giveItem = EmoteManager.GetEmoteSet(EmoteCategory.Give, null, null, item.WeenieClassId);
-            if (giveItem != null)
-            {
-                EmoteManager.ExecuteEmoteSet(giveItem, giver);
-                return true;
-            }
-
             // NPC refuses this item, with a custom response
             var refuseItem = EmoteManager.GetEmoteSet(EmoteCategory.Refuse, null, null, item.WeenieClassId);
             if (refuseItem != null)
             {
+                emote = refuseItem;
                 EmoteManager.ExecuteEmoteSet(refuseItem, giver);
                 return true;
+            }            
+
+            // NPC accepts this item
+            var giveItem = EmoteManager.GetEmoteSet(EmoteCategory.Give, null, null, item.WeenieClassId);
+            if (giveItem != null)
+            {
+                emote = giveItem;
+                EmoteManager.ExecuteEmoteSet(giveItem, giver);
+                return true;
             }
+
+            emote = null;
             return false;
         }
 
@@ -710,16 +717,6 @@ namespace ACE.Server.WorldObjects
             return adjusted;
         }
 
-        public virtual void Open(WorldObject opener)
-        {
-            // empty base, override in child objects
-        }
-
-        public virtual void Close(WorldObject closer)
-        {
-            // empty base, override in child objects
-        }
-
         /// <summary>
         /// Returns a strike message based on damage type and severity
         /// </summary>
@@ -872,6 +869,12 @@ namespace ACE.Server.WorldObjects
                     item.Destroy();
             }
 
+            if (this is CombatPet combatPet)
+            {
+                if (combatPet.P_PetOwner.CurrentActiveCombatPet == this)
+                    combatPet.P_PetOwner.CurrentActiveCombatPet = null;
+            }
+
             if (raiseNotifyOfDestructionEvent)
                 NotifyOfEvent(RegenerationType.Destruction);
 
@@ -882,9 +885,24 @@ namespace ACE.Server.WorldObjects
                 GuidManager.RecycleDynamicGuid(Guid);
         }
 
+        public void FadeOutAndDestroy(bool raiseNotifyOfDestructionEvent = true)
+        {
+            EnqueueBroadcast(new GameMessageScript(Guid, ACE.Entity.Enum.PlayScript.Destroy));
+
+            var actionChain = new ActionChain();
+            actionChain.AddDelaySeconds(1.0f);
+            actionChain.AddAction(this, () => Destroy(raiseNotifyOfDestructionEvent));
+            actionChain.EnqueueChain();
+        }
+
         public string GetPluralName()
         {
-            return Name + "s";
+            var pluralName = PluralName;
+
+            if (pluralName == null)
+                pluralName = Name.Pluralize();
+
+            return pluralName;
         }
 
         /// <summary>
@@ -953,6 +971,8 @@ namespace ACE.Server.WorldObjects
         public static readonly float LocalBroadcastRange = 96.0f;
 
         public SetPosition ScatterPos;
+
+        public DestinationType DestinationType;
 
         public Skill ConvertToMoASkill(Skill skill)
         {

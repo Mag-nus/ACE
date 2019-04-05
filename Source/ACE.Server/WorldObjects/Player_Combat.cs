@@ -1,9 +1,12 @@
 using System;
+using System.Linq;
 using ACE.DatLoader.Entity;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
+using ACE.Server.Managers;
+using ACE.Server.Entity.Actions;
 using ACE.Server.Network.Enum;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
@@ -54,6 +57,9 @@ namespace ACE.Server.WorldObjects
             // missile weapon
             if (weapon != null && weapon.CurrentWieldedLocation == EquipMask.MissileWeapon)
                 return GetCreatureSkill(Skill.MissileWeapons).Skill;
+
+            if (weapon != null && weapon.WeaponSkill == Skill.TwoHandedCombat)
+                return Skill.TwoHandedCombat;
 
             // hack for converting pre-MoA skills
             var maxMelee = GetCreatureSkill(GetHighestMeleeSkill());
@@ -117,18 +123,6 @@ namespace ACE.Server.WorldObjects
                     return null;
                 }
             }
-
-            /*float? damage = null;
-            if (targetPlayer != null)
-            {
-                damage = CalculateDamagePVP(target, damageSource, damageType, ref critical, ref sneakAttack, ref bodyPart);
-
-                // TODO: level up shield mod?
-                if (targetPlayer.Invincible ?? false)
-                    damage = 0.0f;
-            }
-            else
-                damage = CalculateDamage(target, damageSource, ref critical, ref sneakAttack);*/
 
             var damageEvent = DamageEvent.CalculateDamage(this, target, damageSource);
 
@@ -344,7 +338,7 @@ namespace ACE.Server.WorldObjects
             // heritage damge mod
             var heritageMod = GetHeritageBonus(weapon) ? 1.05f : 1.0f;
 
-            var damageRatingMod = AdditiveCombine(heritageMod, recklessnessMod, sneakAttackMod, GetPositiveRatingMod(EnchantmentManager.GetDamageRating()));
+            var damageRatingMod = AdditiveCombine(heritageMod, recklessnessMod, sneakAttackMod, GetPositiveRatingMod(GetDamageRating()));
             //Console.WriteLine("Damage rating: " + ModToRating(damageRatingMod));
 
             var damage = baseDamage * attributeMod * powerMod * damageRatingMod;
@@ -367,7 +361,7 @@ namespace ACE.Server.WorldObjects
             if (criticalHit)
             {
                 // not effective for criticals: recklessness
-                damageRatingMod = AdditiveCombine(heritageMod, sneakAttackMod, GetPositiveRatingMod(EnchantmentManager.GetDamageRating()));
+                damageRatingMod = AdditiveCombine(heritageMod, sneakAttackMod, GetPositiveRatingMod(GetDamageRating()));
                 damage = baseDamageRange.Max * attributeMod * powerMod * damageRatingMod * (1.0f + GetWeaponCritDamageMod(this, attackSkill, targetCreature));
             }
 
@@ -389,10 +383,10 @@ namespace ACE.Server.WorldObjects
             var resistanceMod = damageSource != null && damageSource.IgnoreMagicResist ? 1.0f : AttackTarget.EnchantmentManager.GetResistanceMod(damageType);
 
             // weapon resistance mod?
-            var damageResistRatingMod = GetNegativeRatingMod(AttackTarget.EnchantmentManager.GetDamageResistRating());
+            var attackTarget = AttackTarget as Creature;
+            var damageResistRatingMod = GetNegativeRatingMod(attackTarget.GetDamageResistRating());
 
             // get shield modifier
-            var attackTarget = AttackTarget as Creature;
             var shieldMod = attackTarget.GetShieldMod(this, damageType);
 
             var slayerMod = GetWeaponCreatureSlayerModifier(this, target as Creature);
@@ -429,7 +423,7 @@ namespace ACE.Server.WorldObjects
             // heritage damge mod
             var heritageMod = GetHeritageBonus(weapon) ? 1.05f : 1.0f;
 
-            var damageRatingMod = AdditiveCombine(recklessnessMod, sneakAttackMod, heritageMod, GetPositiveRatingMod(EnchantmentManager.GetDamageRating()));
+            var damageRatingMod = AdditiveCombine(recklessnessMod, sneakAttackMod, heritageMod, GetPositiveRatingMod(GetDamageRating()));
             //Console.WriteLine("Damage rating: " + ModToRating(damageRatingMod));
 
             var damage = baseDamage * attributeMod * powerAccuracyMod * damageRatingMod;
@@ -467,7 +461,7 @@ namespace ACE.Server.WorldObjects
             var resistance = GetResistance(creaturePart, damageType);
 
             // ratings
-            var damageResistRatingMod = GetNegativeRatingMod(creature.EnchantmentManager.GetDamageResistRating());
+            var damageResistRatingMod = GetNegativeRatingMod(creature.GetDamageResistRating());
             //Console.WriteLine("Damage resistance rating: " + NegativeModToRating(damageResistRatingMod));
 
             // scale damage for armor and shield
@@ -624,9 +618,12 @@ namespace ACE.Server.WorldObjects
                 Fellowship.OnVitalUpdate(this);
 
             // send damage text message
-            var nether = damageType == DamageType.Nether ? "nether " : "";
-            var text = new GameMessageSystemChat($"You receive {amount} points of periodic {nether}damage.", ChatMessageType.Combat);
-            Session.Network.EnqueueSend(text);
+            if (PropertyManager.GetBool("show_dot_messages").Item)
+            {
+                var nether = damageType == DamageType.Nether ? "nether " : "";
+                var text = new GameMessageSystemChat($"You receive {amount} points of periodic {nether}damage.", ChatMessageType.Combat);
+                Session.Network.EnqueueSend(text);
+            }
 
             // splatter effects
             //var splatter = new GameMessageScript(Guid, (PlayScript)Enum.Parse(typeof(PlayScript), "Splatter" + creature.GetSplatterHeight() + creature.GetSplatterDir(this)));  // not sent in retail, but great visual indicator?
@@ -652,7 +649,7 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void TakeDamage(WorldObject source, DamageType damageType, float _amount, BodyPart bodyPart, bool crit = false)
         {
-            if (Invincible ?? false) return;
+            if (Invincible ?? false || IsDead) return;
 
             // check lifestone protection
             if (UnderLifestoneProtection)
@@ -674,7 +671,7 @@ namespace ACE.Server.WorldObjects
             if (Fellowship != null)
                 Fellowship.OnVitalUpdate(this);
 
-            if (Health.Current == 0)
+            if (Health.Current <= 0)
             {
                 OnDeath(source, damageType, crit);
                 Die();
@@ -869,8 +866,14 @@ namespace ACE.Server.WorldObjects
                             var equippedAmmo = GetEquippedAmmo();
                             if (equippedAmmo == null)
                             {
+                                var animTime = SetCombatMode(newCombatMode);
                                 Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "You are out of ammunition!"));
-                                newCombatMode = CombatMode.NonCombat;
+
+                                var actionChain = new ActionChain();
+                                actionChain.AddDelaySeconds(animTime);
+                                actionChain.AddAction(this, () => SetCombatMode(CombatMode.NonCombat));
+                                actionChain.EnqueueChain();
+                                return;
                             }
                             else
                             {
@@ -893,13 +896,6 @@ namespace ACE.Server.WorldObjects
             SetCombatMode(newCombatMode);
         }
 
-        public float GetResistanceMod(DamageType damageType, WorldObject damageSource, float weaponResistanceMod)
-        {
-            var enchantmentMod = damageSource != null && damageSource.IgnoreMagicResist ? 1.0f : EnchantmentManager.GetResistanceMod(damageType);
-
-            return enchantmentMod * weaponResistanceMod;
-        }
-
         /// <summary>
         /// Returns the current attack maneuver for a player
         /// </summary>
@@ -912,6 +908,77 @@ namespace ACE.Server.WorldObjects
         public override bool CanDamage(Creature target)
         {
             return true;    // handled elsewhere
+        }
+
+        // http://acpedia.org/wiki/Announcements_-_2002/04_-_Betrayal
+
+        // Some combination of strength and endurance (the two are roughly of equivalent importance) now allows one to have a level of "natural resistances" to the 7 damage types,
+        // and to partially resist drain health and harm attacks.
+
+        // This caps out at a 50% resistance (the equivalent to level 5 life prots) to these damage types.
+
+        // This resistance is not additive to life protections: higher level life protections will overwrite these natural resistances,
+        // although life vulns will take these natural resistances into account, if the player does not have a higher level life protection cast upon them.
+
+        // For example, a player will not get a free protective bonus from natural resistances if they have both Prot 7 and Vuln 7 cast upon them.
+        // The Prot and Vuln will cancel each other out, and since the Prot has overwritten the natural resistances, there will be no resistance bonus.
+
+        // The natural resistances, drain resistances, and regeneration rate info are now visible on the Character Information Panel, in what was once the Burden panel.
+
+        // The 5 categories for the endurance benefits are, in order from lowest benefit to highest: Poor, Mediocre, Hardy, Resilient, and Indomitable,
+        // with each range of benefits divided up equally amongst the 5 (e.g. Poor describes having anywhere from 1-10% resistance against drain health attacks, etc.).
+
+        // A few other important notes:
+
+        // - The abilities that Endurance or Endurance/Strength conveys are not increased by Strength or Endurance buffs.
+        //   It is the raw Strength and/or Endurance scores that determine the various bonuses.
+        // - For April, natural resistances will offer some protection versus hollow type damage, whether it is from a Hollow Minion or a Hollow weapon. This will be changed in May.
+        // - These abilities are player-only, creatures with high endurance will not benefit from any of these changes.
+        // - Come May, you can type @help endurance for a summary of the April changes to Endurance.
+
+        public override float GetNaturalResistance(DamageType damageType)
+        {
+            // base strength and endurance give the player a natural resistance to damage,
+            // which caps at 50% (equivalent to level 5 life prots)
+            // these do not stack with life protection spells
+
+            // - natural resistances are ignored by hollow damage
+
+            var strAndEnd = Strength.Base + Endurance.Base;
+
+            if (strAndEnd <= 200)
+                return 1.0f;
+
+            var naturalResistance = 1.0f - (float)(strAndEnd - 200) / 300 * 0.5f;
+            naturalResistance = Math.Max(naturalResistance, 0.5f);
+
+            return naturalResistance;
+        }
+
+        public string GetNaturalResistanceString(ResistanceType resistanceType)
+        {
+            var strAndEnd = Strength.Base + Endurance.Base;
+
+            if (strAndEnd > 440)        return "Indomitable";
+            else if (strAndEnd > 380)   return "Resilient";
+            else if (strAndEnd > 320)   return "Hardy";
+            else if (strAndEnd > 260)   return "Mediocre";
+            else if (strAndEnd > 200)   return "Poor";
+            else
+                return "None";
+        }
+
+        public string GetRegenBonusString()
+        {
+            var strAndEnd = Strength.Base + 2 * Endurance.Base;
+
+            if (strAndEnd > 690)        return "Indomitable";
+            else if (strAndEnd > 580)   return "Resilient";
+            else if (strAndEnd > 470)   return "Hardy";
+            else if (strAndEnd > 346)   return "Mediocre";
+            else if (strAndEnd > 200)   return "Poor";
+            else
+                return "None";
         }
     }
 }

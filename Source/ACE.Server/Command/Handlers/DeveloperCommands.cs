@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Numerics;
@@ -9,6 +8,7 @@ using log4net;
 
 using ACE.Common;
 using ACE.Database;
+using ACE.Database.Models.World;
 using ACE.DatLoader;
 using ACE.DatLoader.FileTypes;
 using ACE.Entity;
@@ -175,7 +175,6 @@ namespace ACE.Server.Command.Handlers
             CommandHandlerHelper.WriteOutputInfo(session, NetworkStatistics.Summary(), ChatMessageType.Broadcast);
         }
 
-#if NETDIAG
         [CommandHandler("trash_c2s", AccessLevel.Developer, CommandHandlerFlag.None, "Trash (corrupt) the next C2S packet that arrives.")]
         public static void HandleTrashNextPacketC2S(Session session, params string[] parameters)
         {
@@ -213,7 +212,6 @@ namespace ACE.Server.Command.Handlers
             HandleJunkC2S(session, parameters);
             HandleJunkS2C(session, parameters);
         }
-#endif
 
         /// <summary>
         /// List all clothing bases which are compatible with setup
@@ -790,8 +788,11 @@ namespace ACE.Server.Command.Handlers
                 {
                     try
                     {
-                        var xp = (long)aceParams[1].AsLong;
-                        aceParams[0].AsPlayer.GrantXP(xp);
+                        var amount = aceParams[1].AsLong;
+                        aceParams[0].AsPlayer.GrantXP(amount, XpType.Admin, false); 
+
+                        session.Network.EnqueueSend(new GameMessageSystemChat($"{amount:N0} experience granted.", ChatMessageType.Advancement));
+
                         return;
                     }
                     catch
@@ -938,7 +939,7 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("comps", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0, "Creates spell component items in your inventory for testing.")]
         public static void HandleComps(Session session, params string[] parameters)
         {
-            HashSet<uint> weenieIds = new HashSet<uint> { 686, 687, 688, 689, 690, 691, 740, 741, 742, 743, 744, 745, 746, 747, 748, 749, 750, 751, 752, 753, 754, 755, 756, 757, 758, 759, 760, 761, 762, 763, 764, 765, 766, 767, 768, 769, 770, 771, 772, 773, 774, 775, 776, 777, 778, 779, 780, 781, 782, 783, 784, 785, 786, 787, 788, 789, 790, 791, 792, 1643, 1644, 1645, 1646, 1647, 1648, 1649, 1650, 1651, 1652, 1653, 1654, 7299, 8897, 20631 };
+            HashSet<uint> weenieIds = new HashSet<uint> { 686, 687, 688, 689, 690, 691, 740, 741, 742, 743, 744, 745, 746, 747, 748, 749, 750, 751, 752, 753, 754, 755, 756, 757, 758, 759, 760, 761, 762, 763, 764, 765, 766, 767, 768, 769, 770, 771, 772, 773, 774, 775, 776, 777, 778, 779, 780, 781, 782, 783, 784, 785, 786, 787, 788, 789, 790, 791, 792, 1643, 1644, 1645, 1646, 1647, 1648, 1649, 1650, 1651, 1652, 1653, 1654, 7299, 7581, 8897, 20631 };
 
             AddWeeniesToInventory(session, weenieIds, 1);
         }
@@ -1735,9 +1736,9 @@ namespace ACE.Server.Command.Handlers
                 else if (param.Equals("off"))
                     session.Player.DebugDamage = Player.DebugDamageType.None;
                 else if (param.StartsWith("attack"))
-                    session.Player.DebugDamage |= Player.DebugDamageType.Attacker;
+                    session.Player.DebugDamage = Player.DebugDamageType.Attacker;
                 else if (param.StartsWith("defen"))
-                    session.Player.DebugDamage |= Player.DebugDamageType.Defender;
+                    session.Player.DebugDamage = Player.DebugDamageType.Defender;
                 else
                 {
                     session.Network.EnqueueSend(new GameMessageSystemChat($"DebugDamage: unknown {param}", ChatMessageType.Broadcast));
@@ -1745,6 +1746,126 @@ namespace ACE.Server.Command.Handlers
                 }
             }
             session.Network.EnqueueSend(new GameMessageSystemChat($"DebugDamage: {session.Player.DebugDamage}", ChatMessageType.Broadcast));
+        }
+
+        /// <summary>
+        /// Enables the aetheria slots for the player
+        /// </summary>
+        [CommandHandler("enable-aetheria", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 0, "Enables the aetheria slots for the player")]
+        public static void HandleEnableAetheria(Session session, params string[] parameters)
+        {
+            var flags = (int)AetheriaBitfield.All;
+
+            if (parameters.Length > 0)
+                int.TryParse(parameters[0], out flags);
+
+            session.Player.UpdateProperty(session.Player, PropertyInt.AetheriaBitfield, flags);
+        }
+
+        [CommandHandler("debugchess", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Shows the chess move history for a player")]
+        public static void HandleDebugChess(Session session, params string[] parameters)
+        {
+            session.Player.ChessMatch?.DebugMove();
+        }
+
+        [CommandHandler("debugboard", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 0, "Shows the current chess board state")]
+        public static void HandleDebugBoard(Session session, params string[] parameters)
+        {
+            session.Player.ChessMatch?.Logic?.DebugBoard();
+        }
+
+        /// <summary>
+        /// Teleports directly to a dungeon by name or landblock
+        /// </summary>
+        [CommandHandler("teledungeon", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "<dungeon name or landblock>")]
+        public static void HandleTeleDungeon(Session session, params string[] parameters)
+        {
+            var isBlock = true;
+            var param = parameters[0];
+            if (parameters.Length > 1)
+                isBlock = false;
+
+            var landblock = 0u;
+            if (isBlock)
+            {
+                try
+                {
+                    landblock = Convert.ToUInt32(param, 16);
+
+                    if (landblock >= 0xFFFF)
+                        landblock = landblock >> 16;
+                }
+                catch (Exception)
+                {
+                    isBlock = false;
+                }
+            }
+
+            // teleport to dungeon landblock
+            if (isBlock)
+                HandleTeleDungeonBlock(session, landblock);
+
+            // teleport to dungeon by name
+            else
+                HandleTeleDungeonName(session, parameters);
+        }
+
+        public static void HandleTeleDungeonBlock(Session session, uint landblock)
+        {
+            using (var ctx = new WorldDbContext())
+            {
+                var query = from weenie in ctx.Weenie
+                            join wpos in ctx.WeeniePropertiesPosition on weenie.ClassId equals wpos.ObjectId
+                            where weenie.Type == (int)WeenieType.Portal && wpos.PositionType == (int)PositionType.Destination
+                            select new
+                            {
+                                Weenie = weenie,
+                                Dest = wpos
+                            };
+
+                var results = query.ToList();
+
+                var dest = results.Where(i => i.Dest.ObjCellId >> 16 == landblock).Select(i => i.Dest).FirstOrDefault();
+
+                if (dest == null)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Couldn't find dungeon {landblock:X4}", ChatMessageType.Broadcast));
+                    return;
+                }
+
+                session.Player.Teleport(new Position(dest.ObjCellId, dest.OriginX, dest.OriginY, dest.OriginZ, dest.AnglesX, dest.AnglesY, dest.AnglesZ, dest.AnglesW));
+            }
+        }
+
+        public static void HandleTeleDungeonName(Session session, params string[] parameters)
+        {
+            var searchName = string.Join(" ", parameters);
+
+            using (var ctx = new WorldDbContext())
+            {
+                var query = from weenie in ctx.Weenie
+                            join wstr in ctx.WeeniePropertiesString on weenie.ClassId equals wstr.ObjectId
+                            join wpos in ctx.WeeniePropertiesPosition on weenie.ClassId equals wpos.ObjectId
+                            where weenie.Type == (int)WeenieType.Portal && wstr.Type == (int)PropertyString.Name && wpos.PositionType == (int)PositionType.Destination
+                            select new
+                            {
+                                Weenie = weenie,
+                                Name = wstr,
+                                Dest = wpos
+                            };
+
+                var results = query.ToList();
+
+                var dest = results.Where(i => i.Name.Value.Equals(searchName, StringComparison.OrdinalIgnoreCase)).Select(i => i.Dest).FirstOrDefault();
+
+                if (dest == null)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Couldn't find dungeon name {searchName}", ChatMessageType.Broadcast));
+                    return;
+                }
+
+                session.Player.Teleport(new Position(dest.ObjCellId, dest.OriginX, dest.OriginY, dest.OriginZ, dest.AnglesX, dest.AnglesY, dest.AnglesZ, dest.AnglesW));
+            }
         }
     }
 }
