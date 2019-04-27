@@ -500,11 +500,14 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Applies an encapsulated spirit to a PetDevice
         /// </summary>
-        public void Refill(Player player, GenericObject spirit)
+        public void Refill(Player player, CraftTool spirit)
         {
             // TODO: this should be moved to recipe system
             if (!IsEncapsulatedSpirit(spirit))
                 return;
+
+            if (player.IsBusy) return;
+            player.IsBusy = true;
 
             var actionChain = new ActionChain();
 
@@ -527,7 +530,10 @@ namespace ACE.Server.WorldObjects
                 player.Session.Network.EnqueueSend(new GameMessageSystemChat("You add the spirit to the essence.", ChatMessageType.Broadcast));
 
                 player.SendUseDoneEvent();
+
+                player.IsBusy = false;
             });
+            player.EnqueueMotion(actionChain, MotionCommand.Ready);
 
             actionChain.EnqueueChain();
         }

@@ -69,6 +69,12 @@ namespace ACE.Server.Network.Structure
             generateAppraisalInfo(wo, examiner, success);
         }
 
+        public AppraiseInfo()
+        {
+            Flags = IdentifyResponseFlags.None;
+            Success = false;
+        }
+
         private void generateAppraisalInfo(WorldObject wo, Player examiner, bool success = true)
         {
             //Console.WriteLine("Appraise: " + wo.Guid);
@@ -189,6 +195,9 @@ namespace ACE.Server.Network.Structure
                 // handle dynamic properties for appraisal
                 if (player.Allegiance != null && player.AllegianceNode != null)
                 {
+                    if (player.Allegiance.AllegianceName != null)
+                        PropertiesString[PropertyString.AllegianceName] = player.Allegiance.AllegianceName;
+
                     if (player.AllegianceNode.IsMonarch)
                     {
                         PropertiesInt[PropertyInt.AllegianceFollowers] = player.AllegianceNode.TotalFollowers;
@@ -578,8 +587,10 @@ namespace ACE.Server.Network.Structure
         }
 
         // TODO: generics
-        public static void Write(this BinaryWriter writer, Dictionary<PropertyInt, int> properties)
+        public static void Write(this BinaryWriter writer, Dictionary<PropertyInt, int> _properties)
         {
+            var properties = new SortedDictionary<PropertyInt, int>(_properties);
+
             PHashTable.WriteHeader(writer, properties.Count);
             foreach (var kvp in properties)
             {
@@ -588,8 +599,10 @@ namespace ACE.Server.Network.Structure
             }
         }
 
-        public static void Write(this BinaryWriter writer, Dictionary<PropertyInt64, long> properties)
+        public static void Write(this BinaryWriter writer, Dictionary<PropertyInt64, long> _properties)
         {
+            var properties = new SortedDictionary<PropertyInt64, long>(_properties);
+
             PHashTable.WriteHeader(writer, properties.Count);
             foreach (var kvp in properties)
             {
@@ -598,8 +611,10 @@ namespace ACE.Server.Network.Structure
             }
         }
 
-        public static void Write(this BinaryWriter writer, Dictionary<PropertyBool, bool> properties)
+        public static void Write(this BinaryWriter writer, Dictionary<PropertyBool, bool> _properties)
         {
+            var properties = new SortedDictionary<PropertyBool, bool>(_properties);
+
             PHashTable.WriteHeader(writer, properties.Count);
             foreach (var kvp in properties)
             {
@@ -608,8 +623,10 @@ namespace ACE.Server.Network.Structure
             }
         }
 
-        public static void Write(this BinaryWriter writer, Dictionary<PropertyFloat, double> properties)
+        public static void Write(this BinaryWriter writer, Dictionary<PropertyFloat, double> _properties)
         {
+            var properties = new SortedDictionary<PropertyFloat, double>(_properties);
+
             PHashTable.WriteHeader(writer, properties.Count);
             foreach (var kvp in properties)
             {
@@ -618,8 +635,10 @@ namespace ACE.Server.Network.Structure
             }
         }
 
-        public static void Write(this BinaryWriter writer, Dictionary<PropertyString, string> properties)
+        public static void Write(this BinaryWriter writer, Dictionary<PropertyString, string> _properties)
         {
+            var properties = new SortedDictionary<PropertyString, string>(_properties);
+
             PHashTable.WriteHeader(writer, properties.Count);
             foreach (var kvp in properties)
             {
@@ -628,8 +647,10 @@ namespace ACE.Server.Network.Structure
             }
         }
 
-        public static void Write(this BinaryWriter writer, Dictionary<PropertyDataId, uint> properties)
+        public static void Write(this BinaryWriter writer, Dictionary<PropertyDataId, uint> _properties)
         {
+            var properties = new SortedDictionary<PropertyDataId, uint>(_properties);
+
             PHashTable.WriteHeader(writer, properties.Count);
             foreach (var kvp in properties)
             {

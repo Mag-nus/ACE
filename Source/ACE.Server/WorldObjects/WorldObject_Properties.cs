@@ -1254,6 +1254,12 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt.MaterialType); else SetProperty(PropertyInt.MaterialType, (int)value.Value); }
         }
 
+        public MaterialType? GemType
+        {
+            get => (MaterialType?)GetProperty(PropertyInt.GemType);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.GemType); else SetProperty(PropertyInt.GemType, (int)value.Value); }
+        }
+
         public int? Attuned
         {
             get => GetProperty(PropertyInt.Attuned);
@@ -1930,6 +1936,12 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.GeneratorEnteredWorld); else SetProperty(PropertyBool.GeneratorEnteredWorld, value); }
         }
 
+        public int? TsysMutationData
+        {
+            get => GetProperty(PropertyInt.TsysMutationData);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.TsysMutationData); else SetProperty(PropertyInt.TsysMutationData, value.Value); }
+        }
+
         /// <summary>
         /// If TRUE, this is an admin-only visible object, only seen with /adminvision
         /// </summary>
@@ -2263,10 +2275,10 @@ namespace ACE.Server.WorldObjects
             set { if (!value) RemoveProperty(PropertyBool.IgnorePortalRestrictions); else SetProperty(PropertyBool.IgnorePortalRestrictions, value); }
         }
 
-        public bool? Invincible
+        public bool Invincible
         {
-            get => GetProperty(PropertyBool.Invincible);
-            set { if (!value.HasValue) RemoveProperty(PropertyBool.Invincible); else SetProperty(PropertyBool.Invincible, value.Value); }
+            get => GetProperty(PropertyBool.Invincible) ?? false;
+            set { if (!value) RemoveProperty(PropertyBool.Invincible); else SetProperty(PropertyBool.Invincible, value); }
         }
 
         public int? XpOverride

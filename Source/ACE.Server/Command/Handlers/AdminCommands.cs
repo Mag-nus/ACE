@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Text;
@@ -8,6 +9,7 @@ using System.Threading;
 using log4net;
 
 using ACE.Database;
+using ACE.Database.Models.Auth;
 using ACE.Database.Models.Shard;
 using ACE.Database.Models.World;
 using ACE.DatLoader;
@@ -20,7 +22,12 @@ using ACE.Server.Managers;
 using ACE.Server.Network;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
-using ACE.Database.Models.Auth;
+using ACE.Server.Physics.Entity;
+using ACE.Server.Network.Enum;
+using ACE.Server.Network.Packets;
+using ACE.Server.Physics.Common;
+
+using Position = ACE.Entity.Position;
 
 namespace ACE.Server.Command.Handlers
 {
@@ -106,113 +113,93 @@ namespace ACE.Server.Command.Handlers
             // TODO: output
         }
 
+        public enum BootCommandType
+        {
+            //Account,
+            Char,
+            Iid
+        }
+
         /// <summary>
-        /// Boots the Player or Account holder from the server and displays the CoC Violation Warning
+        /// Boots the session of the logged in character from the server and displays CoC Violation Warning or supplied reason.
         /// </summary>
         /// <remarks>
         ///     TODO: 1. After the group messages are operational, Send out a message on the Audit Group Chat Channel and alert other admins of this command usage.
+        ///     TODO: 2. boot by account name
         /// </remarks>
-        [CommandHandler("boot", AccessLevel.Sentinel, CommandHandlerFlag.None, 2,
-            "Boots the Player or Account holder from the server and displays the CoC Violation Warning",
-            "{ subscriptionId | char | iid } who")]
+        [CommandHandler("boot", AccessLevel.Sentinel, CommandHandlerFlag.None, true, 1,
+            "Boots the session of the logged in character from the server and displays CoC Violation Warning or supplied reason.\n<who> can be either a character iid or character name.",
+            "who, char|iid [ , reason ]\nexamples:\nboot axe man, char, griefing and spamming chat\nboot 1342177281, iid")]
         public static void HandleBoot(Session session, params string[] parameters)
         {
-            // usage: @boot { account, char, iid} who
-            // This command boots the specified character out of the game.You can specify who to boot by account, character name, or player instance id.  'who' is the account / character / instance id to actually boot.
-            // @boot - Boots the character out of the game.
-            // The first parameter may be only text
-            // The second paramater and proceeding parameters may also be a number or text, but the logic depends on the text from the first parameter.
-            AccountLookupType selectorType = AccountLookupType.Undef;
-            string bootName = "";
-            uint bootId = 0;
+            List<CommandParameterHelpers.ACECommandParameter> aceParams = new List<CommandParameterHelpers.ACECommandParameter>()
+            {
+                new CommandParameterHelpers.ACECommandParameter() {
+                    Type = CommandParameterHelpers.ACECommandParameterType.PlayerName,
+                    Required = true,
+                    ErrorMessage = "Please supply the iid or name of the online character to boot"
+                },
+                new CommandParameterHelpers.ACECommandParameter()
+                {
+                    Type = CommandParameterHelpers.ACECommandParameterType.Enum,
+                    PossibleValues = typeof(BootCommandType),
+                    Required = true,
+                    ErrorMessage = "Please supply the boot type: char|iid"
+                },
+                new CommandParameterHelpers.ACECommandParameter()
+                {
+                    Type = CommandParameterHelpers.ACECommandParameterType.CommaPrefixedText,
+                    Required = false
+                }
+            };
+            if (!CommandParameterHelpers.ResolveACEParameters(session, parameters, aceParams, true)) return;
+
+            BootCommandType bct = (BootCommandType)aceParams[1].Value;
+            Player plr = null;
             Session playerSession = null;
-
-            // Loop through the AccountLookupEnum to attempt at matching the first parameter with a lookup type
-            foreach (string bootType in System.Enum.GetNames(typeof(AccountLookupType)))
+            switch (bct)
             {
-                // Check the FIRST character of the first parameter against the Enum dictionary
-                // If the first character matches (a,c,i) then the selector will be returned.
-                // This allows for users to type @boot char <name>, since char is a keyword in c#
-                // Switch case to Lower when matching
-                if (parameters[0].ToLower()[0] == bootType.ToLower()[0])
-                {
-                    // If found, selectorType will hold the correct AccoutLookupType
-                    // If this returns true, that means we were successful and can stop looping
-                    if (Enum.TryParse(bootType, out selectorType))
-                        break;
-                }
-            }
-
-            // Peform logic
-            if (selectorType != AccountLookupType.Undef)
-            {
-                // Extract the name from the parameters and get the name from the first parameter
-                if (selectorType == AccountLookupType.Subscription || selectorType == AccountLookupType.Character)
-                    bootName = Common.Extensions.CharacterNameExtensions.StringArrayToCharacterName(parameters, 1);
-
-                switch (selectorType)
-                {
-                    case AccountLookupType.Subscription:
-                        {
-                            // Send the error to a player or the console
-                            CommandHandlerHelper.WriteOutputInfo(session, "Boot by Subscription not implemented.", ChatMessageType.Broadcast);
-                            return;
-                        }
-                    case AccountLookupType.Character:
-                        {
-                            var player = PlayerManager.GetOnlinePlayer(bootName);
-                            if (player != null)
-                            {
-                                playerSession = player.Session;
-                                bootId = player.Guid.Full;
-                            }
-                            break;
-                        }
-                    case AccountLookupType.Iid:
-                        {
-                            // Extract the Id from the parameters
-                            uint.TryParse(parameters[1], out bootId);
-                            var targetPlayer = PlayerManager.GetOnlinePlayer(bootId);
-                            if (targetPlayer != null)
-                            {
-                                playerSession = targetPlayer.Session;
-                                bootName = targetPlayer.Name;
-                            }
-                            break;
-                        }
-                }
-
-                if (playerSession != null)
-                {
-                    string bootText = $"account or player: {bootName} id: {bootId}";
-                    // Boot the player
-                    playerSession.BootSession("Account Booted", new GameMessageBootAccount(playerSession));
-
-                    // Send an update to the admin, but prevent sending too if the admin was the player being booted
-                    if (session != null)
+                case BootCommandType.Char:
+                    List<CommandParameterHelpers.ACECommandParameter> aceParams2 = new List<CommandParameterHelpers.ACECommandParameter>()
                     {
-                        // Log the player who initiated the boot
-                        bootText = "Player: " + session.Player.Name + " has booted " + bootText;
-                        if (session != playerSession)
-                            session.Network.EnqueueSend(new GameMessageSystemChat(bootText, ChatMessageType.Broadcast));
-                        // TODO: Send out a message on the Audit Group Chat Channel, to alert other admins of the boot
-                    }
-                    else
+                        new CommandParameterHelpers.ACECommandParameter() {
+                            Type = CommandParameterHelpers.ACECommandParameterType.OnlinePlayerName,
+                            ErrorMessage = $"Could not find the online character with name {aceParams[0].AsString}",
+                            Required = true,
+                        }
+                    };
+                    if (!CommandParameterHelpers.ResolveACEParameters(session, new string[1] { aceParams[0].AsString }, aceParams2, true)) return;
+                    plr = aceParams2[0].AsPlayer;
+                    break;
+                case BootCommandType.Iid:
+                    List<CommandParameterHelpers.ACECommandParameter> aceParams3 = new List<CommandParameterHelpers.ACECommandParameter>()
                     {
-                        bootText = "Console booted " + bootText;
-                    }
-
-                    // log the boot to file
-                    log.Info(bootText);
-
-                    // finish execution of command logic
-                    return;
-                }
+                        new CommandParameterHelpers.ACECommandParameter() {
+                            Type = CommandParameterHelpers.ACECommandParameterType.OnlinePlayerIid,
+                            ErrorMessage = $"Could not find the online character with iid {aceParams[0].AsString}",
+                            Required = true,
+                        }
+                    };
+                    if (!CommandParameterHelpers.ResolveACEParameters(session, new string[1] { aceParams[0].AsString }, aceParams3, true)) return;
+                    plr = aceParams3[0].AsPlayer;
+                    break;
             }
+            playerSession = plr.Session;
+            string whoDid = (session != null) ? session.Player.Name : "console";
+            string bootText = $"{whoDid} has booted player: {plr.Name} id: { plr.Guid.Full}";
 
-            // Did not find a player
-            // Send the error to a player or the console
-            CommandHandlerHelper.WriteOutputInfo(session, "Error locating the player or account to boot.", ChatMessageType.Broadcast);
+            string specifiedReason = aceParams[2].Value != null ? aceParams[2].AsString : null;
+
+            // Boot the player
+            playerSession.Terminate(SessionTerminationReason.AccountBooted, new GameMessageBootAccount(playerSession, specifiedReason), null, specifiedReason);
+
+            PlayerManager.BroadcastToAuditChannel(session?.Player, bootText);
+
+            // log the boot to file
+            log.Info(bootText);
+
+            // finish execution of command logic
+            return;
         }
 
         // deaf < on / off >
@@ -262,6 +249,8 @@ namespace ACE.Server.Command.Handlers
 
                 if (wo != null)
                     wo.Destroy();
+
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has deleted {wo.Name} (0x{wo.Guid:X8})");
             }
         }
 
@@ -386,7 +375,9 @@ namespace ACE.Server.Command.Handlers
         }
 
         // gag < char name >
-        [CommandHandler("gag", AccessLevel.Sentinel, CommandHandlerFlag.RequiresWorld, 1)]
+        [CommandHandler("gag", AccessLevel.Sentinel, CommandHandlerFlag.RequiresWorld, 1,
+            "Prevents a character from talking.",
+            "< char name >\nThe character will not be able to @tell or use chat normally.")]
         public static void HandleGag(Session session, params string[] parameters)
         {
             // usage: @gag < char name >
@@ -394,17 +385,49 @@ namespace ACE.Server.Command.Handlers
             // @gag - Prevents a character from talking.
             // @ungag -Allows a gagged character to talk again.
 
-            // TODO: output
+            if (parameters.Length > 0)
+            {
+                var playerName = string.Join(" ", parameters);
+
+                var msg = "";
+                if (PlayerManager.GagPlayer(session.Player, playerName))
+                {
+                    msg = $"{playerName} has been gagged for five minutes.";
+                }
+                else
+                {
+                    msg = $"Unable to gag a character named {playerName}, check the name and re-try the command.";
+                }
+
+                CommandHandlerHelper.WriteOutputInfo(session, msg, ChatMessageType.WorldBroadcast);
+            }
         }
 
         // ungag < char name >
-        [CommandHandler("ungag", AccessLevel.Sentinel, CommandHandlerFlag.RequiresWorld, 1)]
+        [CommandHandler("ungag", AccessLevel.Sentinel, CommandHandlerFlag.RequiresWorld, 1,
+            "Allows a gagged character to talk again.",
+            "< char name >\nThe character will again be able to @tell and use chat normally.")]
         public static void HandleUnGag(Session session, params string[] parameters)
         {
             // usage: @ungag < char name >
             // @ungag -Allows a gagged character to talk again.
 
-            // TODO: output
+            if (parameters.Length > 0)
+            {
+                var playerName = string.Join(" ", parameters);
+
+                var msg = "";
+                if (PlayerManager.UnGagPlayer(session.Player, playerName))
+                {
+                    msg = $"{playerName} has been ungagged.";
+                }
+                else
+                {
+                    msg = $"Unable to ungag a character named {playerName}, check the name and re-try the command.";
+                }
+
+                CommandHandlerHelper.WriteOutputInfo(session, msg, ChatMessageType.WorldBroadcast);
+            }
         }
 
         /// <summary>
@@ -587,6 +610,8 @@ namespace ACE.Server.Command.Handlers
                 }
                 session.Player.EnqueueBroadcast(new GameMessagePublicUpdatePropertyInt(session.Player, PropertyInt.PlayerKillerStatus, (int)session.Player.PlayerKillerStatus));
                 CommandHandlerHelper.WriteOutputInfo(session, $"Your current PK state is now set to: {session.Player.PlayerKillerStatus.ToString()}", ChatMessageType.Broadcast);
+
+                PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} changed their PK state to {session.Player.PlayerKillerStatus.ToString()}.");
             }
         }
 
@@ -782,6 +807,8 @@ namespace ACE.Server.Command.Handlers
                         if (wo is Creature creature && creature.IsAttackable())
                             creature.Smite(session.Player);
                     }
+
+                    PlayerManager.BroadcastToAuditChannel(session.Player,$"{session.Player.Name} used smite all.");
                 }
                 else
                 {
@@ -810,6 +837,8 @@ namespace ACE.Server.Command.Handlers
                     if (player != null)
                     {
                         player.Smite(session.Player);
+
+                        PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} used smite on {player.Name}");
                         return;
                     }
 
@@ -829,6 +858,8 @@ namespace ACE.Server.Command.Handlers
 
                     if (wo != null)
                         wo.Smite(session.Player);
+
+                    PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} used smite on {wo.Name} (0x{wo.Guid:X8})");
                 }
                 else
                 {
@@ -871,6 +902,8 @@ namespace ACE.Server.Command.Handlers
             player.Teleport(session.Player.Location);
             player.SetPosition(PositionType.TeleportedCharacter, currentPos);
             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{session.Player.Name} has teleported you.", ChatMessageType.Magic));
+
+            PlayerManager.BroadcastToAuditChannel(session.Player,$"{session.Player.Name} has teleported {player.Name} to them.");
         }
 
         /// <summary>
@@ -896,6 +929,8 @@ namespace ACE.Server.Command.Handlers
             player.Teleport(new Position(player.TeleportedCharacter));
             player.SetPosition(PositionType.TeleportedCharacter, null);
             player.Session.Network.EnqueueSend(new GameMessageSystemChat($"{session.Player.Name} has returned you to your previous location.", ChatMessageType.Magic));
+
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has returned {player.Name} to their previous location.");
         }
 
         // teleallto [char]
@@ -919,6 +954,8 @@ namespace ACE.Server.Command.Handlers
 
                 player.Teleport(new Position(destinationPlayer.Location));
             }
+
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has teleported all online players to their location.");
         }
 
         // telepoi location
@@ -1179,6 +1216,8 @@ namespace ACE.Server.Command.Handlers
             //inventoryItem.PhysicsDescriptionFlag |= PhysicsDescriptionFlag.Position;
             //LandblockManager.AddObject(loot);
             loot.EnterWorld();
+
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {loot.Name} (0x{loot.Guid:X8}) at {loot.Location.ToLOCString()}.");
         }
 
         // ci wclassid (number)
@@ -1236,6 +1275,8 @@ namespace ACE.Server.Command.Handlers
             // todo set the palette, shade here
 
             session.Player.TryCreateInInventoryWithNetworking(loot);
+
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} has created {loot.Name} (0x{loot.Guid:X8}) in their inventory.");
         }
 
         [CommandHandler("crack", AccessLevel.Envoy, CommandHandlerFlag.RequiresWorld, 0, "Cracks the most recently appraised locked target.", "[. open it too]")]
@@ -1280,15 +1321,6 @@ namespace ACE.Server.Command.Handlers
             }
             else notOK = true;
             if (notOK) ChatPacket.SendServerMessage(session, "Appraise a locked target before using @crack", ChatMessageType.Broadcast);
-        }
-
-        // cm <material type> <quantity> <ave. workmanship>
-        [CommandHandler("cm", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 3)]
-        public static void HandleCM(Session session, params string[] parameters)
-        {
-            // Format is: @cm <material type> <quantity> <ave. workmanship>
-
-            // TODO: output
         }
 
         /// <summary>
@@ -2039,10 +2071,14 @@ namespace ACE.Server.Command.Handlers
             // 330 active objects, 1931 total objects(16777216 buckets.)
 
             // todo, expand this
-            var activeLandblocks = LandblockManager.GetActiveLandblocks();
+            var loadedLandblocks = LandblockManager.GetLoadedLandblocks();
+            int dormantLandblocks = 0;
             int players = 0, creatures = 0, missiles = 0, other = 0, total = 0;
-            foreach (var landblock in activeLandblocks)
+            foreach (var landblock in loadedLandblocks)
             {
+                if (landblock.IsDormant)
+                    dormantLandblocks++;
+
                 foreach (var worldObject in landblock.GetAllWorldObjectsForDiagnostics())
                 {
                     if (worldObject is Player)
@@ -2057,13 +2093,17 @@ namespace ACE.Server.Command.Handlers
                     total++;
                 }
             }
-            sb.Append($"{activeLandblocks.Count:N0} active landblocks - Players: {players:N0}, Creatures: {creatures:N0}, Missiles: {missiles:N0}, Other: {other:N0}, Total: {total:N0}.{'\n'}"); // 11 total blocks loaded. 11 active. 0 pending dormancy. 0 dormant. 314 unloaded.
+            sb.Append($"Landblocks: {(loadedLandblocks.Count - dormantLandblocks):N0} active, {dormantLandblocks:N0} dormant - Players: {players:N0}, Creatures: {creatures:N0}, Missiles: {missiles:N0}, Other: {other:N0}, Total: {total:N0}.{'\n'}"); // 11 total blocks loaded. 11 active. 0 pending dormancy. 0 dormant. 314 unloaded.
             // 11 total blocks loaded. 11 active. 0 pending dormancy. 0 dormant. 314 unloaded.
 
             if (ServerPerformanceMonitor.IsRunning)
                 sb.Append($"Server Performance Monitor - UpdateGameWorld ~5m {ServerPerformanceMonitor.GetMonitor5m(ServerPerformanceMonitor.MonitorType.UpdateGameWorld_Entire).AverageEventDuration:N3}, ~1h {ServerPerformanceMonitor.GetMonitor1h(ServerPerformanceMonitor.MonitorType.UpdateGameWorld_Entire).AverageEventDuration:N3} s{'\n'}");
             else
                 sb.Append($"Server Performance Monitor - Not running. To start use /serverperformance start{'\n'}");
+
+            sb.Append($"Physics Cache Counts - BSPCache: {BSPCache.Count:N0}, GfxObjCache: {GfxObjCache.Count:N0}, PolygonCache: {PolygonCache.Count:N0}, VertexCache: {VertexCache.Count:N0}{'\n'}");
+
+            sb.Append($"Physics Landblocks Count - {LScape.LandblocksCount:N0}{'\n'}");
 
             sb.Append($"World DB Cache Counts - Weenies: {DatabaseManager.World.GetWeenieCacheCount():N0}, LandblockInstances: {DatabaseManager.World.GetLandblockInstancesCacheCount():N0}, PointsOfInterest: {DatabaseManager.World.GetPointsOfInterestCacheCount():N0}, Cookbooks: {DatabaseManager.World.GetCookbookCacheCount():N0}, Spells: {DatabaseManager.World.GetSpellCacheCount():N0}, Encounters: {DatabaseManager.World.GetEncounterCacheCount():N0}, Events: {DatabaseManager.World.GetEventsCacheCount():N0}{'\n'}");
             sb.Append($"Shard DB Counts - Biotas: {DatabaseManager.Shard.GetBiotaCount():N0}{'\n'}");
@@ -2306,6 +2346,66 @@ namespace ACE.Server.Command.Handlers
                 allegiance.ShowInfo();
                 Console.WriteLine("---------------");
             }
+        }
+
+        [CommandHandler("getenchantments", AccessLevel.Admin, CommandHandlerFlag.None, 0, "Shows the enchantments for the last appraised item", "")]
+        public static void HandleGetEnchantments(Session session, params string[] parameters)
+        {
+            var item = CommandHandlerHelper.GetLastAppraisedObject(session);
+            if (item == null) return;
+
+            var enchantments = item.EnchantmentManager.GetEnchantments_TopLayer(item.Biota.GetEnchantments(item.BiotaDatabaseLock));
+
+            foreach (var enchantment in enchantments)
+            {
+                var e = new Network.Structure.Enchantment(item, enchantment);
+                var info = e.GetInfo();
+                session.Network.EnqueueSend(new GameMessageSystemChat(info, ChatMessageType.Broadcast));
+            }
+        }
+      
+        // cm <material type> <quantity> <ave. workmanship>
+        [CommandHandler("cm", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 3)]
+        public static void HandleCM(Session session, params string[] parameters)
+        {
+            // Format is: @cm <material type> <quantity> <ave. workmanship>
+            HandleCISalvage(session);
+
+            // TODO: output
+        }
+
+        [CommandHandler("cisalvage", AccessLevel.Admin, CommandHandlerFlag.None, 1, "Create a salvage bag in your inventory", "<material_type>, optional: <structure> <workmanship> <num_items>")]
+        public static void HandleCISalvage(Session session, params string[] parameters)
+        {
+            if (!Enum.TryParse(parameters[0], out MaterialType materialType))
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Couldn't find material type {parameters[0]}", ChatMessageType.Broadcast));
+                return;
+            }
+
+            var wcid = (uint)Player.MaterialSalvage[(int)materialType];
+            var salvageBag = WorldObjectFactory.CreateNewWorldObject(wcid);
+
+            ushort structure = 100;
+            if (parameters.Length > 1)
+                ushort.TryParse(parameters[1], out structure);
+
+            var workmanship = 10f;
+            if (parameters.Length > 2)
+                float.TryParse(parameters[2], out workmanship);
+
+            var numItemsInMaterial = (int)Math.Round(workmanship);
+            if (parameters.Length > 3)
+                int.TryParse(parameters[3], out numItemsInMaterial);
+
+            var itemWorkmanship = (int)Math.Round(workmanship * numItemsInMaterial);
+
+            salvageBag.Name = $"Salvage ({structure})";
+            salvageBag.Structure = structure;
+            salvageBag.ItemWorkmanship = itemWorkmanship;
+            salvageBag.NumItemsInMaterial = numItemsInMaterial;
+
+            session.Player.TryCreateInInventoryWithNetworking(salvageBag);
         }
     }
 }

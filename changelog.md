@@ -1,5 +1,90 @@
 # ACEmulator Change Log
 
+### 2019-04-26
+[Ripley]
+* Add check for RecallsDisabled to command recalls.
+
+### 2019-04-25
+[Ripley]
+* Fix issues with crafting sending 0 burden to client.
+* Add CraftTool WeenieType.
+* Update Generic and Stackable WeenieType.
+* Fix issue with clapping motion repeating.
+* Fix giving stackables to NPCs that accept everything (Town Criers, Garbage Barrels)
+* Fix giving or dropping packs with attuned items.
+
+### 2019-04-24
+[Ripley]
+* Add support for AwardXP emote taking away from available xp (Donatello Linante -> Asheron's Lesser Benediction).
+* Fixes for Give to Player issues: Send contents of a container when given, Return object to giver when it fails to be given.
+* Fix for mis-matched mana on lootgen'd missile weapons.
+* Fix crash on null CurrentMotionState (statues).
+
+### 2019-04-23
+[OptimShi]
+* Fixed gems not dropping in loot.
+
+[Ripley]
+* Fix issues with player corpse decay.
+* Add support for IOU trade ins.
+* Updates to Event generators for two staged on/off.
+* Add caster effect to spells that have them.
+* Creatures with loot and NoCorpse will drop their loot to the ground upon death.
+
+### 2019-04-21
+[Ripley]
+* Updated handling of scribe related functions.
+
+### 2019-04-20
+[OptimShi]
+* Added Treasure Material tables and Treasure Color tables to apply appropriate colors and materials to items in the LootGenerationFactory
+**Note that this update requires _Database/Updates/World/2019-04-20-00-Treasure-Materials.sql_ to be applied, or ACE World Database v0.9.55 or higher**
+* Added "lootgen" Developer Command to aid in testing the loot generator. Currently only applies materials and colors to items; no other properties factored in at this time.
+
+[Ripley]
+* Changed shortcut code to fix some collision issues.
+* Updated shutdown sequence to support notifications to players at intervals and adjusted shutdown lockout to apply when server is less than 3 minutes from shutdown.
+* Fix some issues with hotspots.
+* Update myquests output to match plugin regex expectations.
+* Fix rapid player corpse decay upon server restart.
+* Fix issue with npcs activating other objects.
+
+**Stage 2 Shortcut Bar Fix**
+* Prior to update to latest master, re-run `fix-shortcut-bars` and confirm 0 bugged players. If bugged players exist, `git checkout 90c98c76a631382b761b1db49522c16dcf7602de`, follow Stage 1 guide to fix them then continue with update. `git checkout master`
+* Apply patch `2019-04-17-00-Character_Shortcut_Changes.sql` in Shard updates to fix issue with shortcuts causing a save to fail for the character.
+
+### 2019-04-19
+[Ripley, gmriggs]
+* Fix issue with non-player objects activating other non-player objects.
+* Move some messages to WorldBroadcast filter.
+
+**Stage 1 Shortcut Bar Fix**
+  - Update to latest master
+  - Start ACE and close world using `world close boot`
+    - optionally, you can use `modifybool world_closed true` and restart world as well to ensure no players are connected and online for this process.    
+  - Run `fix-shortcut-bars` command
+    - if there are bugged players, issue `fix-shortcut-bars execute` command
+  - Once that is finished, world is ready for stage two update. You will probably want to run the above command again just prior to next update to confirm no bugged players exist.
+    - if you set world to closed on startup, you can use `modifybool world_closed false` return world to default startup.
+
+### 2019-04-18
+[Ripley]
+* Fix bug with picking up items from your own corpse, hooks or storage that had quest stamps.
+* Fix bug with naked corpses not appearing correctly.
+
+### 2019-04-16
+[Ripley]
+* Fix bug with IDing items in Trade Window.
+* Fix bug with trade causing receiver to turn to initiator when trade starts.
+* Added rot after 5 minutes to player sold items on vendors.
+
+### 2019-04-13
+[Ripley]
+* Fix minor issue with scrolls when IDing them.
+* Fix major issue with recipes not scoping the requirements and mods to indexes which indicated where the checks or mods applied to.
+* Update Crafting SQL Writer, Adapter for above fixes.
+- **This change requires you to update to the latest world database release found in ACE-World-16PY-Patches, v0.9.48 or higher**
+
 ### 2019-04-10
 [Ripley]
 * Update Crafting SQL Writer.

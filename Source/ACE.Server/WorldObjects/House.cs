@@ -279,7 +279,7 @@ namespace ACE.Server.WorldObjects
                 var player = PlayerManager.FindByGuid(housePermission.PlayerGuid);
                 if (player == null)
                 {
-                    Console.WriteLine($"{Name}.BuildGuests(): couldn't find guest {housePermission.PlayerGuid}");
+                    Console.WriteLine($"{Name}.BuildGuests(): couldn't find guest {housePermission.PlayerGuid:X8}");
                     continue;
                 }
                 Guests.Add(player.Guid, housePermission.Storage);
@@ -380,6 +380,10 @@ namespace ACE.Server.WorldObjects
                 if (_dungeonLandblockID == null)
                 {
                     var housePortal = GetHousePortals();
+
+                    if (housePortal.Count == 0)
+                        return 0;
+
                     _dungeonLandblockID = housePortal[0].ObjCellId | 0xFFFF;
                 }
                 return _dungeonLandblockID.Value;
@@ -395,6 +399,10 @@ namespace ACE.Server.WorldObjects
                 if (_dungeonHouseGuid == null)
                 {
                     var housePortals = GetHousePortals();
+
+                    if (housePortals.Count == 0)
+                        return 0;
+
                     _dungeonHouseGuid = housePortals[0].Id;
 
                 }
@@ -413,6 +421,9 @@ namespace ACE.Server.WorldObjects
         {
             get
             {
+                if (HouseType == ACE.Entity.Enum.HouseType.Apartment || HouseType == ACE.Entity.Enum.HouseType.Cottage)
+                    return this;
+
                 var landblock = (ushort)((RootGuid.Full >> 12) & 0xFFFF);
 
                 var landblockId = new LandblockId((uint)(landblock << 16 | 0xFFFF));
@@ -439,6 +450,12 @@ namespace ACE.Server.WorldObjects
         {
             get
             {
+                if (HouseType == ACE.Entity.Enum.HouseType.Apartment || HouseType == ACE.Entity.Enum.HouseType.Cottage)
+                {
+                    _rootGuid = Guid;
+                    return Guid;
+                }
+
                 if (_rootGuid != null)
                     return _rootGuid.Value;
 
@@ -451,6 +468,13 @@ namespace ACE.Server.WorldObjects
                 var biota = DatabaseManager.Shard.GetBiotasByWcid(WeenieClassId).FirstOrDefault(b => b.BiotaPropertiesPosition.FirstOrDefault(p => p.PositionType == (ushort)PositionType.Location).ObjCellId >> 16 != Location?.Landblock);
                 if (biota == null)
                 {
+                    var instance = DatabaseManager.World.GetLandblockInstancesByWcid(WeenieClassId).FirstOrDefault(w => w.ObjCellId >> 16 != Location?.Landblock);
+                    if (instance != null)
+                    {
+                        _rootGuid = new ObjectGuid(instance.Guid);
+                        return _rootGuid.Value;
+                    }
+
                     Console.WriteLine($"{Name}.RootGuid: couldn't find root guid for {WeenieClassId} on landblock {Location.Landblock:X8}");
 
                     _rootGuid = Guid;
@@ -502,6 +526,9 @@ namespace ACE.Server.WorldObjects
 
         public bool OnProperty(Player player)
         {
+            if (HouseType == ACE.Entity.Enum.HouseType.Apartment)
+                return player.Location.Cell == Location.Cell;
+
             if (player.Location.GetOutdoorCell() == Location.GetOutdoorCell())
                 return true;
 

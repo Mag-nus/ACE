@@ -92,8 +92,6 @@ namespace ACE.Server.WorldObjects
 
             // set pink bubble state
             IgnoreCollisions = true; ReportCollisions = false; Hidden = true;
-
-            PhysicsObj.SetPlayer();
         }
 
         private void SetEphemeralValues()
@@ -235,8 +233,8 @@ namespace ACE.Server.WorldObjects
             var wo = FindObject(objectGuid, SearchLocations.Everywhere, out _, out _, out _);
             if (wo == null)
             {
-                log.Warn($"{Name}.ExamineObject({objectGuid:X8}): couldn't find object");
-                SendUseDoneEvent();
+                log.Debug($"{Name}.ExamineObject({objectGuid:X8}): couldn't find object");
+                Session.Network.EnqueueSend(new GameEventIdentifyObjectResponse(Session, objectGuid));
                 return;
             }
 
@@ -262,7 +260,8 @@ namespace ACE.Server.WorldObjects
 
                 var chance = SkillCheck.GetSkillChance(currentSkill, difficulty);
 
-                if (difficulty == 0 || player != null && (!player.GetCharacterOption(CharacterOption.AttemptToDeceiveOtherPlayers) || player == this))
+                if (difficulty == 0 || player != null && (!player.GetCharacterOption(CharacterOption.AttemptToDeceiveOtherPlayers) || player == this
+                    || ((this is Admin || this is Sentinel) && CloakStatus.HasValue && CloakStatus.Value == ACE.Entity.Enum.CloakStatus.On)))
                     chance = 1.0f;
 
                 success = chance >= ThreadSafeRandom.Next(0.0f, 1.0f);
@@ -378,7 +377,9 @@ namespace ACE.Server.WorldObjects
             var book = FindObject(new ObjectGuid(bookGuid), SearchLocations.MyInventory, out var container, out var rootOwner, out var wasEquipped) as Book;
             if (book == null) return;
 
-            book.ModifyPage(pageId, pageText);
+            var success = book.ModifyPage(pageId, pageText, this);
+
+            Session.Network.EnqueueSend(new GameEventBookModifyPageResponse(Session, bookGuid, pageId, true));
         }
 
         public void HandleActionBookDeletePage(uint bookGuid, uint pageId)
@@ -387,7 +388,7 @@ namespace ACE.Server.WorldObjects
             var book = FindObject(new ObjectGuid(bookGuid), SearchLocations.MyInventory, out var container, out var rootOwner, out var wasEquipped) as Book;
             if (book == null) return;
 
-            var success = book.DeletePage(pageId);
+            var success = book.DeletePage(pageId, this);
 
             Session.Network.EnqueueSend(new GameEventBookDeletePageResponse(Session, bookGuid, pageId, success));
         }
@@ -432,6 +433,14 @@ namespace ACE.Server.WorldObjects
             if (Fellowship != null)
                 FellowshipQuit(false);
 
+            if (IsTrading && TradePartner != null)
+            {
+                var tradePartner = PlayerManager.GetOnlinePlayer(TradePartner);
+
+                if (tradePartner != null)
+                    tradePartner.HandleActionCloseTradeNegotiations(tradePartner.Session);                
+            }
+
             if (!clientSessionTerminatedAbruptly)
             {
                 // Thie retail server sends a ChatRoomTracker 0x0295 first, then the status message, 0x028B. It does them one at a time for each individual channel.
@@ -469,13 +478,13 @@ namespace ACE.Server.WorldObjects
                     PlayerManager.SwitchPlayerFromOnlineToOffline(this);
                 });
 
-                // close any open chests
+                // close any open landblock containers (chests / corpses)
                 if (LastOpenedContainerId != ObjectGuid.Invalid)
                 {
-                    var chest = CurrentLandblock.GetObject(LastOpenedContainerId) as Chest;
+                    var container = CurrentLandblock.GetObject(LastOpenedContainerId) as Container;
 
-                    if (chest != null)
-                        chest.Close(this);
+                    if (container != null)
+                        container.Close(this);
                 }
 
                 logoutChain.EnqueueChain();
@@ -731,17 +740,44 @@ namespace ACE.Server.WorldObjects
 
         public void HandleActionTalk(string message)
         {
-            EnqueueBroadcast(new GameMessageCreatureMessage(message, Name, Guid.Full, ChatMessageType.Speech), LocalBroadcastRange, true);
+            if (!IsGagged)
+                EnqueueBroadcast(new GameMessageCreatureMessage(message, Name, Guid.Full, ChatMessageType.Speech), LocalBroadcastRange, true);
+            else
+                SendGagError();
+        }
+
+        public void SendGagError()
+        {
+            var msg = "You are unable to talk locally, globally, or send tells because you have been gagged.";
+            Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, msg), new GameMessageSystemChat(msg,ChatMessageType.WorldBroadcast));
+        }
+
+        public void SendGagNotice()
+        {
+            var msg = "Your chat privileges have been suspended.";
+            Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, msg), new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast));
+        }
+
+        public void SendUngagNotice()
+        {
+            var msg = "Your chat privileges have been restored.";
+            Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, msg), new GameMessageSystemChat(msg, ChatMessageType.WorldBroadcast));
         }
 
         public void HandleActionEmote(string message)
         {
-            EnqueueBroadcast(new GameMessageEmoteText(Guid.Full, Name, message), LocalBroadcastRange);
+            if (!IsGagged)
+                EnqueueBroadcast(new GameMessageEmoteText(Guid.Full, Name, message), LocalBroadcastRange);
+            else
+                SendGagError();
         }
 
         public void HandleActionSoulEmote(string message)
         {
-            EnqueueBroadcast(new GameMessageSoulEmote(Guid.Full, Name, message), LocalBroadcastRange);
+            if (!IsGagged)
+                EnqueueBroadcast(new GameMessageSoulEmote(Guid.Full, Name, message), LocalBroadcastRange);
+            else
+                SendGagError();
         }
 
         public void HandleActionJump(JumpPack jump)
@@ -829,6 +865,10 @@ namespace ACE.Server.WorldObjects
         /// <param name="spellDID">Id of the spell cast by the consumable; can be null, if buffType != ConsumableBuffType.Spell</param>
         public void ApplyConsumable(string consumableName, Sound sound, ConsumableBuffType buffType, uint? boostAmount, uint? spellDID)
         {
+            if (IsBusy) return;
+
+            IsBusy = true;
+
             MotionCommand motionCommand;
 
             if (sound == Sound.Eat1)
@@ -896,8 +936,8 @@ namespace ACE.Server.WorldObjects
                     if (vitalName == "Health")
                     {
                         DamageHistory.OnHeal((uint)vitalChange);
-                        if (Fellowship != null)
-                            Fellowship.OnVitalUpdate(this);
+                        //if (Fellowship != null)
+                            //Fellowship.OnVitalUpdate(this);
                     }
 
                     buffMessage = new GameMessageSystemChat($"You regain {vitalChange} {vitalName}.", ChatMessageType.Craft);
@@ -911,6 +951,8 @@ namespace ACE.Server.WorldObjects
                 // return to original stance
                 var returnStance = new Motion(CurrentMotionState.Stance);
                 EnqueueBroadcastMotion(returnStance);
+
+                IsBusy = false;
             });
 
            actionChain.EnqueueChain();
@@ -946,6 +988,10 @@ namespace ACE.Server.WorldObjects
             {
                 var adminObjs = PhysicsObj.ObjMaint.ObjectTable.Values.Where(o => o.WeenieObj.WorldObject.Visibility);
                 PhysicsObj.enqueue_objs(adminObjs);
+
+                var nodrawObjs = PhysicsObj.ObjMaint.ObjectTable.Values.Where(o => (o.WeenieObj.WorldObject.NoDraw ?? false) || (o.WeenieObj.WorldObject.UiHidden ?? false));
+                foreach (var wo in nodrawObjs)
+                    Session.Network.EnqueueSend(new GameMessageUpdateObject(wo.WeenieObj.WorldObject, Adminvision, Adminvision ? true : false));
 
                 // sending DO network messages for /adminvision off here doesn't work in client unfortunately?
             }

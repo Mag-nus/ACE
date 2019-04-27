@@ -6,13 +6,14 @@ using System.IO;
 using System.Linq;
 using System.Net.Sockets;
 using System.Text;
-
+using ACE.Common.Cryptography;
 using ACE.Server.Managers;
+using ACE.Server.Network.Enum;
 using ACE.Server.Network.GameMessages;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.Handlers;
 using ACE.Server.Network.Managers;
-
+using ACE.Server.Network.Packets;
 using log4net;
 
 namespace ACE.Server.Network
@@ -58,11 +59,13 @@ namespace ACE.Server.Network
         private readonly ConcurrentDictionary<uint /*seq*/, ServerPacket> cachedPackets = new ConcurrentDictionary<uint /*seq*/, ServerPacket>();
 
         /// <summary>
-        /// This is referenced by one thread:<para />
-        /// WorldManager.UpdateWorld()->Session.Update(lastTick)->This.Update(lastTick) <para />
-        /// Technically, it is referenced ONCE by EnqueueSend when the client first connects to the server, but there's no collision risk at that point.
+        /// This is referenced by multiple thread:<para />
+        /// [ConnectionListener Thread + 0] WorldManager.ProcessPacket()->SendLoginRequestReject()<para />
+        /// [ConnectionListener Thread + 0] WorldManager.ProcessPacket()->Session.ProcessPacket()->NetworkSession.ProcessPacket()->DoRequestForRetransmission()<para />
+        /// [ConnectionListener Thread + 1] WorldManager.ProcessPacket()->Session.ProcessPacket()->NetworkSession.ProcessPacket()-> ... AuthenticationHandler<para />
+        /// [World Manager Thread] WorldManager.UpdateWorld()->Session.Update(lastTick)->This.Update(lastTick)<para />
         /// </summary>
-        private readonly Queue<ServerPacket> packetQueue = new Queue<ServerPacket>();
+        private readonly ConcurrentQueue<ServerPacket> packetQueue = new ConcurrentQueue<ServerPacket>();
 
         public readonly SessionConnectionData ConnectionData = new SessionConnectionData();
 
@@ -90,7 +93,7 @@ namespace ACE.Server.Network
 
             ConnectionData.CryptoClient.OnCryptoSystemCatastrophicFailure += (sender, e) =>
             {
-                session.State = Enum.SessionState.ClientConnectionFailure;
+                session.Terminate(SessionTerminationReason.ClientConnectionFailure);
             };
         }
 
@@ -216,9 +219,15 @@ namespace ACE.Server.Network
 
             #region order-insensitive "half-processing"
 
+            if (packet.Header.HasFlag(PacketHeaderFlags.Disconnect))
+            {
+                session.Terminate(SessionTerminationReason.PacketHeaderDisconnect);
+                return;
+            }
+
             if (packet.Header.HasFlag(PacketHeaderFlags.NetErrorDisconnect))
             {
-                session.State = Enum.SessionState.ClientSentNetErrorDisconnect;
+                session.Terminate(SessionTerminationReason.ClientSentNetworkErrorDisconnect);
                 return;
             }
 
@@ -237,9 +246,9 @@ namespace ACE.Server.Network
             // Sessions that have gone past the AuthLoginRequest step will stay active for a longer period of time (exposed via configuration) 
             // Sessions that in the AuthLoginRequest will have a short timeout, as set in the AuthenticationHandler.DefaultAuthTimeout.
             // Example: Applications that check uptime will stay in the AuthLoginRequest state.
-            session.Network.TimeoutTick = (session.State == Enum.SessionState.AuthLoginRequest) ?
-                DateTime.UtcNow.AddSeconds(WorldManager.DefaultSessionTimeout).Ticks :
-                DateTime.UtcNow.AddSeconds(AuthenticationHandler.DefaultAuthTimeout).Ticks;
+            session.Network.TimeoutTick = (session.State == SessionState.AuthLoginRequest) ?
+                DateTime.UtcNow.AddSeconds(AuthenticationHandler.DefaultAuthTimeout).Ticks : // Default is 15s
+                DateTime.UtcNow.AddSeconds(WorldManager.DefaultSessionTimeout).Ticks; // Default is 60s
 
             #endregion
 
@@ -298,6 +307,11 @@ namespace ACE.Server.Network
             List<uint> needSeq = new List<uint>();
             needSeq.Add(desiredSeq);
             uint bottom = desiredSeq + 1;
+            if (rcvdSeq - bottom > CryptoSystem.MaximumEffortLevel)
+            {
+                session.Terminate(SessionTerminationReason.AbnormalSequenceReceived);
+                return;
+            }
             for (uint a = bottom; a < rcvdSeq; a++)
                 if (!outOfOrderPackets.ContainsKey(a))
                     needSeq.Add(a);
@@ -513,11 +527,9 @@ namespace ACE.Server.Network
 
         private void FlushPackets()
         {
-            while (packetQueue.Count > 0)
+            while (packetQueue.TryDequeue(out var packet))
             {
                 packetLog.DebugFormat("[{0}] Flushing packets, count {1}", session.LoggingIdentifier, packetQueue.Count);
-
-                ServerPacket packet = packetQueue.Dequeue();
 
                 if (packet.Header.HasFlag(PacketHeaderFlags.EncryptedChecksum) && ConnectionData.PacketSequence.CurrentValue == 0)
                     ConnectionData.PacketSequence = new Sequence.UIntSequence(1);
@@ -592,7 +604,7 @@ namespace ACE.Server.Network
                     sb.AppendLine(String.Format("[{5}] Sending Packet (Len: {0}) [{1}:{2}=>{3}:{4}]", buffer.Length, listenerEndpoint.Address, listenerEndpoint.Port, session.EndPoint.Address, session.EndPoint.Port, session.Network.ClientId));
                     log.Error(sb.ToString());
 
-                    session.State = Enum.SessionState.NetworkTimeout; // This will force WorldManager to drop the session
+                    session.Terminate(SessionTerminationReason.SendToSocketException, null, null, ex.Message);
                 }
             }
             finally

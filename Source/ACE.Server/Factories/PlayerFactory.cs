@@ -104,26 +104,26 @@ namespace ACE.Server.Factories
                 if (hat != null)
                     player.TryEquipObject(hat, hat.ValidLocations ?? 0);
                 else
-                    player.TryAddToInventory(CreateIOU(player, sex.GetHeadgearWeenie(characterCreateInfo.Apperance.HeadgearStyle)));
+                    player.TryAddToInventory(CreateIOU(sex.GetHeadgearWeenie(characterCreateInfo.Apperance.HeadgearStyle)));
             }
 
             var shirt = GetClothingObject(sex.GetShirtWeenie(characterCreateInfo.Apperance.ShirtStyle), characterCreateInfo.Apperance.ShirtColor, characterCreateInfo.Apperance.ShirtHue);
             if (shirt != null)
                 player.TryEquipObject(shirt, shirt.ValidLocations ?? 0);
             else
-                player.TryAddToInventory(CreateIOU(player, sex.GetShirtWeenie(characterCreateInfo.Apperance.ShirtStyle)));
+                player.TryAddToInventory(CreateIOU(sex.GetShirtWeenie(characterCreateInfo.Apperance.ShirtStyle)));
 
             var pants = GetClothingObject(sex.GetPantsWeenie(characterCreateInfo.Apperance.PantsStyle), characterCreateInfo.Apperance.PantsColor, characterCreateInfo.Apperance.PantsHue);
             if (pants != null)
                 player.TryEquipObject(pants, pants.ValidLocations ?? 0);
             else
-                player.TryAddToInventory(CreateIOU(player, sex.GetPantsWeenie(characterCreateInfo.Apperance.PantsStyle)));
+                player.TryAddToInventory(CreateIOU(sex.GetPantsWeenie(characterCreateInfo.Apperance.PantsStyle)));
 
             var shoes = GetClothingObject(sex.GetFootwearWeenie(characterCreateInfo.Apperance.FootwearStyle), characterCreateInfo.Apperance.FootwearColor, characterCreateInfo.Apperance.FootwearHue);
             if (shoes != null)
                 player.TryEquipObject(shoes, shoes.ValidLocations ?? 0);
             else
-                player.TryAddToInventory(CreateIOU(player, sex.GetFootwearWeenie(characterCreateInfo.Apperance.FootwearStyle)));
+                player.TryAddToInventory(CreateIOU(sex.GetFootwearWeenie(characterCreateInfo.Apperance.FootwearStyle)));
 
             string templateName = heritageGroup.Templates[characterCreateInfo.TemplateOption].Name;
             //player.SetProperty(PropertyString.Title, templateName);
@@ -242,7 +242,7 @@ namespace ACE.Server.Factories
                         }
                         else
                         {
-                            player.TryAddToInventory(CreateIOU(player, item.WeenieId));
+                            player.TryAddToInventory(CreateIOU(item.WeenieId));
                         }
 
                         if (loot != null && player.TryAddToInventory(loot))
@@ -259,7 +259,7 @@ namespace ACE.Server.Factories
                                 }
                                 else
                                 {
-                                    player.TryAddToInventory(CreateIOU(player, item.WeenieId));
+                                    player.TryAddToInventory(CreateIOU(item.WeenieId));
                                 }
                             }
                         }
@@ -288,7 +288,7 @@ namespace ACE.Server.Factories
                             }
                             else
                             {
-                                player.TryAddToInventory(CreateIOU(player, item.WeenieId));
+                                player.TryAddToInventory(CreateIOU(item.WeenieId));
                             }
 
                             if (loot != null && player.TryAddToInventory(loot))
@@ -305,7 +305,7 @@ namespace ACE.Server.Factories
                                     }
                                     else
                                     {
-                                        player.TryAddToInventory(CreateIOU(player, item.WeenieId));
+                                        player.TryAddToInventory(CreateIOU(item.WeenieId));
                                     }
                                 }
                             }
@@ -343,13 +343,42 @@ namespace ACE.Server.Factories
                 starterArea.Locations[0].Frame.Origin.X, starterArea.Locations[0].Frame.Origin.Y, starterArea.Locations[0].Frame.Origin.Z,
                 starterArea.Locations[0].Frame.Orientation.X, starterArea.Locations[0].Frame.Orientation.Y, starterArea.Locations[0].Frame.Orientation.Z, starterArea.Locations[0].Frame.Orientation.W);
 
-            player.Instantiation = new Position(player.Location);
+            var instantiation = new Position(0xA9B40019, 84, 7.1f, 94, 0, 0, -0.0784591f, 0.996917f); // ultimate fallback.
+            var spellFreeRide = new Spell();
+            switch (starterArea.Name)
+            {
+                case "OlthoiLair": //todo: check this when olthoi play is allowed in ace
+                    spellFreeRide = null; // no training area for olthoi, so they start and fall back to same place.
+                    instantiation = new Position(player.Location);
+                    break;
+                case "Shoushi":
+                    spellFreeRide = DatabaseManager.World.GetCachedSpell(3813); // Free Ride to Shoushi
+                    break;
+                case "Yaraq":
+                    spellFreeRide = DatabaseManager.World.GetCachedSpell(3814); // Free Ride to Yaraq
+                    break;
+                case "Sanamar":
+                    spellFreeRide = DatabaseManager.World.GetCachedSpell(3535); // Free Ride to Sanamar
+                    break;
+                case "Holtburg":
+                default:
+                    spellFreeRide = DatabaseManager.World.GetCachedSpell(3815); // Free Ride to Holtburg
+                    break;
+            }
+            if (spellFreeRide != null && spellFreeRide.Name != "")
+                instantiation = new Position(spellFreeRide.PositionObjCellId.Value, spellFreeRide.PositionOriginX.Value, spellFreeRide.PositionOriginY.Value, spellFreeRide.PositionOriginZ.Value, spellFreeRide.PositionAnglesX.Value, spellFreeRide.PositionAnglesY.Value, spellFreeRide.PositionAnglesZ.Value, spellFreeRide.PositionAnglesW.Value);
+
+            player.Instantiation = new Position(instantiation);
+
             player.Sanctuary = new Position(player.Location);
+
+            player.SetProperty(PropertyBool.RecallsDisabled, true);
 
             if (player is Sentinel || player is Admin)
             {
                 player.Character.IsPlussed = true;
                 player.CloakStatus = CloakStatus.Off;
+                player.ChannelsAllowed = player.ChannelsActive;
             }
 
             CharacterCreateSetDefaultCharacterOptions(player);
@@ -424,12 +453,17 @@ namespace ACE.Server.Factories
             return worldObject;
         }
 
-        public static WorldObject CreateIOU(Player player, uint missingWeenieId)
+        public static WorldObject CreateIOU(uint missingWeenieId)
         {
             var iou = (Book)WorldObjectFactory.CreateNewWorldObject("parchment");
 
             iou.SetProperties("IOU", "An IOU for a missing database object.", "Sorry about that chief...", "ACEmulator", "prewritten");
-            iou.AddPage(player.Guid.Full, "ACEmulator", "prewritten", false, $"{missingWeenieId}\n\nSorry but the database does not have a weenie for weenieClassId #{missingWeenieId} so in lieu of that here is an IOU for that item.");
+            iou.AddPage(uint.MaxValue, "ACEmulator", "prewritten", false, $"{missingWeenieId}\n\nSorry but the database does not have a weenie for weenieClassId #{missingWeenieId} so in lieu of that here is an IOU for that item.");
+            iou.Bonded = (int)BondedStatus.Bonded;
+            iou.Attuned = (int)AttunedStatus.Attuned;
+            iou.SetProperty(PropertyBool.IsSellable, false);
+            iou.Value = 0;
+            iou.EncumbranceVal = 0;
 
             return iou;
         }

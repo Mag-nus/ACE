@@ -49,6 +49,12 @@ namespace ACE.Server.WorldObjects
 
         public void HandleActionTeleToHouse()
         {
+            if (RecallsDisabled)
+            {
+                Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.ExitTrainingAcademyToUseCommand));
+                return;
+            }
+
             if (House == null)
             {
                 Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.YouMustOwnHouseToUseCommand));
@@ -63,7 +69,7 @@ namespace ACE.Server.WorldObjects
                 Session.Network.EnqueueSend(updateCombatMode);
             }
 
-            EnqueueBroadcast(new GameMessageSystemChat($"{Name} is recalling home.", ChatMessageType.Recall));
+            EnqueueBroadcast(new GameMessageSystemChat($"{Name} is recalling home.", ChatMessageType.Recall), 96.0f);
             EnqueueBroadcastMotion(motionHouseRecall);
 
             var startPos = new Position(Location);
@@ -94,6 +100,12 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public void HandleActionTeleToLifestone()
         {
+            if (RecallsDisabled)
+            {
+                Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.ExitTrainingAcademyToUseCommand));
+                return;
+            }
+
             if (Sanctuary != null)
             {
                 // FIXME(ddevec): I should probably make a better interface for this
@@ -107,7 +119,7 @@ namespace ACE.Server.WorldObjects
                     Session.Network.EnqueueSend(updateCombatMode);
                 }
 
-                EnqueueBroadcast(new GameMessageSystemChat($"{Name} is recalling to the lifestone.", ChatMessageType.Recall));
+                EnqueueBroadcast(new GameMessageSystemChat($"{Name} is recalling to the lifestone.", ChatMessageType.Recall), 96.0f);
                 EnqueueBroadcastMotion(motionLifestoneRecall);
 
                 var startPos = new Position(Location);
@@ -141,9 +153,15 @@ namespace ACE.Server.WorldObjects
 
         public void HandleActionTeleToMarketPlace()
         {
+            if (RecallsDisabled)
+            {
+                Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.ExitTrainingAcademyToUseCommand));
+                return;
+            }
+
             var updateCombatMode = new GameMessagePrivateUpdatePropertyInt(this, PropertyInt.CombatMode, (int)CombatMode.NonCombat);
 
-            EnqueueBroadcast(new GameMessageSystemChat($"{Name} is recalling to the marketplace.", ChatMessageType.Recall));
+            EnqueueBroadcast(new GameMessageSystemChat($"{Name} is recalling to the marketplace.", ChatMessageType.Recall), 96.0f);
             Session.Network.EnqueueSend(updateCombatMode); // this should be handled by a different thing, probably a function that forces player into peacemode
             EnqueueBroadcastMotion(motionMarketplaceRecall);
 
@@ -199,7 +217,7 @@ namespace ACE.Server.WorldObjects
                 Session.Network.EnqueueSend(updateCombatMode);
             }
 
-            EnqueueBroadcast(new GameMessageSystemChat($"{Name} is going to the Allegiance hometown.", ChatMessageType.Recall));
+            EnqueueBroadcast(new GameMessageSystemChat($"{Name} is going to the Allegiance hometown.", ChatMessageType.Recall), 96.0f);
             EnqueueBroadcastMotion(motionAllegianceHometownRecall);
 
             var startPos = new Position(Location);
@@ -231,6 +249,12 @@ namespace ACE.Server.WorldObjects
         public void HandleActionTeleToMansion()
         {
             //Console.WriteLine($"{Name}.HandleActionTeleToMansion()");
+
+            if (RecallsDisabled)
+            {
+                Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.ExitTrainingAcademyToUseCommand));
+                return;
+            }
 
             // check if player is in an allegiance
             if (Allegiance == null)
@@ -268,7 +292,7 @@ namespace ACE.Server.WorldObjects
                 Session.Network.EnqueueSend(updateCombatMode);
             }
 
-            EnqueueBroadcast(new GameMessageSystemChat($"{Name} is recalling to the Allegiance housing.", ChatMessageType.Recall));
+            EnqueueBroadcast(new GameMessageSystemChat($"{Name} is recalling to the Allegiance housing.", ChatMessageType.Recall), 96.0f);
             EnqueueBroadcastMotion(motionHouseRecall);
 
             var startPos = new Position(Location);
@@ -294,8 +318,11 @@ namespace ACE.Server.WorldObjects
             actionChain.EnqueueChain();
         }
 
-        public void Teleport(Position newPosition)
+        public void Teleport(Position _newPosition)
         {
+            var newPosition = new Position(_newPosition);
+            newPosition.PositionZ += 0.005f;
+
             //Console.WriteLine($"{Name}.Teleport() - Sending to {newPosition.ToLOCString()}");
 
             Teleporting = true;
@@ -324,6 +351,7 @@ namespace ACE.Server.WorldObjects
 
         public void DoPreTeleportHide()
         {
+            if (Teleporting) return;
             PlayParticleEffect(ACE.Entity.Enum.PlayScript.Hide, Guid);
         }
 

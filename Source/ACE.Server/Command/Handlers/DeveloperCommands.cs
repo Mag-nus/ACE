@@ -20,6 +20,7 @@ using ACE.Server.Managers;
 using ACE.Server.Network;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
+using ACE.Server.Physics.Entity;
 using ACE.Server.WorldObjects;
 using ACE.Server.WorldObjects.Entity;
 
@@ -773,7 +774,7 @@ namespace ACE.Server.Command.Handlers
                 List<CommandParameterHelpers.ACECommandParameter> aceParams = new List<CommandParameterHelpers.ACECommandParameter>()
                 {
                     new CommandParameterHelpers.ACECommandParameter() {
-                        Type = CommandParameterHelpers.ACECommandParameterType.Player,
+                        Type = CommandParameterHelpers.ACECommandParameterType.OnlinePlayerNameOrIid,
                         Required = false,
                         DefaultValue = session.Player
                     },
@@ -792,6 +793,8 @@ namespace ACE.Server.Command.Handlers
                         aceParams[0].AsPlayer.GrantXP(amount, XpType.Admin, false); 
 
                         session.Network.EnqueueSend(new GameMessageSystemChat($"{amount:N0} experience granted.", ChatMessageType.Advancement));
+
+                        PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} granted {amount:N0} of experience to {aceParams[0].AsPlayer.Name}.");
 
                         return;
                     }
@@ -1682,6 +1685,7 @@ namespace ACE.Server.Command.Handlers
                 }
             }
             session.Network.EnqueueSend(new GameMessageSystemChat($"{obj.Name} ({obj.Guid}): {prop} = {value}", ChatMessageType.Broadcast));
+            PlayerManager.BroadcastToAuditChannel(session.Player, $"{session.Player.Name} changed a property for {obj.Name} ({obj.Guid}): {prop} = {value}");
         }
 
         /// <summary>
@@ -1866,6 +1870,107 @@ namespace ACE.Server.Command.Handlers
 
                 session.Player.Teleport(new Position(dest.ObjCellId, dest.OriginX, dest.OriginY, dest.OriginZ, dest.AnglesX, dest.AnglesY, dest.AnglesZ, dest.AnglesW));
             }
+        }
+
+
+        [CommandHandler("clearphysicscaches", AccessLevel.Developer, CommandHandlerFlag.None, 0, "Clears Physics Object Caches")]
+        public static void HandleClearPhysicsCaches(Session session, params string[] parameters)
+        {
+            BSPCache.Clear();
+            GfxObjCache.Clear();
+            PolygonCache.Clear();
+            VertexCache.Clear();
+
+            CommandHandlerHelper.WriteOutputInfo(session, "Physics caches cleared");
+        }
+
+        [CommandHandler("forcegc", AccessLevel.Developer, CommandHandlerFlag.None, 0, "Forces .NET Garbage Collection")]
+        public static void HandleForceGC(Session session, params string[] parameters)
+        {
+            GC.Collect();
+
+            CommandHandlerHelper.WriteOutputInfo(session, ".NET Garbage Collection forced");
+        }
+
+        [CommandHandler("lootgen", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Generate a piece of loot from the LootGenerationFactory. Syntax is \"lootgen (wcid) <tier>\"")]
+        public static void HandleLootGen(Session session, params string[] parameters)
+        {
+            string weenieClassDescription = parameters[0];
+            bool wcid = uint.TryParse(weenieClassDescription, out uint weenieClassId);
+
+            if (!wcid)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"WCID must be a valid weenie id", ChatMessageType.Broadcast));
+                return;
+            }
+
+            int tier = 1;
+            if (parameters.Length > 1)
+            {
+                var isValidStackSize = int.TryParse(parameters[1], out tier);
+                if (!isValidStackSize || tier < 1 || tier > 8)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Loot Tier must be number between 1 and 8", ChatMessageType.Broadcast));
+                    return;
+                }
+            }
+
+            // Just using this check some properties before we throw it at the loot gen so we can give feedback to the user
+            WorldObject lootTest = WorldObjectFactory.CreateNewWorldObject(weenieClassId);
+
+            if (lootTest == null)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"{weenieClassId} is not a valid wcid.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            if (lootTest.TsysMutationData == null)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"Weenie has a missing PropertyInt.TsysMutationData needed for this function.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            WorldObject loot = LootGenerationFactory.CreateLootByWCID(weenieClassId, tier);
+            session.Player.TryCreateInInventoryWithNetworking(loot);
+        }
+
+        [CommandHandler("ciloot", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Generates randomized loot in player's inventory", "<tier> optional: <# items>")]
+        public static void HandleCILoot(Session session, params string[] parameters)
+        {
+            var tier = 1;
+            int.TryParse(parameters[0], out tier);
+            tier = Math.Clamp(tier, 1, 8);
+
+            var numItems = 1;
+            if (parameters.Length > 1)
+                int.TryParse(parameters[1], out numItems);
+
+            for (var i = 0; i < numItems; i++)
+            {
+                var wo = LootGenerationFactory.CreateRandomLootObjects(tier, true);
+                if (wo != null)
+                    session.Player.TryCreateInInventoryWithNetworking(wo);
+                else
+                    log.Error($"{session.Player.Name}.HandleCILoot: LootGenerationFactory.CreateRandomLootObjects({tier}) returned null");
+            }
+        }
+
+        [CommandHandler("makeiou", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Make an IOU and put it in your inventory","<wcid>")]
+        public static void HandleMakeIOU(Session session, params string[] parameters)
+        {
+            string weenieClassDescription = parameters[0];
+            bool wcid = uint.TryParse(weenieClassDescription, out uint weenieClassId);
+
+            if (!wcid)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"WCID must be a valid weenie id", ChatMessageType.Broadcast));
+                return;
+            }
+
+            var iou = PlayerFactory.CreateIOU(weenieClassId);
+
+            if (iou != null)
+                session.Player.TryCreateInInventoryWithNetworking(iou);
         }
     }
 }

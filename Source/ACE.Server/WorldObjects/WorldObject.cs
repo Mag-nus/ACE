@@ -47,8 +47,6 @@ namespace ACE.Server.WorldObjects
 
         public PhysicsObj PhysicsObj { get; protected set; }
 
-        public bool InitPhysics { get; protected set; }
-
         public ObjectDescriptionFlag BaseDescriptionFlags { get; protected set; }
 
         public SequenceManager Sequences { get; } = new SequenceManager();
@@ -64,7 +62,6 @@ namespace ACE.Server.WorldObjects
         public DateTime? ItemManaConsumptionTimestamp { get; set; } = null;
 
         public bool IsBusy { get; set; }
-        public bool IsMovingTo { get; set; }
         public bool IsShield { get => CombatUse != null && CombatUse == ACE.Entity.Enum.CombatUse.Shield; }
         public bool IsTwoHanded { get => CurrentWieldedLocation != null && CurrentWieldedLocation == EquipMask.TwoHanded; }
         public bool IsBow { get => DefaultCombatStyle != null && (DefaultCombatStyle == CombatStyle.Bow || DefaultCombatStyle == CombatStyle.Crossbow); }
@@ -123,21 +120,20 @@ namespace ACE.Server.WorldObjects
 
             var defaultState = CalculatedPhysicsState();
 
-            PhysicsObj = new PhysicsObj();
-            PhysicsObj.set_object_guid(Guid);
-
-            // will eventually map directly to WorldObject
-            PhysicsObj.set_weenie_obj(new WeenieObject(this));
-
-            var creature = this as Creature;
-            if (creature == null)
+            if (!(this is Creature))
             {
                 var isDynamic = Static == null || !Static.Value;
                 PhysicsObj = PhysicsObj.makeObject(SetupTableId, Guid.Full, isDynamic);
-                PhysicsObj.set_weenie_obj(new WeenieObject(this));
             }
             else
+            {
+                PhysicsObj = new PhysicsObj();
                 PhysicsObj.makeAnimObject(SetupTableId, true);
+            }
+
+            PhysicsObj.set_object_guid(Guid);
+
+            PhysicsObj.set_weenie_obj(new WeenieObject(this));
 
             PhysicsObj.SetMotionTableID(MotionTableId);
 
@@ -179,9 +175,12 @@ namespace ACE.Server.WorldObjects
 
             if (!success)
             {
+                PhysicsObj.DestroyObject();
+                PhysicsObj = null;
                 //Console.WriteLine($"AddPhysicsObj: failure: {Name} @ {cell.ID.ToString("X8")} - {Location.Pos} - {Location.Rotation} - SetupID: {SetupTableId.ToString("X8")}, MTableID: {MotionTableId.ToString("X8")}");
                 return false;
             }
+
             //Console.WriteLine($"AddPhysicsObj: success: {Name} ({Guid})");
             Location.LandblockId = new LandblockId(PhysicsObj.Position.ObjCellID);
             Location.Pos = PhysicsObj.Position.Frame.Origin;
@@ -262,6 +261,8 @@ namespace ACE.Server.WorldObjects
                 Placement = ACE.Entity.Enum.Placement.Resting;
 
             //CurrentMotionState = new Motion(MotionStance.Invalid, new MotionItem(MotionCommand.Invalid));
+            if (WeenieType == WeenieType.Corpse)
+                HeartbeatInterval = 5;
         }
 
         /// <summary>
@@ -306,7 +307,7 @@ namespace ACE.Server.WorldObjects
             return PhysicsObj.ObjMaint.VisibleObjectTable.ContainsKey(wo.PhysicsObj.ID);
         }
 
-        public static PhysicsObj SightObj = PhysicsObj.makeObject(0x02000124, 0, false, true);     // arrow
+        //public static PhysicsObj SightObj = PhysicsObj.makeObject(0x02000124, 0, false, true);     // arrow
 
         /// <summary>
         /// Returns TRUE if this object has direct line-of-sight visibility to input object
@@ -316,8 +317,13 @@ namespace ACE.Server.WorldObjects
             if (PhysicsObj == null || wo.PhysicsObj == null)
                 return false;
 
+            var SightObj = PhysicsObj.makeObject(0x02000124, 0, false, true);
+
             var startPos = new Physics.Common.Position(PhysicsObj.Position);
             var targetPos = new Physics.Common.Position(wo.PhysicsObj.Position);
+
+            if (PhysicsObj.GetBlockDist(startPos, targetPos) > 1)
+                return false;
 
             // set to eye level
             startPos.Frame.Origin.Z += PhysicsObj.GetHeight() - SightObj.GetHeight();
@@ -332,6 +338,9 @@ namespace ACE.Server.WorldObjects
 
             // perform line of sight test
             var transition = SightObj.transition(startPos, targetPos, false);
+
+            SightObj.DestroyObject();
+
             if (transition == null) return false;
 
             // check if target object was reached
@@ -344,8 +353,13 @@ namespace ACE.Server.WorldObjects
             if (PhysicsObj == null)
                 return false;
 
+            var SightObj = PhysicsObj.makeObject(0x02000124, 0, false, true);
+
             var startPos = new Physics.Common.Position(PhysicsObj.Position);
             var targetPos = new Physics.Common.Position(pos);
+
+            if (PhysicsObj.GetBlockDist(startPos, targetPos) > 1)
+                return false;
 
             // set to eye level
             startPos.Frame.Origin.Z += PhysicsObj.GetHeight() - SightObj.GetHeight();
@@ -360,6 +374,8 @@ namespace ACE.Server.WorldObjects
 
             // perform line of sight test
             var transition = SightObj.transition(targetPos, startPos, false);
+
+            SightObj.DestroyObject();
 
             if (transition == null) return false;
 
@@ -634,7 +650,23 @@ namespace ACE.Server.WorldObjects
         public void EnqueueBroadcastPhysicsState()
         {
             if (PhysicsObj != null)
-                EnqueueBroadcast(new GameMessageSetState(this, PhysicsObj.State));
+            {
+                if (!Visibility)
+                    EnqueueBroadcast(new GameMessageSetState(this, PhysicsObj.State));
+                else
+                {
+                    if (this is Player player && player.CloakStatus == ACE.Entity.Enum.CloakStatus.On)
+                    {
+                        var ps = PhysicsObj.State;
+                        ps &= ~PhysicsState.Cloaked;
+                        ps &= ~PhysicsState.NoDraw;
+                        player.Session.Network.EnqueueSend(new GameMessageSetState(this, PhysicsObj.State));
+                        EnqueueBroadcast(false, new GameMessageSetState(this, ps));
+                    }
+                    else
+                        EnqueueBroadcast(new GameMessageSetState(this, PhysicsObj.State));
+                }
+            }
         }
 
         public void EnqueueBroadcastUpdateObject()

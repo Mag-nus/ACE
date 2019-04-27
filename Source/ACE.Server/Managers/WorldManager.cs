@@ -59,10 +59,12 @@ namespace ACE.Server.Managers
         public static bool WorldActive { get; private set; }
         private static volatile bool pendingWorldStop;
 
+        public static WorldStatusState WorldStatus { get; private set; } = WorldStatusState.Closed;
+
         /// <summary>
         /// Handles ClientMessages in InboundMessageManager
         /// </summary>
-        public static readonly ActionQueue InboundClientMessageQueue = new ActionQueue();
+        public static readonly ActionQueue InboundMessageQueue = new ActionQueue();
 
         private static readonly ActionQueue actionQueue = new ActionQueue();
         public static readonly DelayManager DelayManager = new DelayManager(); // TODO get rid of this. Each WO should have its own delayManager
@@ -84,6 +86,10 @@ namespace ACE.Server.Managers
             thread.Start();
             log.DebugFormat("ServerTime initialized to {0}", Timers.WorldStartLoreTime);
             log.DebugFormat($"Current maximum allowed sessions: {ConfigManager.Config.Server.Network.MaximumAllowedSessions}");
+
+            log.Info($"World started and is currently {WorldStatus.ToString()}{(PropertyManager.GetBool("world_closed", false).Item ? "" : " and will open automatically when server startup is complete.")}");
+            if (WorldStatus == WorldStatusState.Closed)
+                log.Info($"To open world to players, use command: world open");
         }
 
         public static void ProcessPacket(ClientPacket packet, IPEndPoint endPoint, IPEndPoint listenerEndpoint)
@@ -144,10 +150,10 @@ namespace ACE.Server.Managers
                         log.InfoFormat("Login Request from {0} rejected. Server full.", endPoint);
                         SendLoginRequestReject(endPoint, CharacterError.LogonServerFull);
                     }
-                    else if (ServerManager.ShutdownInitiated)
+                    else if (ServerManager.ShutdownInitiated && (ServerManager.ShutdownTime - DateTime.UtcNow).TotalMinutes < 2)
                     {
-                        log.InfoFormat("Login Request from {0} rejected. Server shutting down.", endPoint);
-                        SendLoginRequestReject(endPoint, CharacterError.ServerCrash);
+                        log.InfoFormat("Login Request from {0} rejected. Server shutting down in less than 2 minutes.", endPoint);
+                        SendLoginRequestReject(endPoint, CharacterError.ServerCrash1);
                     }
                     else
                     {
@@ -193,6 +199,25 @@ namespace ACE.Server.Managers
                 }
                 ServerPerformanceMonitor.RegisterEventEnd(ServerPerformanceMonitor.MonitorType.ProcessPacket_0);
             }
+        }
+
+        internal static void Open(Player player)
+        {
+            WorldStatus = WorldStatusState.Open;
+            PlayerManager.BroadcastToAuditChannel(player, "World is now open");
+        }
+
+        internal static void Close(Player player, bool bootPlayers = false)
+        {
+            WorldStatus = WorldStatusState.Closed;
+            var msg = "World is now closed";
+            if (bootPlayers)
+                msg += ", and booting all online players.";
+            
+            PlayerManager.BroadcastToAuditChannel(player, msg);
+
+            if (bootPlayers)
+                PlayerManager.BootAllPlayers();
         }
 
         private static void SendLoginRequestReject(IPEndPoint endPoint, CharacterError error)
@@ -386,8 +411,11 @@ namespace ACE.Server.Managers
                 player.AdvocateLevel = null;
                 player.ChannelsActive = null;
                 player.ChannelsAllowed = null;
-                player.Invincible = null;
+                player.Invincible = false;
                 player.Cloaked = null;
+                player.IgnoreHouseBarriers = false;
+                player.IgnorePortalRestrictions = false;
+                player.SafeSpellComponents = false;
 
 
                 player.ChangesDetected = true;
@@ -399,9 +427,9 @@ namespace ACE.Server.Managers
                 WorldObject weenie;
 
                 if (addAdminProperties)
-                    weenie = Factories.WorldObjectFactory.CreateWorldObject(DatabaseManager.World.GetCachedWeenie("admin"), new ACE.Entity.ObjectGuid(ACE.Entity.ObjectGuid.Invalid.Full)) as Admin;
+                    weenie = Factories.WorldObjectFactory.CreateWorldObject(DatabaseManager.World.GetCachedWeenie("admin"), new ACE.Entity.ObjectGuid(ACE.Entity.ObjectGuid.Invalid.Full));
                 else
-                    weenie = Factories.WorldObjectFactory.CreateWorldObject(DatabaseManager.World.GetCachedWeenie("sentinel"), new ACE.Entity.ObjectGuid(ACE.Entity.ObjectGuid.Invalid.Full)) as Sentinel;
+                    weenie = Factories.WorldObjectFactory.CreateWorldObject(DatabaseManager.World.GetCachedWeenie("sentinel"), new ACE.Entity.ObjectGuid(ACE.Entity.ObjectGuid.Invalid.Full));
 
                 if (weenie != null)
                 {
@@ -420,13 +448,13 @@ namespace ACE.Server.Managers
                 }
             }
 
-            // If the client is missing a location, we start them off in the starter dungeon
+            // If the client is missing a location, we start them off in the starter town they chose
             if (session.Player.Location == null)
             {
                 if (session.Player.Instantiation != null)
                     session.Player.Location = new Position(session.Player.Instantiation);
                 else
-                    session.Player.Location = new Position(2349072813, 12.3199f, -28.482f, 0.0049999995f, 0.0f, 0.0f, -0.9408059f, -0.3389459f);
+                    session.Player.Location = new Position(0xA9B40019, 84, 7.1f, 94, 0, 0, -0.0784591f, 0.996917f); // ultimate fallback;
             }
 
             // CUSTOM
@@ -523,9 +551,9 @@ namespace ACE.Server.Managers
                 PlayerManager.Tick();
                 ServerPerformanceMonitor.RegisterEventEnd(ServerPerformanceMonitor.MonitorType.PlayerManager_Tick);
 
-                ServerPerformanceMonitor.RegisterEventStart(ServerPerformanceMonitor.MonitorType.InboundClientMessageQueue_RunActions);
-                InboundClientMessageQueue.RunActions();
-                ServerPerformanceMonitor.RegisterEventEnd(ServerPerformanceMonitor.MonitorType.InboundClientMessageQueue_RunActions);
+                ServerPerformanceMonitor.RegisterEventStart(ServerPerformanceMonitor.MonitorType.InboundClientMessageQueueRun);
+                InboundMessageQueue.RunActions();
+                ServerPerformanceMonitor.RegisterEventEnd(ServerPerformanceMonitor.MonitorType.InboundClientMessageQueueRun);
 
                 //log.Debug("actionQueue.RunActions");
                 // This will consist of PlayerEnterWorld actions, as well as other game world actions that require thread safety
@@ -591,9 +619,9 @@ namespace ACE.Server.Managers
 
             // Tick all of our Landblocks and WorldObjects
             ServerPerformanceMonitor.RegisterEventStart(ServerPerformanceMonitor.MonitorType.UpdateGameWorld_landblock_Tick);
-            var activeLandblocks = LandblockManager.GetActiveLandblocks();
+            var loadedLandblocks = LandblockManager.GetLoadedLandblocks();
 
-            foreach (var landblock in activeLandblocks)
+            foreach (var landblock in loadedLandblocks)
                 landblock.Tick(Time.GetUnixTime());
             ServerPerformanceMonitor.RegisterEventEnd(ServerPerformanceMonitor.MonitorType.UpdateGameWorld_landblock_Tick);
 
@@ -704,14 +732,6 @@ namespace ACE.Server.Managers
             sessionLock.EnterUpgradeableReadLock();
             try
             {
-                // The session tick inbound processes all inbound GameAction messages
-                ServerPerformanceMonitor.RegisterEventStart(ServerPerformanceMonitor.MonitorType.DoSessionWork_TickInbound);
-                foreach (var s in sessionMap)
-                    s?.TickInbound();
-                ServerPerformanceMonitor.RegisterEventEnd(ServerPerformanceMonitor.MonitorType.DoSessionWork_TickInbound);
-
-                // Do not combine the above and below loops. All inbound messages should be processed first and then all outbound messages should be processed second.
-
                 // The session tick outbound processes pending actions and handles outgoing messages
                 ServerPerformanceMonitor.RegisterEventStart(ServerPerformanceMonitor.MonitorType.DoSessionWork_TickOutbound);
                 foreach (var s in sessionMap)
@@ -720,24 +740,13 @@ namespace ACE.Server.Managers
 
                 // Removes sessions in the NetworkTimeout state, including sessions that have reached a timeout limit.
                 ServerPerformanceMonitor.RegisterEventStart(ServerPerformanceMonitor.MonitorType.DoSessionWork_RemoveSessions);
-                foreach (var sesh in sessionMap)
+                foreach (var session in sessionMap.Where(k => !Equals(null, k)))
                 {
-                    if (sesh == null)
-                        continue;
-
-                    switch (sesh.State)
+                    var pendingTerm = session.PendingTermination;
+                    if (session.PendingTermination != null && session.PendingTermination.TerminationStatus == SessionTerminationPhase.SessionWorkCompleted)
                     {
-                        case SessionState.NetworkTimeout:
-                            sesh.DropSession(string.IsNullOrEmpty(sesh.BootSessionReason) ? "Network Timeout" : sesh.BootSessionReason);
-                            break;
-                        case SessionState.ClientConnectionFailure:
-                            // needs to send the client the "git outa here" message or client will zombie out and appear to the player like it's still in game.
-                            // TO-DO: see if PacketHeaderFlags.NetErrorDisconnect will work for this
-                            sesh.BootSession("Client connection failure", new GameMessageBootAccount(sesh));
-                            break;
-                        case SessionState.ClientSentNetErrorDisconnect:
-                            sesh.DropSession(string.IsNullOrEmpty(sesh.BootSessionReason) ? "client sent network error disconnect" : sesh.BootSessionReason);
-                            break;
+                        session.DropSession();
+                        session.PendingTermination.TerminationStatus = SessionTerminationPhase.WorldManagerWorkCompleted;
                     }
 
                     sessionCount++;
@@ -749,6 +758,12 @@ namespace ACE.Server.Managers
                 sessionLock.ExitUpgradeableReadLock();
             }
             return sessionCount;
+        }
+
+        public enum WorldStatusState
+        {
+            Closed,
+            Open
         }
     }
 }
