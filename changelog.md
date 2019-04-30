@@ -1,8 +1,23 @@
 # ACEmulator Change Log
 
+### 2019-04-29
+[Ripley]
+* Add support for preloading landblock groups (Apartment Landblocks)
+
+### 2019-04-28
+[Ripley]
+* Fix issue with attuned items being places in packs, packs placed in other containers.
+* Fix double use issue on some containers.
+
 ### 2019-04-26
 [Ripley]
 * Add check for RecallsDisabled to command recalls.
+* Add text to corpses that generated rares.
+* Add in use error message for some objects.
+* Update Storage permission error message.
+* Update Healer messags and support Stamina/Mana kits.
+* Update Enchantment Heartbeat to expire 0 duration spells.
+* Swap out Dread Ursuin for Marae Ursuin in PetDevice
 
 ### 2019-04-25
 [Ripley]

@@ -58,6 +58,12 @@ namespace ACE.Server.WorldObjects
             var creature = this as Creature;
             if (creature == null)
                 GenerateContainList();
+
+            if (!ContainerCapacity.HasValue)
+                ContainerCapacity = 0;
+
+            if (!UseRadius.HasValue)
+                UseRadius = 0.5f;
         }
 
 
@@ -483,8 +489,8 @@ namespace ACE.Server.WorldObjects
                     Close(null);
                 else if (Viewer == player.Guid.Full)
                     Close(player);
-
-                // else error msg?
+                else
+                    player.Session.Network.EnqueueSend(new GameEventCommunicationTransientString(player.Session, $"The {Name} is already in use by someone else!"));
             }
         }
 
