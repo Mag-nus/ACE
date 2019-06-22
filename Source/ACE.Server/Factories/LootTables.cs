@@ -577,9 +577,9 @@ namespace ACE.Factories
             ////Person Attunement Other
             new int[] { 830, 831, 832, 833, 834, 835, 2292 },
             ////Deception Mastery
-            new int[] { 850, 851, 852, 853, 854, 855, 2226 },
+            new int[] { 850, 851, 852, 853, 854, 855, 2227 },
             ////Deception Mastery Other
-            new int[] { 856, 857, 858, 859, 860, 861, 2225 },
+            new int[] { 856, 857, 858, 859, 860, 861, 2226 },
             ////Healing Mastery
             new int[] { 874, 875, 876, 877, 878, 879, 2241 },
             ////Healing Mastery Other
@@ -645,7 +645,7 @@ namespace ACE.Factories
             ////Void Magic Other
             new int[] { 5403, 5404, 5405, 5406, 5407, 5408, 5409 },
             ////Salvaging
-            new int[] { 3499, 3500, 3501, 3502, 3503, 3504, 3519 },
+            new int[] { 3499, 3500, 3501, 3502, 3503, 3504, 3505 },
             ////Salvaging Other
             new int[] { 3506, 3507, 3508, 3509, 3510, 3511, 3512 },
 
@@ -776,7 +776,7 @@ namespace ACE.Factories
             ////Revit Self
             new int[] { 1177, 1178, 1179, 1180, 1181, 1182, 2083 },
             ////Revit Other
-            new int[] { 1183, 1184, 1185, 1186, 1187, 1189, 2082 },
+            new int[] { 1183, 1184, 1185, 1186, 1187, 1188, 2082 },
             ////Enfeeble Other
             new int[] { 1195, 1196, 1197, 1198, 1199, 1200, 2062 },
             ////Mana Drain
@@ -935,7 +935,7 @@ namespace ACE.Factories
             ////Weaken Lock
             new int[] { 1581, 1582, 1583, 1584, 1585, 1586, 2119 },
             ////Dispells
-            new int[] { 1919, 1925, 1931, 1937, 1943, 1949, 3190 },
+            new int[] { 1919, 1925, 1931, 1937, 1943, 1950, 3190 },
             ////Portal Spells - Dont typically find these in loot.
 
             /* WAR SPELLS */

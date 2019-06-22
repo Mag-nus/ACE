@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 
 using ACE.Database;
 using ACE.DatLoader;
@@ -81,6 +80,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// Sets the skill to specialized status
         /// </summary>
+        /// <param name="resetSkill">only set to TRUE during character creation. set to FALSE during temple / asheron's castle</param>
         public bool SpecializeSkill(Skill skill, int creditsSpent, bool resetSkill = true)
         {
             var cs = GetCreatureSkill(skill);
@@ -212,7 +212,7 @@ namespace ACE.Server.WorldObjects
 
             if (!IsSkillMaxRank(playerSkill.Ranks, playerSkill.AdvancementClass))
             {
-                GrantXP(amount, XpType.Emote, false);
+                GrantXP(amount, XpType.Emote, ShareType.None);
                 RaiseSkillGameAction(skill, amount);
             }
         }
@@ -685,6 +685,103 @@ namespace ACE.Server.WorldObjects
                 case HeritageGroup.OlthoiAcid:
                     break;
             }
+        }
+
+        /// <summary>
+        /// Resets the skill, refunds all experience and skill credits, if allowed.
+        /// </summary>
+        public bool ResetSkill(Skill skillToBeReset)
+        {
+            var cs = GetCreatureSkill(skillToBeReset);
+
+            //Check to make sure we got a valid skill back
+            if (cs == null)
+                return false;
+
+            //Gather costs associated with manipulating currently selected skill
+            DatManager.PortalDat.SkillTable.SkillBaseHash.TryGetValue((uint)cs.Skill, out var skill);
+
+            if (skill == null)
+                return false;
+
+            var skillRemoved = false;
+            var skillUntrainable = IsSkillUntrainable(skillToBeReset);
+            var typeOfSkill = "";
+
+            if (cs.AdvancementClass == SkillAdvancementClass.Untrained)
+            {
+                if (cs.Ranks == 0 && cs.ExperienceSpent == 0)
+                    return false;
+            }
+
+            // salvage / tinkering skills specialized via augmentations
+            // cannot be untrained or unspecialized
+            bool specAug = false;
+
+            switch (cs.Skill)
+            {
+                case Skill.ArmorTinkering:
+                    specAug = AugmentationSpecializeArmorTinkering > 0;
+                    break;
+
+                case Skill.ItemTinkering:
+                    specAug = AugmentationSpecializeItemTinkering > 0;
+                    break;
+
+                case Skill.MagicItemTinkering:
+                    specAug = AugmentationSpecializeMagicItemTinkering > 0;
+                    break;
+
+                case Skill.WeaponTinkering:
+                    specAug = AugmentationSpecializeWeaponTinkering > 0;
+                    break;
+
+                case Skill.Salvaging:
+                    specAug = AugmentationSpecializeSalvaging > 0;
+                    break;
+            }
+
+            if (specAug)
+                return false;
+
+            if (cs.AdvancementClass == SkillAdvancementClass.Trained || cs.AdvancementClass == SkillAdvancementClass.Specialized)
+            {
+                if (cs.AdvancementClass == SkillAdvancementClass.Specialized)
+                {
+                    typeOfSkill = cs.AdvancementClass.ToString().ToLower() + " ";
+                    skillRemoved = true;
+                    cs.AdvancementClass = SkillAdvancementClass.Trained;
+                    cs.InitLevel -= 5;
+                    AvailableSkillCredits += skill.UpgradeCostFromTrainedToSpecialized;
+                }
+
+                // temple untraining heritage skills:
+                // heritage skills cannot be untrained, but skill XP can be recovered
+                if (skillUntrainable)
+                {
+                    typeOfSkill = cs.AdvancementClass.ToString().ToLower() + " ";
+                    skillRemoved = true;
+                    cs.AdvancementClass = SkillAdvancementClass.Untrained;
+                    cs.InitLevel -= 5;
+                    AvailableSkillCredits += skill.TrainedCost;
+                }
+
+                //Perform refund of XP and credits
+                RefundXP(cs.ExperienceSpent);
+
+                cs.ExperienceSpent = 0;
+                cs.Ranks = 0;
+
+                Session.Network.EnqueueSend(new GameMessagePrivateUpdateSkill(this, cs));
+
+                Session.Network.EnqueueSend(new GameMessagePrivateUpdatePropertyInt(this, PropertyInt.AvailableSkillCredits, AvailableSkillCredits ?? 0));
+
+                Session.Network.EnqueueSend(new GameMessageSystemChat($"Your {typeOfSkill}{cs.Skill.ToSentence()} skill has been {(skillRemoved ? "removed" : "reset")}. All the experience {(skillRemoved ? "and skill credits " : "")}that you spent on this skill have been refunded to you.", ChatMessageType.Broadcast));
+
+                return true;
+            }
+
+            return false;
         }
     }
 }

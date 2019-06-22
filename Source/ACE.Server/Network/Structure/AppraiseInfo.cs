@@ -26,6 +26,7 @@ namespace ACE.Server.Network.Structure
         public ushort SpellId { get; set; }
         public _EnchantmentState EnchantmentState { get; set; }
     }
+
     /// <summary>
     /// Handles calculating and sending all object appraisal info
     /// </summary>
@@ -60,15 +61,7 @@ namespace ACE.Server.Network.Structure
         public ArmorLevel ArmorLevels;
 
         // This helps ensure the item will identify properly. Some "items" are technically "Creatures".
-        private bool NPCLooksLikeObject; 
-
-        /// <summary>
-        /// Construct all of the info required for appraising any WorldObject
-        /// </summary>
-        public AppraiseInfo(WorldObject wo, Player examiner, bool success = true)
-        {
-            generateAppraisalInfo(wo, examiner, success);
-        }
+        private bool NPCLooksLikeObject;
 
         public AppraiseInfo()
         {
@@ -76,7 +69,15 @@ namespace ACE.Server.Network.Structure
             Success = false;
         }
 
-        private void generateAppraisalInfo(WorldObject wo, Player examiner, bool success = true)
+        /// <summary>
+        /// Construct all of the info required for appraising any WorldObject
+        /// </summary>
+        public AppraiseInfo(WorldObject wo, Player examiner, bool success = true)
+        {
+            BuildProfile(wo, examiner, success);
+        }
+
+        public void BuildProfile(WorldObject wo, Player examiner, bool success = true)
         {
             //Console.WriteLine("Appraise: " + wo.Guid);
             Success = success;
@@ -117,14 +118,19 @@ namespace ACE.Server.Network.Structure
                 // If wo is locked, append skill check percent, as int, to properties for id panel display on chances of success
                 if (wo.IsLocked)
                 {
-                    var playerLockPickSkill = examiner.Skills[Skill.Lockpick].Current;
+                    var resistLockpick = LockHelper.GetResistLockpick(wo);
 
-                    var doorLockPickResistance = wo.ResistLockpick;
+                    if (resistLockpick != null)
+                    {
+                        PropertiesInt[PropertyInt.ResistLockpick] = (int)resistLockpick;
 
-                    var lockpickSuccessPercent = SkillCheck.GetSkillChance((int)playerLockPickSkill, (int)doorLockPickResistance) * 100;
+                        var pickSkill = examiner.Skills[Skill.Lockpick].Current;
 
-                    if (!PropertiesInt.ContainsKey(PropertyInt.AppraisalLockpickSuccessPercent))
-                        PropertiesInt.Add(PropertyInt.AppraisalLockpickSuccessPercent, (int)lockpickSuccessPercent);
+                        var successChance = SkillCheck.GetSkillChance((int)pickSkill, (int)resistLockpick) * 100;
+
+                        if (!PropertiesInt.ContainsKey(PropertyInt.AppraisalLockpickSuccessPercent))
+                            PropertiesInt.Add(PropertyInt.AppraisalLockpickSuccessPercent, (int)successChance);
+                    }
                 }                
             }
 
@@ -158,7 +164,7 @@ namespace ACE.Server.Network.Structure
                     WorldObject hookedItem = hook.Inventory.First().Value;
 
                     // Hooked items have a custom "description", containing the desc of the sub item and who the owner of the house is (if any)
-                    generateAppraisalInfo(hookedItem, examiner, success);
+                    BuildProfile(hookedItem, examiner, success);
                     string baseDescString = "";
                     if (wo.ParentLink.HouseOwner != null)
                     {
@@ -423,6 +429,9 @@ namespace ACE.Server.Network.Structure
             ArmorLevels = new ArmorLevel(creature);
 
             AddRatings(creature);
+
+            if (PropertiesInt.ContainsKey(PropertyInt.EncumbranceVal))
+                PropertiesInt.Remove(PropertyInt.EncumbranceVal);
         }
 
         private void AddRatings(Creature creature)
@@ -533,14 +542,7 @@ namespace ACE.Server.Network.Structure
             if (PropertiesInt.Count > 0)
                 Flags |= IdentifyResponseFlags.IntStatsTable;
             if (PropertiesInt64.Count > 0)
-                Flags |= IdentifyResponseFlags.Int64StatsTable;
-            if (SpellBook.Count > 0)
-                Flags |= IdentifyResponseFlags.SpellBook;
-            if (ResistHighlight != 0)
-                Flags |= IdentifyResponseFlags.ResistEnchantmentBitfield;
-            
-			if (NPCLooksLikeObject) return;
-				
+                Flags |= IdentifyResponseFlags.Int64StatsTable;         				
 			if (PropertiesBool.Count > 0)
                 Flags |= IdentifyResponseFlags.BoolStatsTable;
             if (PropertiesFloat.Count > 0)
@@ -549,9 +551,14 @@ namespace ACE.Server.Network.Structure
                 Flags |= IdentifyResponseFlags.StringStatsTable;
             if (PropertiesDID.Count > 0)
                 Flags |= IdentifyResponseFlags.DidStatsTable;
+            if (SpellBook.Count > 0)
+                Flags |= IdentifyResponseFlags.SpellBook;
+
+            if (ResistHighlight != 0)
+                Flags |= IdentifyResponseFlags.ResistEnchantmentBitfield;
             if (ArmorProfile != null)
                 Flags |= IdentifyResponseFlags.ArmorProfile;
-            if (CreatureProfile != null)
+            if (CreatureProfile != null && !NPCLooksLikeObject)
                 Flags |= IdentifyResponseFlags.CreatureProfile;
             if (WeaponProfile != null)
                 Flags |= IdentifyResponseFlags.WeaponProfile;
