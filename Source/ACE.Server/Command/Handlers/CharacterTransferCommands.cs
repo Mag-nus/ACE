@@ -1,0 +1,619 @@
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+
+using Microsoft.EntityFrameworkCore;
+
+using log4net;
+
+using ACE.Database;
+using ACE.Database.Entity;
+using ACE.Database.Models.Shard;
+using ACE.Entity;
+using ACE.Entity.Enum;
+using ACE.Entity.Enum.Properties;
+using ACE.Server.Entity;
+using ACE.Server.Factories;
+using ACE.Server.Managers;
+using ACE.Server.Network;
+using ACE.Server.Network.GameMessages.Messages;
+using ACE.Server.WorldObjects;
+
+namespace ACE.Server.Command.Handlers
+{
+    // TODO: Fix character entered dereth date (id character, look at date, pull that from pcap)
+
+    public static class CharacterTransferCommands
+    {
+        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+
+        private class Server
+        {
+            public readonly string Database;
+            public readonly List<string> Names = new List<string>();
+
+            public Server(string database, params string[] names)
+            {
+                Database = database;
+                foreach (var name in names)
+                    Names.Add(name);
+            }
+        }
+
+        private static readonly Collection<Server> Servers = new Collection<Server>
+        {
+            new Server("ace_shard_retail_dt", "Darktide",       "dt"),
+            new Server("ace_shard_retail_ff", "Frostfell",      "ff"),
+            new Server("ace_shard_retail_hg", "Harvestgain",    "hg"),
+            new Server("ace_shard_retail_lc", "Leafcull",       "lc"),
+            new Server("ace_shard_retail_mt", "Morningthaw",    "mt"),
+            new Server("ace_shard_retail_sc", "Solclaim",       "sc"),
+            new Server("ace_shard_retail_td", "Thistledown",    "td"),
+            new Server("ace_shard_retail_vt", "Verdantine",     "vt"),
+            new Server("ace_shard_retail_we", "WintersEbb",     "we"),
+        };
+
+        private static ShardDbContext GetShardDbContext(Server server)
+        {
+            var config = Common.ConfigManager.Config.MySql.Shard;
+
+            var optionsBuilder = new DbContextOptionsBuilder<ShardDbContext>();
+            optionsBuilder.UseMySql($"server={config.Host};port={config.Port};user={config.Username};password={config.Password};database={server.Database}");
+
+            var context = new ShardDbContext(optionsBuilder.Options);
+
+            context.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
+
+            return context;
+        }
+
+        private static Character GetCharacter(Server server, uint id)
+        {
+            using (var context = GetShardDbContext(server))
+            {
+                var result = context.Character
+                    .Include(r => r.CharacterPropertiesContract)
+                    .Include(r => r.CharacterPropertiesFillCompBook)
+                    .Include(r => r.CharacterPropertiesFriendList)
+                    .Include(r => r.CharacterPropertiesQuestRegistry)
+                    .Include(r => r.CharacterPropertiesShortcutBar)
+                    .Include(r => r.CharacterPropertiesSpellBar)
+                    .Include(r => r.CharacterPropertiesTitleBook)
+                    .FirstOrDefault(r => r.Id == id && !r.IsDeleted);
+
+                return result;
+            }
+        }
+
+        private static Biota GetBiota(Server server, uint id)
+        {
+            using (var context = GetShardDbContext(server))
+                return ShardDatabase.GetBiota(context, id);
+        }
+
+        private static Biota GetBiota(Server server, string name)
+        {
+            using (var context = GetShardDbContext(server))
+            {
+                var result = context.BiotaPropertiesString.FirstOrDefault(r => r.Type == (ushort)PropertyString.Name && r.Value == name);
+
+                if (result == null)
+                    return null;
+
+                return ShardDatabase.GetBiota(context, result.ObjectId);
+            }
+        }
+
+        private static PossessedBiotas GetPossessedBiotasInParallel(Server severName, uint id)
+        {
+            var inventory = GetInventoryInParallel(severName, id, true);
+
+            var wieldedItems = GetWieldedItemsInParallel(severName, id);
+
+            return new PossessedBiotas(inventory, wieldedItems);
+        }
+
+        private static List<Biota> GetInventoryInParallel(Server server, uint parentId, bool includedNestedItems)
+        {
+            using (var context = GetShardDbContext(server))
+            {
+                var inventory = new ConcurrentBag<Biota>();
+
+                var results = context.BiotaPropertiesIID
+                    .Where(r => r.Type == (ushort) PropertyInstanceId.Container && r.Value == parentId)
+                    .ToList();
+
+                Parallel.ForEach(results, result =>
+                {
+                    using (var context2 = GetShardDbContext(server))
+                    {
+                        var biota = ShardDatabase.GetBiota(context2, result.ObjectId);
+
+                        if (biota != null)
+                        {
+                            inventory.Add(biota);
+
+                            if (includedNestedItems && biota.WeenieType == (int) WeenieType.Container)
+                            {
+                                var subItems = GetInventoryInParallel(server, biota.Id, false);
+
+                                foreach (var subItem in subItems)
+                                    inventory.Add(subItem);
+                            }
+                        }
+                    }
+                });
+
+                return inventory.ToList();
+            }
+        }
+
+        private static List<Biota> GetWieldedItemsInParallel(Server server, uint parentId)
+        {
+            using (var context = GetShardDbContext(server))
+            {
+                var wieldedItems = new ConcurrentBag<Biota>();
+
+                var results = context.BiotaPropertiesIID
+                    .Where(r => r.Type == (ushort) PropertyInstanceId.Wielder && r.Value == parentId)
+                    .ToList();
+
+                Parallel.ForEach(results, result =>
+                {
+                    using (var context2 = GetShardDbContext(server))
+                    {
+                        var biota = ShardDatabase.GetBiota(context2, result.ObjectId);
+
+                        if (biota != null)
+                            wieldedItems.Add(biota);
+                    }
+                });
+
+                return wieldedItems.ToList();
+            }
+        }
+
+
+        // restoreretailcharacter
+        [CommandHandler("restoreretailcharacter", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 3, "Restores a pcapped retail character into your characters list", "[server name] [retail character name] [new character name]")]
+        public static void HandleRestoreRetailCharacter(Session session, params string[] parameters)
+        {
+            if (session.Characters.Count >= (uint)PropertyManager.GetLong("max_chars_per_account").Item)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat($"You have no more free character slots.", ChatMessageType.Broadcast));
+                return;
+            }
+
+            var serverName = parameters[0];
+            var server = Servers.FirstOrDefault(r => r.Names.Contains(serverName, StringComparer.OrdinalIgnoreCase));
+            if (server == null)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("[server name] not found", ChatMessageType.Broadcast));
+                return;
+            }
+
+            var newName = parameters[2].Trim();
+
+            DatabaseManager.Shard.IsCharacterNameAvailable(newName, isAvailable =>
+            {
+                if (!isAvailable)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"{newName} is not available to use for the restored character, try another name.", ChatMessageType.Broadcast));
+                    return;
+                }
+
+                // todo: This is a lot of work that is done on the database thread (callback).. it should be off-loaded onto another thread
+
+                session.Network.EnqueueSend(new GameMessageSystemChat("Pulling retail player biota...", ChatMessageType.Broadcast));
+
+                var retailName = parameters[1];
+
+                var retailBiota = GetBiota(server, retailName);
+
+                if (retailBiota == null)
+                {
+                    session.Network.EnqueueSend(new GameMessageSystemChat($"Retail player biota was not found with name: {retailName}", ChatMessageType.Broadcast));
+                    return;
+                }
+
+
+                session.Network.EnqueueSend(new GameMessageSystemChat("Pulling retail player biota completed...", ChatMessageType.Broadcast));
+
+                var human = DatabaseManager.World.GetCachedWeenie("human");
+                // Removes the generic knife and buckler, hidden Javelin, 30 stack of arrows, and 5 stack of coins that are given to all characters
+                // Starter Gear from the JSON file are added to the character later in the CharacterCreateEx() process
+                human.WeeniePropertiesCreateList.Clear();
+
+                var guid = GuidManager.NewPlayerGuid();
+
+                var player = new Player(human, guid, session.AccountId);
+
+
+                foreach (var property in retailBiota.BiotaPropertiesInt)
+                {
+                    // Filter out properties that come from equipped items
+                    if (property.Type >= (int)PropertyInt.GearDamage && property.Type <= (int)PropertyInt.GearMaxHealth)
+                        continue;
+                    if (property.Type >= (int)PropertyInt.GearPKDamageRating && property.Type <= (int)PropertyInt.GearPKDamageResistRating)
+                        continue;
+                    // We don't pull in allegiances
+                    if (property.Type == (int)PropertyInt.AllegianceCpPool || property.Type == (int)PropertyInt.AllegianceRank || property.Type == (int)PropertyInt.MonarchsRank || property.Type == (int)PropertyInt.AllegianceFollowers
+                        || property.Type == (int)PropertyInt.AllegianceMinLevel || property.Type == (int)PropertyInt.AllegianceMaxLevel || property.Type == (int)PropertyInt.AllegianceSwearTimestamp)
+                        continue;
+                    // We don't pull in house information
+                    if (property.Type == (int)PropertyInt.HouseStatus || property.Type == (int)PropertyInt.HouseType)
+                        continue;
+                    player.SetProperty((PropertyInt) property.Type, property.Value);
+                }
+                foreach (var property in retailBiota.BiotaPropertiesInt64)
+                    player.SetProperty((PropertyInt64)property.Type, property.Value);
+                foreach (var property in retailBiota.BiotaPropertiesBool)
+                {
+                    if (property.Type == (int)PropertyBool.Attackable)
+                        continue;
+                    player.SetProperty((PropertyBool)property.Type, property.Value);
+                }
+                foreach (var property in retailBiota.BiotaPropertiesFloat)
+                    player.SetProperty((PropertyFloat)property.Type, property.Value);
+                foreach (var property in retailBiota.BiotaPropertiesString)
+                {
+                    // We don't pull in allegiances
+                    if (property.Type == (int)PropertyString.MonarchsName || property.Type == (int)PropertyString.MonarchsTitle || property.Type == (int)PropertyString.AllegianceName)
+                        continue;
+                    // We don't pull in vassal/patron relationships
+                    if (property.Type == (int)PropertyString.PatronsTitle)
+                        continue;
+                    player.SetProperty((PropertyString)property.Type, property.Value);
+                }
+                foreach (var property in retailBiota.BiotaPropertiesDID)
+                    player.SetProperty((PropertyDataId)property.Type, property.Value);
+                foreach (var property in retailBiota.BiotaPropertiesIID)
+                {
+                    // We don't pull in allegiances
+                    if (property.Type == (int)PropertyInstanceId.Allegiance || property.Type == (int)PropertyInstanceId.Monarch)
+                        continue;
+                    // We don't pull in vassal/patron relationships
+                    if (property.Type == (int)PropertyInstanceId.Patron)
+                        continue;
+                    // We don't pull in house information
+                    if (property.Type == (int)PropertyInstanceId.HouseOwner || property.Type == (int)PropertyInstanceId.House)
+                        continue;
+                    player.SetProperty((PropertyInstanceId)property.Type, property.Value);
+                }
+
+                foreach (var property in retailBiota.BiotaPropertiesPosition)
+                    player.SetPosition((PositionType)property.PositionType, new Position(property.ObjCellId, property.OriginX, property.OriginY, property.OriginZ, property.AnglesX, property.AnglesY, property.AnglesZ, property.AnglesW));
+
+                foreach (var property in retailBiota.BiotaPropertiesAttribute)
+                {
+                    var attribute = player.Attributes[(PropertyAttribute)property.Type];
+                    attribute.StartingValue = property.InitLevel;
+                    attribute.Ranks = property.LevelFromCP;
+                    attribute.ExperienceSpent = property.CPSpent;
+                }
+
+                {
+                    var property = retailBiota.BiotaPropertiesAttribute2nd.FirstOrDefault(r => r.Type == (ushort)PropertyAttribute2nd.Health);
+                    var vital = player.GetCreatureVital(PropertyAttribute2nd.Health);
+                    vital.StartingValue = property.InitLevel;
+                    vital.Ranks = property.LevelFromCP;
+                    vital.ExperienceSpent = property.CPSpent;
+                    vital.Current = property.CurrentLevel;
+                }
+                {
+                    var property = retailBiota.BiotaPropertiesAttribute2nd.FirstOrDefault(r => r.Type == (ushort)PropertyAttribute2nd.Stamina);
+                    var vital = player.GetCreatureVital(PropertyAttribute2nd.Stamina);
+                    vital.StartingValue = property.InitLevel;
+                    vital.Ranks = property.LevelFromCP;
+                    vital.ExperienceSpent = property.CPSpent;
+                    vital.Current = property.CurrentLevel;
+                }
+                {
+                    var property = retailBiota.BiotaPropertiesAttribute2nd.FirstOrDefault(r => r.Type == (ushort)PropertyAttribute2nd.Mana);
+                    var vital = player.GetCreatureVital(PropertyAttribute2nd.Mana);
+                    vital.StartingValue = property.InitLevel;
+                    vital.Ranks = property.LevelFromCP;
+                    vital.ExperienceSpent = property.CPSpent;
+                    vital.Current = property.CurrentLevel;
+                }
+
+                foreach (var property in retailBiota.BiotaPropertiesSkill)
+                {
+                    var cs = player.GetCreatureSkill((Skill)property.Type);
+                    cs.AdvancementClass = (SkillAdvancementClass)property.SAC;
+                    cs.Ranks = property.LevelFromPP;
+                    cs.ExperienceSpent = property.PP;
+                    cs.InitLevel = property.InitLevel;
+                }
+
+                foreach (var property in retailBiota.BiotaPropertiesSpellBook)
+                    player.AddKnownSpell((uint)property.Spell);
+
+                // We don't import all the enchantments. Instead, we just add str/arcane buffs to help activate equipment
+                player.EnchantmentManager.DispelAllEnchantments();
+                player.EnchantmentManager.Add(new Spell(4325), player); // Strength Self 8
+                player.EnchantmentManager.Add(new Spell(3738), player); // Prodigal Strength
+                player.EnchantmentManager.Add(new Spell(4305), player); // Focus Self 8
+                player.EnchantmentManager.Add(new Spell(3705), player); // Prodigal Focus
+                player.EnchantmentManager.Add(new Spell(2348), player); // Brilliance
+                player.EnchantmentManager.Add(new Spell(4510), player); // Incantation of Arcane Enlightenment Self
+                player.EnchantmentManager.Add(new Spell(3682), player); // Prodigal Arcane Enlightenment
+                player.EnchantmentManager.Add(new Spell(4548), player); // Incantation of Fealty Self
+                player.EnchantmentManager.Add(new Spell(3701), player); // Prodigal Fealty
+
+
+                session.Network.EnqueueSend(new GameMessageSystemChat("Pulling retail possessions...", ChatMessageType.Broadcast));
+
+                var possessedBiotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
+
+                var possessions = GetPossessedBiotasInParallel(server, retailBiota.Id);
+
+                session.Network.EnqueueSend(new GameMessageSystemChat("Pulling retail possessions completed...", ChatMessageType.Broadcast));
+                session.Network.EnqueueSend(new GameMessageSystemChat("Converting retail possessions...", ChatMessageType.Broadcast));
+
+                var guidConversions = new Dictionary<uint, uint>
+                {
+                    { retailBiota.Id, player.Guid.Full },
+                };
+
+                // Main pack and side slot items
+                foreach (var possession in possessions.Inventory.Where(r => r.BiotaPropertiesIID.FirstOrDefault(p => p.Type == (ushort)PropertyInstanceId.Container && p.Value == retailBiota.Id) != null))
+                {
+                    var wo = ImportWorldObject(possession);
+
+                    if (wo == null)
+                        continue;
+
+                    guidConversions[possession.Id] = wo.Guid.Full;
+
+                    player.TryAddToInventory(wo);
+
+                    possessedBiotas.Add((wo.Biota, wo.BiotaDatabaseLock));
+                }
+
+                // Side pack items
+                foreach (var possession in possessions.Inventory.Where(r => r.BiotaPropertiesIID.FirstOrDefault(p => p.Type == (ushort)PropertyInstanceId.Container && p.Value == retailBiota.Id) == null))
+                {
+                    var wo = ImportWorldObject(possession);
+
+                    if (wo == null)
+                        continue;
+
+                    guidConversions[possession.Id] = wo.Guid.Full;
+
+                    var containerId = possession.GetProperty(PropertyInstanceId.Container, new ReaderWriterLockSlim()) ?? 0;
+
+                    if (guidConversions.TryGetValue(containerId, out var value))
+                    {
+                        if (player.GetInventoryItem(value) is Container container)
+                            container.TryAddToInventory(wo);
+                        else
+                            player.TryAddToInventory(wo);
+                    }
+                    else
+                        player.TryAddToInventory(wo);
+
+                    possessedBiotas.Add((wo.Biota, wo.BiotaDatabaseLock));
+                }
+
+                foreach (var possession in possessions.WieldedItems)
+                {
+                    var wo = ImportWorldObject(possession);
+
+                    if (wo == null)
+                        continue;
+
+                    guidConversions[possession.Id] = wo.Guid.Full;
+
+                    if (wo is Book)
+                        player.TryAddToInventory(wo);
+                    else
+                    {
+                        foreach (var enchantment in possession.BiotaPropertiesEnchantmentRegistry)
+                        {
+                            // todo We need to "debuff" items that were wielded, if the retail player had auras or other spells cast
+                        }
+
+                        // We don't wield selectable items (weapons, orbs, etc..), it bugs the player
+                        var wieldLocation = possession.GetProperty(PropertyInt.CurrentWieldedLocation, new ReaderWriterLockSlim()) ?? 0;
+                        if (wieldLocation == 0 || (wieldLocation & (int)EquipMask.Selectable) != 0 || !player.TryEquipObject(wo, (EquipMask)wieldLocation))
+                            player.TryAddToInventory(wo);
+                    }
+
+                    possessedBiotas.Add((wo.Biota, wo.BiotaDatabaseLock));
+                }
+
+                session.Network.EnqueueSend(new GameMessageSystemChat("Converting retail possessions completed...", ChatMessageType.Broadcast));
+
+
+                session.Network.EnqueueSend(new GameMessageSystemChat("Pulling retail character...", ChatMessageType.Broadcast));
+
+                var retailCharacter = GetCharacter(server, retailBiota.Id);
+
+                session.Network.EnqueueSend(new GameMessageSystemChat("Pulling retail character completed...", ChatMessageType.Broadcast));
+
+                if (retailCharacter != null)
+                {
+                    player.Character.CharacterOptions1 = retailCharacter.CharacterOptions1;
+                    player.Character.CharacterOptions2 = retailCharacter.CharacterOptions2;
+                    if (retailCharacter.GameplayOptions != null && retailCharacter.GameplayOptions.Length > 0)
+                    {
+                        player.Character.GameplayOptions = new byte[retailCharacter.GameplayOptions.Length];
+                        Buffer.BlockCopy(retailCharacter.GameplayOptions, 0, player.Character.GameplayOptions, 0, player.Character.GameplayOptions.Length);
+                    }
+
+                    player.Character.SpellbookFilters = retailCharacter.SpellbookFilters;
+                    player.Character.HairTexture = retailCharacter.HairTexture;
+                    player.Character.DefaultHairTexture = retailCharacter.DefaultHairTexture;
+
+                    // todo CharacterPropertiesContract
+
+                    // todo CharacterPropertiesFillCompBook
+
+                    // We don't import CharacterPropertiesFriendList
+
+                    // todo CharacterPropertiesQuestRegistry
+
+                    player.Character.CharacterPropertiesShortcutBar.Clear();
+                    foreach (var entry in retailCharacter.CharacterPropertiesShortcutBar)
+                    {
+                        if (guidConversions.TryGetValue(entry.ShortcutObjectId, out var value))
+                            player.Character.CharacterPropertiesShortcutBar.Add(new CharacterPropertiesShortcutBar { ShortcutBarIndex = entry.ShortcutBarIndex, ShortcutObjectId = value });
+                    }
+
+                    player.Character.CharacterPropertiesSpellBar.Clear();
+                    var spellsToAdd = retailCharacter.CharacterPropertiesSpellBar.OrderBy(r => r.SpellBarNumber).ThenBy(s => s.SpellBarIndex);
+                    foreach (var spell in spellsToAdd)
+                        player.Character.AddSpellToBar(spell.SpellBarNumber, spell.SpellBarIndex, spell.SpellId, player.CharacterDatabaseLock);
+
+                    foreach (var entry in retailCharacter.CharacterPropertiesTitleBook)
+                        player.AddTitle((CharacterTitle)entry.TitleId);
+                }
+
+
+                session.Network.EnqueueSend(new GameMessageSystemChat("Process completed. You will be logged out now...", ChatMessageType.Broadcast));
+
+                player.Name = newName;
+                player.Character.Name = newName;
+
+                DatabaseManager.Shard.AddCharacterInParallel(player.Biota, player.BiotaDatabaseLock, possessedBiotas, player.Character, player.CharacterDatabaseLock, null);
+
+                PlayerManager.AddOfflinePlayer(player);
+                session.Characters.Add(player.Character);
+
+                session.LogOffPlayer();
+            });
+        }
+
+        private static WorldObject ImportWorldObject(Biota biota)
+        {
+            bool altWeenieUsed = false;
+
+            var weenie = DatabaseManager.World.GetCachedWeenie(biota.WeenieClassId);
+
+            if (weenie == null)
+            {
+                string altWeenieClassName = null;
+
+                // Not all retail WCIDs are defined yet. Here we replace them with similar counterparts
+
+                //if (biota.WeenieClassId >= 34704 && biota.WeenieClassId <= 34708)       altWeenieClassName = "ring"; // Empyrean Rings
+                //else if (biota.WeenieClassId >= 39919 && biota.WeenieClassId <= 39923)  altWeenieClassName = "ring"; // Enhanced Empyrean Rings
+
+                if (altWeenieClassName == null)
+                {
+                    if (biota.WeenieType == 2)          altWeenieClassName = "shirt";       // Clothing
+                    else if (biota.WeenieType == 3)     altWeenieClassName = "bowlong";     // MissileLauncher
+                    else if (biota.WeenieType == 21)    altWeenieClassName = "backpack";    // Container
+                    else if (biota.WeenieType == 35)    altWeenieClassName = "wand";        // Caster
+                    else if (biota.WeenieType == 38)    altWeenieClassName = "gem";         // Gem
+                }
+
+                if (altWeenieClassName == null)
+                {
+                    var validLocations = biota.GetProperty(PropertyInt.ValidLocations, new ReaderWriterLockSlim());
+                    if (validLocations == (int)EquipMask.TrinketOne)            altWeenieClassName = "ace41513-pathwardentrinket";
+                    else if (validLocations == (int)EquipMask.Cloak)            altWeenieClassName = "shirt";
+                    else if (validLocations == (int)EquipMask.Shield)           altWeenieClassName = "shieldround";
+                    else if (validLocations == (int)EquipMask.MeleeWeapon)      altWeenieClassName = "swordlong";
+                    else if (validLocations == (int)EquipMask.NeckWear)         altWeenieClassName = "necklace";
+                    else if (validLocations == (int)EquipMask.WristWear)        altWeenieClassName = "bracelet";
+                    else if (validLocations == (int)EquipMask.FingerWear)       altWeenieClassName = "ring";
+                }
+
+                if (altWeenieClassName == null)
+                {
+                    // https://asheron.fandom.com/wiki/Currency
+                    var name = biota.GetProperty(PropertyString.Name, new ReaderWriterLockSlim());
+                    if (name == "Ancient Mhoire Coin")          altWeenieClassName = "coinstack";
+                    else if (name == "A'nekshay Token")         altWeenieClassName = "coinstack";
+                    else if (name == "Colosseum Coin")          altWeenieClassName = "coinstack";
+                    else if (name == "Dark Tusker Paw")         altWeenieClassName = "coinstack";
+                    else if (name == "Hero Token")              altWeenieClassName = "coinstack";
+                    else if (name == "Ornate Gear Marker")      altWeenieClassName = "coinstack";
+                    else if (name == "Pitted Slag")             altWeenieClassName = "coinstack";
+                    else if (name == "Small Olthoi Venom Sac")  altWeenieClassName = "coinstack";
+                    else if (name == "Spectral Ingot")          altWeenieClassName = "coinstack";
+                    else if (name == "Stipend")                 altWeenieClassName = "coinstack";
+                    else if (name == "Writ of Apology")         altWeenieClassName = "coinstack";
+                }
+
+                weenie = DatabaseManager.World.GetCachedWeenie(altWeenieClassName);
+
+                if (weenie == null)
+                    return CreateIOU(biota);
+
+                altWeenieUsed = true;
+            }
+
+            if (weenie.Type == 0)
+                return CreateIOU(biota);
+                
+            var wo = WorldObjectFactory.CreateNewWorldObject(weenie);
+
+            foreach (var property in biota.BiotaPropertiesInt)
+                wo.SetProperty((PropertyInt)property.Type, property.Value);
+            foreach (var property in biota.BiotaPropertiesInt64)
+                wo.SetProperty((PropertyInt64)property.Type, property.Value);
+            foreach (var property in biota.BiotaPropertiesBool)
+                wo.SetProperty((PropertyBool)property.Type, property.Value);
+            foreach (var property in biota.BiotaPropertiesFloat)
+                wo.SetProperty((PropertyFloat)property.Type, property.Value);
+            foreach (var property in biota.BiotaPropertiesString)
+                wo.SetProperty((PropertyString)property.Type, property.Value);
+            foreach (var property in biota.BiotaPropertiesDID)
+                wo.SetProperty((PropertyDataId)property.Type, property.Value);
+            foreach (var property in biota.BiotaPropertiesIID)
+                wo.SetProperty((PropertyInstanceId)property.Type, property.Value);
+
+            foreach (var property in biota.BiotaPropertiesSpellBook)
+            {
+                var result = wo.Biota.GetOrAddKnownSpell(property.Spell, wo.BiotaDatabaseLock, out _);
+                result.Probability = property.Probability;
+            }
+
+            // we don't import enchantments
+
+            if (altWeenieUsed)
+                wo.SetProperty(PropertyDataId.IconUnderlay, 0x109A); // black/white pixelated
+
+            // Clean location properties
+            wo.Placement = Placement.Resting;
+            wo.ParentLocation = null;
+            wo.Location = null;
+
+            // Clean up container properties
+            wo.OwnerId = null;
+            wo.ContainerId = null;
+            wo.PlacementPosition = null;
+
+            // Clean wielded properties
+            wo.RemoveProperty(PropertyInt.CurrentWieldedLocation);
+            wo.RemoveProperty(PropertyInstanceId.Wielder);
+            wo.Wielder = null;
+
+            wo.IsAffecting = false;
+
+            return wo;
+        }
+
+        private static WorldObject CreateIOU(Biota biota)
+        {
+            var iou = (Book)WorldObjectFactory.CreateNewWorldObject("parchment");
+
+            iou.SetProperties("IOU", "An IOU for a missing database object.", $"Sorry about that chief... but I couldn't import your {biota.Id:X8}:{biota.GetProperty(PropertyString.Name)}", "ACEmulator", "prewritten");
+            iou.AddPage(uint.MaxValue, "ACEmulator", "prewritten", false, $"{biota.WeenieClassId}\n\nSorry but the database does not have a weenie for weenieClassId #{biota.WeenieClassId} so in lieu of that here is an IOU for that item.");
+            iou.Bonded = (int)BondedStatus.Bonded;
+            iou.Attuned = (int)AttunedStatus.Attuned;
+            iou.SetProperty(PropertyBool.IsSellable, false);
+            iou.Value = 0;
+            iou.EncumbranceVal = 0;
+
+            return iou;
+        }
+    }
+}
