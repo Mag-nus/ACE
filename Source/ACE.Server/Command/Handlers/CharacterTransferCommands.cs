@@ -207,6 +207,7 @@ namespace ACE.Server.Command.Handlers
                 }
 
                 // todo: This is a lot of work that is done on the database thread (callback).. it should be off-loaded onto another thread
+                // todo: It's mainly ImportWorldObject and getting the cached weenies. If the weenies are pre-cached, the performance may be acceptable
 
                 session.Network.EnqueueSend(new GameMessageSystemChat("Pulling retail player biota...", ChatMessageType.Broadcast));
 
@@ -475,17 +476,20 @@ namespace ACE.Server.Command.Handlers
                 }
 
 
-                session.Network.EnqueueSend(new GameMessageSystemChat("Process completed. You will be logged out now...", ChatMessageType.Broadcast));
+                session.Network.EnqueueSend(new GameMessageSystemChat("Saving new character, please wait...", ChatMessageType.Broadcast));
 
                 player.Name = newName;
                 player.Character.Name = newName;
 
-                DatabaseManager.Shard.AddCharacterInParallel(player.Biota, player.BiotaDatabaseLock, possessedBiotas, player.Character, player.CharacterDatabaseLock, null);
+                DatabaseManager.Shard.AddCharacterInParallel(player.Biota, player.BiotaDatabaseLock, possessedBiotas, player.Character, player.CharacterDatabaseLock, result =>
+                {
+                    PlayerManager.AddOfflinePlayer(player);
+                    session.Characters.Add(player.Character);
 
-                PlayerManager.AddOfflinePlayer(player);
-                session.Characters.Add(player.Character);
+                    session.Network.EnqueueSend(new GameMessageSystemChat("Saving new character completed. You will be logged out now...", ChatMessageType.Broadcast));
 
-                session.LogOffPlayer();
+                    session.LogOffPlayer();
+                });
             });
         }
 
@@ -501,14 +505,10 @@ namespace ACE.Server.Command.Handlers
 
                 // Not all retail WCIDs are defined yet. Here we replace them with similar counterparts
 
-                //if (biota.WeenieClassId >= 34704 && biota.WeenieClassId <= 34708)       altWeenieClassName = "ring"; // Empyrean Rings
-                //else if (biota.WeenieClassId >= 39919 && biota.WeenieClassId <= 39923)  altWeenieClassName = "ring"; // Enhanced Empyrean Rings
-
+                // Only use WeenieType for the most basic items. The export process guestimates the WeenieType, so we shouldn't trust it fully during the import process
                 if (altWeenieClassName == null)
                 {
-                    if (biota.WeenieType == 2)          altWeenieClassName = "shirt";       // Clothing
-                    else if (biota.WeenieType == 3)     altWeenieClassName = "bowlong";     // MissileLauncher
-                    else if (biota.WeenieType == 21)    altWeenieClassName = "backpack";    // Container
+                    if (biota.WeenieType == 21)    altWeenieClassName = "backpack";    // Container
                     else if (biota.WeenieType == 35)    altWeenieClassName = "wand";        // Caster
                     else if (biota.WeenieType == 38)    altWeenieClassName = "gem";         // Gem
                 }
@@ -516,19 +516,29 @@ namespace ACE.Server.Command.Handlers
                 if (altWeenieClassName == null)
                 {
                     var validLocations = biota.GetProperty(PropertyInt.ValidLocations, new ReaderWriterLockSlim());
-                    if (validLocations == (int)EquipMask.TrinketOne)            altWeenieClassName = "ace41513-pathwardentrinket";
-                    else if (validLocations == (int)EquipMask.Cloak)            altWeenieClassName = "shirt";
-                    else if (validLocations == (int)EquipMask.Shield)           altWeenieClassName = "shieldround";
-                    else if (validLocations == (int)EquipMask.MeleeWeapon)      altWeenieClassName = "swordlong";
-                    else if (validLocations == (int)EquipMask.NeckWear)         altWeenieClassName = "necklace";
+
+                    if (validLocations == (int)EquipMask.NeckWear)              altWeenieClassName = "necklace";
+                    else if (validLocations == (int)EquipMask.TrinketOne)       altWeenieClassName = "ace41513-pathwardentrinket";
+                    //else if (validLocations == (int)EquipMask.Cloak)            altWeenieClassName = "shirt"; // todo this is no good
                     else if (validLocations == (int)EquipMask.WristWear)        altWeenieClassName = "bracelet";
                     else if (validLocations == (int)EquipMask.FingerWear)       altWeenieClassName = "ring";
+
+                    else if (validLocations == (int)EquipMask.HeadWear)         altWeenieClassName = "helmet";
+                    else if (validLocations == (int)EquipMask.HandWear)         altWeenieClassName = "glovescloth";
+                    else if (validLocations == (int)EquipMask.AbdomenArmor)     altWeenieClassName = "girthleather";
+                    else if (validLocations == (int)EquipMask.FootWear)         altWeenieClassName = "shoes";
+
+                    else if (validLocations == (int)EquipMask.Shield)           altWeenieClassName = "shieldround";
+                    else if (validLocations == (int)EquipMask.MeleeWeapon)      altWeenieClassName = "swordlong";
+                    else if (validLocations == (int)EquipMask.MissileWeapon)    altWeenieClassName = "bowlong";
+                    else if (validLocations == (int)EquipMask.MissileAmmo)      altWeenieClassName = "arrow";
                 }
 
                 if (altWeenieClassName == null)
                 {
                     // https://asheron.fandom.com/wiki/Currency
                     var name = biota.GetProperty(PropertyString.Name, new ReaderWriterLockSlim());
+
                     if (name == "Ancient Mhoire Coin")          altWeenieClassName = "coinstack";
                     else if (name == "A'nekshay Token")         altWeenieClassName = "coinstack";
                     else if (name == "Colosseum Coin")          altWeenieClassName = "coinstack";
@@ -555,6 +565,14 @@ namespace ACE.Server.Command.Handlers
                 
             var wo = WorldObjectFactory.CreateNewWorldObject(weenie);
 
+            // Remove existing pallete properties
+            if (altWeenieUsed)
+            {
+                wo.RemoveProperty(PropertyInt.PaletteTemplate);
+                //wo.RemoveProperty(PropertyInt.TsysMutationData);
+                //wo.RemoveProperty(PropertyDataId.ClothingBase);
+            }
+
             foreach (var property in biota.BiotaPropertiesInt)
                 wo.SetProperty((PropertyInt)property.Type, property.Value);
             foreach (var property in biota.BiotaPropertiesInt64)
@@ -575,6 +593,18 @@ namespace ACE.Server.Command.Handlers
                 var result = wo.Biota.GetOrAddKnownSpell(property.Spell, wo.BiotaDatabaseLock, out _);
                 result.Probability = property.Probability;
             }
+
+            wo.Biota.BiotaPropertiesPalette.Clear();
+            foreach (var entry in biota.BiotaPropertiesPalette)
+                wo.Biota.BiotaPropertiesPalette.Add(new BiotaPropertiesPalette { SubPaletteId = entry.SubPaletteId, Offset = entry.Offset, Length = entry.Length });
+
+            wo.Biota.BiotaPropertiesTextureMap.Clear();
+            foreach (var entry in biota.BiotaPropertiesTextureMap)
+                wo.Biota.BiotaPropertiesTextureMap.Add(new BiotaPropertiesTextureMap { Index = entry.Index, OldId = entry.OldId, NewId = entry.NewId, Order = entry.Order });
+
+            wo.Biota.BiotaPropertiesAnimPart.Clear();
+            foreach (var entry in biota.BiotaPropertiesAnimPart)
+                wo.Biota.BiotaPropertiesAnimPart.Add(new BiotaPropertiesAnimPart { Index = entry.Index, AnimationId = entry.AnimationId, Order = entry.Order });
 
             // we don't import enchantments
 
