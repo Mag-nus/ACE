@@ -124,7 +124,7 @@ namespace ACE.Server.Command.Handlers
                 var inventory = new ConcurrentBag<Biota>();
 
                 var results = context.BiotaPropertiesIID
-                    .Where(r => r.Type == (ushort) PropertyInstanceId.Container && r.Value == parentId)
+                    .Where(r => r.Type == (ushort)PropertyInstanceId.Container && r.Value == parentId)
                     .ToList();
 
                 Parallel.ForEach(results, result =>
@@ -137,7 +137,7 @@ namespace ACE.Server.Command.Handlers
                         {
                             inventory.Add(biota);
 
-                            if (includedNestedItems && biota.WeenieType == (int) WeenieType.Container)
+                            if (includedNestedItems && biota.WeenieType == (int)WeenieType.Container)
                             {
                                 var subItems = GetInventoryInParallel(server, biota.Id, false);
 
@@ -159,7 +159,7 @@ namespace ACE.Server.Command.Handlers
                 var wieldedItems = new ConcurrentBag<Biota>();
 
                 var results = context.BiotaPropertiesIID
-                    .Where(r => r.Type == (ushort) PropertyInstanceId.Wielder && r.Value == parentId)
+                    .Where(r => r.Type == (ushort)PropertyInstanceId.Wielder && r.Value == parentId)
                     .ToList();
 
                 Parallel.ForEach(results, result =>
@@ -248,7 +248,7 @@ namespace ACE.Server.Command.Handlers
                     // We don't pull in house information
                     if (property.Type == (int)PropertyInt.HouseStatus || property.Type == (int)PropertyInt.HouseType)
                         continue;
-                    player.SetProperty((PropertyInt) property.Type, property.Value);
+                    player.SetProperty((PropertyInt)property.Type, property.Value);
                 }
                 foreach (var property in retailBiota.BiotaPropertiesInt64)
                     player.SetProperty((PropertyInt64)property.Type, property.Value);
@@ -508,7 +508,7 @@ namespace ACE.Server.Command.Handlers
                 // Only use WeenieType for the most basic items. The export process guestimates the WeenieType, so we shouldn't trust it fully during the import process
                 if (altWeenieClassName == null)
                 {
-                    if (biota.WeenieType == 21)    altWeenieClassName = "backpack";    // Container
+                    if (biota.WeenieType == 21)         altWeenieClassName = "backpack";    // Container
                     else if (biota.WeenieType == 35)    altWeenieClassName = "wand";        // Caster
                     else if (biota.WeenieType == 38)    altWeenieClassName = "gem";         // Gem
                 }
@@ -562,16 +562,29 @@ namespace ACE.Server.Command.Handlers
 
             if (weenie.Type == 0)
                 return CreateIOU(biota);
-                
+
             var wo = WorldObjectFactory.CreateNewWorldObject(weenie);
 
-            // Remove existing pallete properties
-            if (altWeenieUsed)
-            {
+            // Determine what the retail properties are, these properties are server only and weren't pcapped
+            // PropertyInt.PaletteTemplate
+            // PropertyInt.UiEffects
+            // PropertyInt.TargetType
+
+            // PropertyDataId.Setup
+            // PropertyDataId.PaletteBase
+            // PropertyDataId.ClothingBase
+            // PropertyDataId.Icon
+
+            //if (altWeenieUsed)
+            /*{
                 wo.RemoveProperty(PropertyInt.PaletteTemplate);
+                wo.RemoveProperty(PropertyFloat.Shade);
+                wo.RemoveProperty(PropertyFloat.Shade2);
+                wo.RemoveProperty(PropertyFloat.Shade3);
+                wo.RemoveProperty(PropertyFloat.Shade4);
                 //wo.RemoveProperty(PropertyInt.TsysMutationData);
                 //wo.RemoveProperty(PropertyDataId.ClothingBase);
-            }
+            }*/
 
             foreach (var property in biota.BiotaPropertiesInt)
                 wo.SetProperty((PropertyInt)property.Type, property.Value);
@@ -593,7 +606,7 @@ namespace ACE.Server.Command.Handlers
                 var result = wo.Biota.GetOrAddKnownSpell(property.Spell, wo.BiotaDatabaseLock, out _);
                 result.Probability = property.Probability;
             }
-
+            /*
             wo.Biota.BiotaPropertiesPalette.Clear();
             foreach (var entry in biota.BiotaPropertiesPalette)
                 wo.Biota.BiotaPropertiesPalette.Add(new BiotaPropertiesPalette { SubPaletteId = entry.SubPaletteId, Offset = entry.Offset, Length = entry.Length });
@@ -605,7 +618,7 @@ namespace ACE.Server.Command.Handlers
             wo.Biota.BiotaPropertiesAnimPart.Clear();
             foreach (var entry in biota.BiotaPropertiesAnimPart)
                 wo.Biota.BiotaPropertiesAnimPart.Add(new BiotaPropertiesAnimPart { Index = entry.Index, AnimationId = entry.AnimationId, Order = entry.Order });
-
+            */
             // we don't import enchantments
 
             if (altWeenieUsed)
