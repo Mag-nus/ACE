@@ -25,8 +25,6 @@ using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Command.Handlers
 {
-    // TODO: Fix character entered dereth date (id character, look at date, pull that from pcap)
-
     public static class CharacterTransferCommands
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
@@ -212,6 +210,8 @@ namespace ACE.Server.Command.Handlers
                 session.Network.EnqueueSend(new GameMessageSystemChat("Pulling retail player biota...", ChatMessageType.Broadcast));
 
                 var retailName = parameters[1];
+
+                log.Info($"Account {session.AccountId}:{session.Account}, Player 0x{session.Player.Guid}:{session.Player.Name} requested restore of {serverName}:{retailName}");
 
                 var retailBiota = GetBiota(server, retailName);
 
@@ -481,10 +481,15 @@ namespace ACE.Server.Command.Handlers
                 player.Name = newName;
                 player.Character.Name = newName;
 
+                var dateTimeOffset = DateTimeOffset.FromUnixTimeSeconds(player.CreationTimestamp ?? 0);
+                player.SetProperty(PropertyString.DateOfBirth, $"{dateTimeOffset.UtcDateTime:dd MMMM yyyy}");
+
                 DatabaseManager.Shard.AddCharacterInParallel(player.Biota, player.BiotaDatabaseLock, possessedBiotas, player.Character, player.CharacterDatabaseLock, result =>
                 {
                     PlayerManager.AddOfflinePlayer(player);
                     session.Characters.Add(player.Character);
+
+                    log.Info($"Account {session.AccountId}:{session.Account}, Player 0x{session.Player.Guid}:{session.Player.Name} restored of {serverName}:{retailName}");
 
                     session.Network.EnqueueSend(new GameMessageSystemChat("Saving new character completed. You will be logged out now...", ChatMessageType.Broadcast));
 
