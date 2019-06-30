@@ -1758,9 +1758,9 @@ namespace ACE.Server.Command.Handlers
 
             var guid = GuidManager.NewPlayerGuid();
 
-            weenie.Type = (int)session.Player.WeenieType;
-
             var player = new Player(weenie, guid, session.AccountId);
+
+            player.Biota.WeenieType = (int)session.Player.WeenieType;
 
             var name = string.Join(' ', parameters.Skip(1));
             if (parameters.Length > 1)
@@ -1884,7 +1884,7 @@ namespace ACE.Server.Command.Handlers
                     var quests = "";
                     foreach (var quest in player.QuestManager.Quests)
                     {
-                        quests += $"Quest Name: {quest.QuestName}\nComletions: {quest.NumTimesCompleted} | Last Completion: {quest.LastTimeCompleted} ({Common.Time.GetDateTimeFromTimestamp(quest.LastTimeCompleted).ToLocalTime()})\n";
+                        quests += $"Quest Name: {quest.QuestName}\nCompletions: {quest.NumTimesCompleted} | Last Completion: {quest.LastTimeCompleted} ({Common.Time.GetDateTimeFromTimestamp(quest.LastTimeCompleted).ToLocalTime()})\n";
                         var nextSolve = player.QuestManager.GetNextSolveTime(quest.QuestName);
 
                         if (nextSolve == TimeSpan.MinValue)

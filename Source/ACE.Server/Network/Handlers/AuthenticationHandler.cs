@@ -34,9 +34,25 @@ namespace ACE.Server.Network.Handlers
 
         public static void HandleLoginRequest(ClientPacket packet, Session session)
         {
-            PacketInboundLoginRequest loginRequest = new PacketInboundLoginRequest(packet);
-            Task t = new Task(() => DoLogin(session, loginRequest));
-            t.Start();
+            try
+            {
+                PacketInboundLoginRequest loginRequest = new PacketInboundLoginRequest(packet);
+
+                if (loginRequest.Account.Length > 50)
+                {
+                    NetworkManager.SendLoginRequestReject(session, CharacterError.AccountInvalid);
+                    session.Terminate(SessionTerminationReason.AccountInformationInvalid);
+                    return;
+                }
+
+                Task t = new Task(() => DoLogin(session, loginRequest));
+                t.Start();
+            }
+            catch (Exception ex)
+            {
+                log.ErrorFormat("Received LoginRequest from {0} that threw an exception.", session.EndPoint);
+                log.Error(ex);
+            }
         }
 
         private static void DoLogin(Session session, PacketInboundLoginRequest loginRequest)
@@ -138,9 +154,9 @@ namespace ACE.Server.Network.Handlers
                 if (!account.PasswordMatches(loginRequest.Password))
                 {
                     if (WorldManager.WorldStatus == WorldManager.WorldStatusState.Open)
-                        log.Info($"client {loginRequest.Account} connected with non matching password does so booting");
+                        log.Info($"client {loginRequest.Account} connected with non matching password so booting");
                     else
-                        log.Debug($"client {loginRequest.Account} connected with non matching password does so booting");
+                        log.Debug($"client {loginRequest.Account} connected with non matching password so booting");
 
                     session.Terminate(SessionTerminationReason.NotAuthorizedPasswordMismatch, new GameMessageCharacterError(CharacterError.AccountDoesntExist));
 

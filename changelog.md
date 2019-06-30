@@ -1,10 +1,28 @@
 # ACEmulator Change Log
 
+### 2019-06-29
+[Ripley]
+* Clean up issue with Weenie Cache corruption via admin commands/player creation.
+
+### 2019-06-27
+[OptimShi]
+* Fixed issue with Recipe Manager "CopyFromSourceToResult" not using the player as the source.
+
+### 2019-06-23
+[Ripley]
+* Fix issue of weenie cache corruption, setting the weenie's weenietype instead of biota's weenietype
+* Ensure subbed combatpets are always melee-ing by not spawning any inventory/weapons.
+* Generator system tweaks
+  - Carry over Delay from profile template correctly.
+  - Update RemoveQueue info in GeneratorDump.
+  - Adjust CurrentCreate to be calculated to prevent out-of-sync issues.
+
 ### 2019-06-22
 [Ripley]
 * Expand `qst` command.
 * Code fix for out of order emote sets.
 * Fix issue with food consumables ObjectDescriptionFlag.
+* Fix issue with certain doors.
 
 ### 2019-06-21
 [Ripley]
