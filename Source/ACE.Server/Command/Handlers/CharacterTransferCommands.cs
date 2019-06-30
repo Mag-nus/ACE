@@ -222,8 +222,6 @@ namespace ACE.Server.Command.Handlers
                 }
 
 
-                session.Network.EnqueueSend(new GameMessageSystemChat("Pulling retail player biota completed...", ChatMessageType.Broadcast));
-
                 var human = DatabaseManager.World.GetCachedWeenie("human");
                 // Removes the generic knife and buckler, hidden Javelin, 30 stack of arrows, and 5 stack of coins that are given to all characters
                 // Starter Gear from the JSON file are added to the character later in the CharacterCreateEx() process
@@ -353,7 +351,6 @@ namespace ACE.Server.Command.Handlers
 
                 var possessions = GetPossessedBiotasInParallel(server, retailBiota.Id);
 
-                session.Network.EnqueueSend(new GameMessageSystemChat("Pulling retail possessions completed...", ChatMessageType.Broadcast));
                 session.Network.EnqueueSend(new GameMessageSystemChat("Converting retail possessions...", ChatMessageType.Broadcast));
 
                 var guidConversions = new Dictionary<uint, uint>
@@ -428,14 +425,10 @@ namespace ACE.Server.Command.Handlers
                     possessedBiotas.Add((wo.Biota, wo.BiotaDatabaseLock));
                 }
 
-                session.Network.EnqueueSend(new GameMessageSystemChat("Converting retail possessions completed...", ChatMessageType.Broadcast));
-
 
                 session.Network.EnqueueSend(new GameMessageSystemChat("Pulling retail character...", ChatMessageType.Broadcast));
 
                 var retailCharacter = GetCharacter(server, retailBiota.Id);
-
-                session.Network.EnqueueSend(new GameMessageSystemChat("Pulling retail character completed...", ChatMessageType.Broadcast));
 
                 if (retailCharacter != null)
                 {
