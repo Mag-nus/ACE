@@ -639,6 +639,20 @@ namespace ACE.Server.Command.Handlers
 
             wo.IsAffecting = false;
 
+            // Fixes
+            if (wo is ManaStone)
+            {
+                if (wo.UiEffects == UiEffects.Magical && wo.ItemCurMana == null || wo.ItemCurMana == 0)
+                {
+                    wo.ItemCurMana = 10000;
+                    wo.Use = "Use on a magic item to give the stone's stored Mana to that item.";
+                }
+            }
+
+            // Convenience
+            if (wo.ItemCurMana != null && wo.ItemMaxMana != null)
+                wo.ItemCurMana = wo.ItemMaxMana;
+
             return wo;
         }
 
