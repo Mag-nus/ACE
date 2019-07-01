@@ -411,11 +411,6 @@ namespace ACE.Server.Command.Handlers
                         player.TryAddToInventory(wo);
                     else
                     {
-                        foreach (var enchantment in possession.BiotaPropertiesEnchantmentRegistry)
-                        {
-                            // todo We need to "debuff" items that were wielded, if the retail player had auras or other spells cast
-                        }
-
                         // We don't wield selectable items (weapons, orbs, etc..), it bugs the player
                         var wieldLocation = possession.GetProperty(PropertyInt.CurrentWieldedLocation, new ReaderWriterLockSlim()) ?? 0;
                         if (wieldLocation == 0 || (wieldLocation & (int)EquipMask.Selectable) != 0 || !player.TryEquipObject(wo, (EquipMask)wieldLocation))
@@ -604,6 +599,69 @@ namespace ACE.Server.Command.Handlers
                 var result = wo.Biota.GetOrAddKnownSpell(property.Spell, wo.BiotaDatabaseLock, out _);
                 result.Probability = property.Probability;
             }
+
+            // Remove the enchantments effects from the item. We will not re-add any enchantments to the item
+            foreach (var enchantment in biota.BiotaPropertiesEnchantmentRegistry)
+            {
+                var spell = DatabaseManager.World.GetCachedSpell((uint)enchantment.SpellId);
+
+                if (!spell.StatModType.HasValue || !spell.StatModKey.HasValue || !spell.StatModVal.HasValue)
+                {
+                    log.Debug($"CharacterTransfer: Unable to subtract spell {spell.Id} from item 0x{wo.Guid}:{wo.Name}. Missing Values in database spell.");
+                    continue;
+                }
+
+                bool isSingleStat = ((spell.StatModType.Value & (int)EnchantmentTypeFlags.SingleStat) != 0);
+                bool isAdditive = ((spell.StatModType.Value & (int)EnchantmentTypeFlags.Additive) != 0);
+
+                if ((spell.StatModType.Value & (int)EnchantmentTypeFlags.Int) != 0)
+                {
+                    if (isSingleStat)
+                    {
+                        var value = wo.GetProperty((PropertyInt)spell.StatModKey) ?? 0;
+
+                        if (isAdditive)
+                            value -= (int)(spell.StatModVal ?? 0);
+                        else
+                        {
+                            log.Debug($"CharacterTransfer: Unable to subtract spell {spell.Id} from item 0x{wo.Guid}:{wo.Name}. StatModType 0x{spell.StatModType:X8} not implemented.");
+                            continue;
+                        }
+
+                        wo.SetProperty((PropertyInt)spell.StatModKey, value);
+                    }
+                    else
+                    {
+                        log.Debug($"CharacterTransfer: Unable to subtract spell {spell.Id} from item 0x{wo.Guid}:{wo.Name}. StatModType 0x{spell.StatModType:X8} not implemented.");
+                    }
+                }
+                else if ((spell.StatModType.Value & (int)EnchantmentTypeFlags.Float) != 0)
+                {
+                    if (isSingleStat)
+                    {
+                        var value = wo.GetProperty((PropertyFloat)spell.StatModKey) ?? 0;
+
+                        if (isAdditive)
+                            value -= (int)(spell.StatModVal ?? 0);
+                        else
+                        {
+                            log.Debug($"CharacterTransfer: Unable to subtract spell {spell.Id} from item 0x{wo.Guid}:{wo.Name}. StatModType 0x{spell.StatModType:X8} not implemented.");
+                            continue;
+                        }
+
+                        wo.SetProperty((PropertyFloat)spell.StatModKey, value);
+                    }
+                    else
+                    {
+                        log.Debug($"CharacterTransfer: Unable to subtract spell {spell.Id} from item 0x{wo.Guid}:{wo.Name}. StatModType 0x{spell.StatModType:X8} not implemented.");
+                    }
+                }
+                else
+                {
+                    log.Debug($"CharacterTransfer: Unable to subtract spell {spell.Id} from item 0x{wo.Guid}:{wo.Name}. StatModType 0x{spell.StatModType:X8} not implemented.");
+                }
+            }
+
             /*
             wo.Biota.BiotaPropertiesPalette.Clear();
             foreach (var entry in biota.BiotaPropertiesPalette)
