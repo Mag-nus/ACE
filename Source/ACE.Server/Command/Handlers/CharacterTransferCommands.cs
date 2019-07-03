@@ -358,8 +358,11 @@ namespace ACE.Server.Command.Handlers
                     { retailBiota.Id, player.Guid.Full },
                 };
 
+                // Sort the inventory by PlacementPosition
+                var sortedInventory = possessions.Inventory.OrderByDescending(r => r.BiotaPropertiesInt.FirstOrDefault(p => p.Type == (ushort)PropertyInt.PlacementPosition)?.Value).ToList();
+
                 // Main pack and side slot items
-                foreach (var possession in possessions.Inventory.Where(r => r.BiotaPropertiesIID.FirstOrDefault(p => p.Type == (ushort)PropertyInstanceId.Container && p.Value == retailBiota.Id) != null))
+                foreach (var possession in sortedInventory.Where(r => r.BiotaPropertiesIID.FirstOrDefault(p => p.Type == (ushort)PropertyInstanceId.Container && p.Value == retailBiota.Id) != null))
                 {
                     var wo = ImportWorldObject(possession);
 
@@ -374,7 +377,7 @@ namespace ACE.Server.Command.Handlers
                 }
 
                 // Side pack items
-                foreach (var possession in possessions.Inventory.Where(r => r.BiotaPropertiesIID.FirstOrDefault(p => p.Type == (ushort)PropertyInstanceId.Container && p.Value == retailBiota.Id) == null))
+                foreach (var possession in sortedInventory.Where(r => r.BiotaPropertiesIID.FirstOrDefault(p => p.Type == (ushort)PropertyInstanceId.Container && p.Value == retailBiota.Id) == null))
                 {
                     var wo = ImportWorldObject(possession);
 
@@ -700,11 +703,13 @@ namespace ACE.Server.Command.Handlers
             // Fixes
             if (wo is ManaStone)
             {
-                if (wo.UiEffects == UiEffects.Magical && wo.ItemCurMana == null || wo.ItemCurMana == 0)
+                if (wo.UiEffects == UiEffects.Magical && (wo.ItemCurMana == null || wo.ItemCurMana == 0))
                 {
                     wo.ItemCurMana = 10000;
                     wo.Use = "Use on a magic item to give the stone's stored Mana to that item.";
                 }
+                if (wo.UiEffects != UiEffects.Magical && wo.ItemCurMana > 0)
+                    wo.UiEffects = UiEffects.Magical;
             }
 
             // Convenience
