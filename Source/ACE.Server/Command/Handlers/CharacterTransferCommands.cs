@@ -410,7 +410,7 @@ namespace ACE.Server.Command.Handlers
 
                     guidConversions[possession.Id] = wo.Guid.Full;
 
-                    if (wo is Book)
+                    if (wo is Book) // Item is likely an IOU
                         player.TryAddToInventory(wo);
                     else
                     {
@@ -442,19 +442,21 @@ namespace ACE.Server.Command.Handlers
                     player.Character.HairTexture = retailCharacter.HairTexture;
                     player.Character.DefaultHairTexture = retailCharacter.DefaultHairTexture;
 
-                    // todo CharacterPropertiesContract
+                    // We don't import CharacterPropertiesContract
 
-                    // todo CharacterPropertiesFillCompBook
+                    player.Character.CharacterPropertiesFillCompBook.Clear();
+                    foreach (var entry in retailCharacter.CharacterPropertiesFillCompBook)
+                        player.Character.AddFillComponent((uint)entry.SpellComponentId, (uint)entry.QuantityToRebuy, player.CharacterDatabaseLock, out _);
 
                     // We don't import CharacterPropertiesFriendList
 
-                    // todo CharacterPropertiesQuestRegistry
+                    // We don't import CharacterPropertiesQuestRegistry
 
                     player.Character.CharacterPropertiesShortcutBar.Clear();
                     foreach (var entry in retailCharacter.CharacterPropertiesShortcutBar)
                     {
                         if (guidConversions.TryGetValue(entry.ShortcutObjectId, out var value))
-                            player.Character.CharacterPropertiesShortcutBar.Add(new CharacterPropertiesShortcutBar { ShortcutBarIndex = entry.ShortcutBarIndex, ShortcutObjectId = value });
+                            player.Character.TryAddOrUpdateShortcut(entry.ShortcutBarIndex, value, player.CharacterDatabaseLock);
                     }
 
                     player.Character.CharacterPropertiesSpellBar.Clear();
@@ -474,6 +476,18 @@ namespace ACE.Server.Command.Handlers
 
                 var dateTimeOffset = DateTimeOffset.FromUnixTimeSeconds(player.CreationTimestamp ?? 0);
                 player.SetProperty(PropertyString.DateOfBirth, $"{dateTimeOffset.UtcDateTime:dd MMMM yyyy}");
+
+                // If we have no linked lifestone, give the player a default
+                if (player.Sanctuary == null)
+                {
+                    if (player.Instantiation != null)
+                        player.SetPosition(PositionType.Sanctuary, new Position(player.Instantiation));
+                    else
+                        player.SetPosition(PositionType.Sanctuary, new Position(2103705613, 31.9F, 104.6F, 11.9F, 0, 0, -0.816642F, 0.577145F)); // Yaraq
+                }
+
+                // This prevents the welcome to dereth message
+                player.Character.TotalLogins++;
 
                 DatabaseManager.Shard.AddCharacterInParallel(player.Biota, player.BiotaDatabaseLock, possessedBiotas, player.Character, player.CharacterDatabaseLock, result =>
                 {
