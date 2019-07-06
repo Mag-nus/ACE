@@ -724,6 +724,11 @@ namespace ACE.Server.Command.Handlers
                 }
                 if (wo.UiEffects != UiEffects.Magical && wo.ItemCurMana > 0)
                     wo.UiEffects = UiEffects.Magical;
+                if (wo.UiEffects != UiEffects.Magical && wo.ItemCurMana == null)
+                {
+                    wo.ItemCurMana = 0;
+                    wo.Use = "Use on a magic item to destroy that item and drain its Mana.";
+                }
             }
 
             // Convenience
