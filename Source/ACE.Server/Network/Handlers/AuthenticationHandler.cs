@@ -76,7 +76,7 @@ namespace ACE.Server.Network.Handlers
                         if (!System.Enum.IsDefined(typeof(AccessLevel), accessLevel))
                             accessLevel = AccessLevel.Player;
 
-                        account = DatabaseManager.Authentication.CreateAccount(loginRequest.Account.ToLower(), loginRequest.Password, accessLevel);
+                        account = DatabaseManager.Authentication.CreateAccount(loginRequest.Account.ToLower(), loginRequest.Password, accessLevel, session.EndPoint.Address);
                     }
                 }
             }
@@ -184,6 +184,8 @@ namespace ACE.Server.Network.Handlers
             }
 
             // TODO: check for account bans
+
+            account.UpdateLastLogin(session.EndPoint.Address);
 
             session.SetAccount(account.AccountId, account.AccountName, (AccessLevel)account.AccessLevel);
             session.State = SessionState.AuthConnectResponse;
