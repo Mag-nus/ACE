@@ -29,6 +29,8 @@ namespace ACE.Server.Command.Handlers
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
+        private static ClothingBaseLookup clothingBaseLookup;
+
         private class Server
         {
             public readonly string Database;
@@ -180,6 +182,12 @@ namespace ACE.Server.Command.Handlers
         [CommandHandler("restoreretailcharacter", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 3, "Restores a pcapped retail character into your characters list", "[server name] [retail character name] [new character name]")]
         public static void HandleRestoreRetailCharacter(Session session, params string[] parameters)
         {
+            if (clothingBaseLookup == null)
+            {
+                session.Network.EnqueueSend(new GameMessageSystemChat("Initializing ClothingBaseLookup...", ChatMessageType.Broadcast));
+                clothingBaseLookup = new ClothingBaseLookup();
+            }
+
             if (session.Characters.Count >= (uint)PropertyManager.GetLong("max_chars_per_account").Item)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"You have no more free character slots.", ChatMessageType.Broadcast));
@@ -232,6 +240,56 @@ namespace ACE.Server.Command.Handlers
                 var player = new Player(human, guid, session.AccountId);
 
 
+                // Try to restore the character apperance information
+                foreach (var entry in retailBiota.BiotaPropertiesPalette)
+                {
+                    // Hair
+                    if (entry.Offset == 0x18 && entry.Length == 0x08)
+                        player.HairPaletteDID = entry.SubPaletteId;
+
+                    // Skin
+                    if (entry.Offset == 0x00 && entry.Length == 0x18)
+                        player.SkinPaletteDID = entry.SubPaletteId;
+
+                    // Eyes
+                    if (entry.Offset == 0x20 && entry.Length == 0x08)
+                        player.EyesPaletteDID = entry.SubPaletteId;
+                }
+
+                int tensFound = 0;
+                foreach (var entry in retailBiota.BiotaPropertiesTextureMap)
+                {
+                    if (entry.Index == 0x10 && tensFound == 0)
+                    {
+                        player.Character.DefaultHairTexture = entry.OldId;
+                        player.Character.HairTexture = entry.NewId;
+                        tensFound++;
+                    }
+                    // Eyes
+                    else if (entry.Index == 0x10 && tensFound == 1)
+                    {
+                        player.DefaultEyesTextureDID = entry.OldId;
+                        player.EyesTextureDID = entry.NewId;
+                        tensFound++;
+                    }
+                    // Nose
+                    else if (entry.Index == 0x10 && tensFound == 2)
+                    {
+                        player.DefaultNoseTextureDID = entry.OldId;
+                        player.NoseTextureDID = entry.NewId;
+                        tensFound++;
+                    }
+                    // Mouth
+                    else if (entry.Index == 0x10 && tensFound == 3)
+                    {
+                        player.DefaultMouthTextureDID = entry.OldId;
+                        player.MouthTextureDID = entry.NewId;
+                        tensFound++;
+                    }
+                }
+
+
+                // Import all the property buckets
                 foreach (var property in retailBiota.BiotaPropertiesInt)
                 {
                     // Filter out properties that come from equipped items
@@ -494,7 +552,7 @@ namespace ACE.Server.Command.Handlers
                     PlayerManager.AddOfflinePlayer(player);
                     session.Characters.Add(player.Character);
 
-                    log.Info($"Account {session.AccountId}:{session.Account}, Player 0x{session.Player.Guid}:{session.Player.Name} restored of {serverName}:{retailName}");
+                    log.Info($"Account {session.AccountId}:{session.Account}, Player 0x{session.Player.Guid}:{session.Player.Name} restored of {serverName}:{retailName} into {newName}");
 
                     session.Network.EnqueueSend(new GameMessageSystemChat("Saving new character completed. You will be logged out now...", ChatMessageType.Broadcast));
 
@@ -585,8 +643,8 @@ namespace ACE.Server.Command.Handlers
             // PropertyDataId.ClothingBase
             // PropertyDataId.Icon
 
-            //if (altWeenieUsed)
-            /*{
+            if (altWeenieUsed)
+            {
                 wo.RemoveProperty(PropertyInt.PaletteTemplate);
                 wo.RemoveProperty(PropertyFloat.Shade);
                 wo.RemoveProperty(PropertyFloat.Shade2);
@@ -594,7 +652,7 @@ namespace ACE.Server.Command.Handlers
                 wo.RemoveProperty(PropertyFloat.Shade4);
                 //wo.RemoveProperty(PropertyInt.TsysMutationData);
                 //wo.RemoveProperty(PropertyDataId.ClothingBase);
-            }*/
+            }
 
             foreach (var property in biota.BiotaPropertiesInt)
                 wo.SetProperty((PropertyInt)property.Type, property.Value);
@@ -679,19 +737,39 @@ namespace ACE.Server.Command.Handlers
                 }
             }
 
-            /*
-            wo.Biota.BiotaPropertiesPalette.Clear();
-            foreach (var entry in biota.BiotaPropertiesPalette)
-                wo.Biota.BiotaPropertiesPalette.Add(new BiotaPropertiesPalette { SubPaletteId = entry.SubPaletteId, Offset = entry.Offset, Length = entry.Length });
+            // Try to determine the correct ClothingBase and PaletteTemplate from PCap data using OptimShi's ClothingBaseLookup
+            if (wo.ClothingBase != null && wo.PaletteTemplate != null)
+            {
+                var validLocations = biota.GetProperty(PropertyInt.ValidLocations, new ReaderWriterLockSlim()) ?? 0;
 
-            wo.Biota.BiotaPropertiesTextureMap.Clear();
-            foreach (var entry in biota.BiotaPropertiesTextureMap)
-                wo.Biota.BiotaPropertiesTextureMap.Add(new BiotaPropertiesTextureMap { Index = entry.Index, OldId = entry.OldId, NewId = entry.NewId, Order = entry.Order });
+                if (((EquipMask)validLocations & EquipMask.Clothing) != 0 || ((EquipMask)validLocations & EquipMask.Armor) != 0)
+                {
+                    var results = clothingBaseLookup.DoSearch(biota);
 
-            wo.Biota.BiotaPropertiesAnimPart.Clear();
-            foreach (var entry in biota.BiotaPropertiesAnimPart)
-                wo.Biota.BiotaPropertiesAnimPart.Add(new BiotaPropertiesAnimPart { Index = entry.Index, AnimationId = entry.AnimationId, Order = entry.Order });
-            */
+                    if (results.Count > 0)
+                    {
+                        //var origClothingBase = wo.ClothingBase;
+                        //var origPaletteTemplate = wo.PaletteTemplate;
+                        wo.ClothingBase = results[0].ClothingBase;
+                        wo.PaletteTemplate = results[0].PaletteTemplate;
+
+                        var shade = clothingBaseLookup.GetShade(biota, wo.ClothingBase ?? 0, wo.PaletteTemplate ?? 0);
+
+                        if (shade != null)
+                        {
+                            wo.Shade = shade;
+                            wo.RemoveProperty(PropertyFloat.Shade2);
+                            wo.RemoveProperty(PropertyFloat.Shade3);
+                            wo.RemoveProperty(PropertyFloat.Shade4);
+                        }
+
+                        //log.Debug($"{wo.Name} changed ClothingBase from {origClothingBase:X8} to {wo.ClothingBase:X8}, PaletteTemplate from {origPaletteTemplate:X8} to {wo.PaletteTemplate:X8}");
+                    }
+                    //else
+                        //log.Debug($"{wo.Name} returned no results from DoSearch()");
+                }
+            }
+
             // we don't import enchantments
 
             if (altWeenieUsed)
