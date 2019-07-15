@@ -99,7 +99,7 @@ namespace ACE.Server.WorldObjects
 
         private void SetEphemeralValues()
         {
-            BaseDescriptionFlags |= ObjectDescriptionFlag.Player;
+            ObjectDescriptionFlags |= ObjectDescriptionFlag.Player;
 
             // This is the default send upon log in and the most common. Anything with a velocity will need to add that flag.
             // This should be handled automatically...
@@ -253,7 +253,7 @@ namespace ACE.Server.WorldObjects
                 var chance = SkillCheck.GetSkillChance(currentSkill, difficulty);
 
                 if (difficulty == 0 || player != null && (!player.GetCharacterOption(CharacterOption.AttemptToDeceiveOtherPlayers) || player == this
-                    || ((this is Admin || this is Sentinel) && CloakStatus.HasValue && CloakStatus.Value == ACE.Entity.Enum.CloakStatus.On)))
+                    || ((this is Admin || this is Sentinel) && CloakStatus == CloakStatus.On)))
                     chance = 1.0f;
 
                 success = chance >= ThreadSafeRandom.Next(0.0f, 1.0f);
@@ -270,8 +270,7 @@ namespace ACE.Server.WorldObjects
             // pooky logic - handle monsters attacking on appraisal
             if (creature != null && creature.MonsterState == State.Idle)
             {
-                var tolerance = (Tolerance)(creature.GetProperty(PropertyInt.Tolerance) ?? 0);
-                if (tolerance.HasFlag(Tolerance.Appraise))
+                if (creature.Tolerance.HasFlag(Tolerance.Appraise))
                 {
                     creature.AttackTarget = this;
                     creature.WakeUp();
@@ -337,58 +336,6 @@ namespace ACE.Server.WorldObjects
 
             ManaQueryTarget = itemGuid;
         }
-
-        public void ReadBookPage(uint bookGuid, uint pageNum)
-        {
-            // TODO: Do we want to throttle this request, like appraisals?
-            // The object can be in two spots... on the player or on the landblock
-            // First check the player
-            WorldObject wo = GetInventoryItem(bookGuid);
-            // book is in the player's inventory...
-            if (wo != null)
-            {
-                wo.ReadBookPage(Session, pageNum);
-            }
-            else
-            {
-                CurrentLandblock?.GetObject(bookGuid).ReadBookPage(Session, pageNum);
-            }
-        }
-
-        public void HandleActionBookAddPage(uint bookGuid)
-        {
-            // find inventory book
-            var book = FindObject(new ObjectGuid(bookGuid), SearchLocations.MyInventory, out var container, out var rootOwner, out var wasEquipped) as Book;
-            if (book == null) return;
-
-            var page = book.AddPage(Guid.Full, Name, Session.Account, false, "");
-
-            if (page != null)
-                Session.Network.EnqueueSend(new GameEventBookAddPageResponse(Session, bookGuid, page.PageId, true));
-        }
-
-        public void HandleActionBookModifyPage(uint bookGuid, uint pageId, string pageText)
-        {
-            // find inventory book
-            var book = FindObject(new ObjectGuid(bookGuid), SearchLocations.MyInventory, out var container, out var rootOwner, out var wasEquipped) as Book;
-            if (book == null) return;
-
-            var success = book.ModifyPage(pageId, pageText, this);
-
-            Session.Network.EnqueueSend(new GameEventBookModifyPageResponse(Session, bookGuid, pageId, true));
-        }
-
-        public void HandleActionBookDeletePage(uint bookGuid, uint pageId)
-        {
-            // find inventory book
-            var book = FindObject(new ObjectGuid(bookGuid), SearchLocations.MyInventory, out var container, out var rootOwner, out var wasEquipped) as Book;
-            if (book == null) return;
-
-            var success = book.DeletePage(pageId, this);
-
-            Session.Network.EnqueueSend(new GameEventBookDeletePageResponse(Session, bookGuid, pageId, success));
-        }
-
 
 
         /// <summary>
@@ -523,11 +470,6 @@ namespace ACE.Server.WorldObjects
             // FIXME: maybe move to Admin class?
             // TODO: reevaluate class location
 
-            if (!IgnoreHouseBarriers ?? false)
-                SetProperty(PropertyBool.IgnoreHouseBarriers, true);
-            else
-                SetProperty(PropertyBool.IgnoreHouseBarriers, false);
-
             // The EnqueueBroadcastUpdateObject below sends the player back into teleport. I assume at this point, this was never done to players
             // EnqueueBroadcastUpdateObject();
 
@@ -536,7 +478,7 @@ namespace ACE.Server.WorldObjects
             // var updateBool = new GameMessagePrivateUpdatePropertyBool(Session, PropertyBool.IgnoreHouseBarriers, ImmuneCellRestrictions);
             // Session.Network.EnqueueSend(updateBool);
 
-            EnqueueBroadcast(new GameMessagePublicUpdatePropertyBool(this, PropertyBool.IgnoreHouseBarriers, IgnoreHouseBarriers ?? false));
+            UpdateProperty(this, PropertyBool.IgnoreHouseBarriers, !IgnoreHouseBarriers, true);
 
             Session.Network.EnqueueSend(new GameMessageSystemChat($"Bypass Housing Barriers now set to: {IgnoreHouseBarriers}", ChatMessageType.Broadcast));
         }
@@ -920,10 +862,11 @@ namespace ACE.Server.WorldObjects
             // send CO network messages for admin objects
             if (Adminvision && oldState != Adminvision)
             {
-                var adminObjs = PhysicsObj.ObjMaint.ObjectTable.Values.Where(o => o.WeenieObj.WorldObject != null && o.WeenieObj.WorldObject.Visibility);
+                var adminObjs = PhysicsObj.ObjMaint.KnownObjects.Values.Where(o => o.WeenieObj.WorldObject != null && o.WeenieObj.WorldObject.Visibility);
                 PhysicsObj.enqueue_objs(adminObjs);
 
-                var nodrawObjs = PhysicsObj.ObjMaint.ObjectTable.Values.Where(o => o.WeenieObj.WorldObject != null && ((o.WeenieObj.WorldObject.NoDraw ?? false) || (o.WeenieObj.WorldObject.UiHidden ?? false)));
+                var nodrawObjs = PhysicsObj.ObjMaint.KnownObjects.Values.Where(o => o.WeenieObj.WorldObject != null && ((o.WeenieObj.WorldObject.NoDraw ?? false) || o.WeenieObj.WorldObject.UiHidden));
+
                 foreach (var wo in nodrawObjs)
                     Session.Network.EnqueueSend(new GameMessageUpdateObject(wo.WeenieObj.WorldObject, Adminvision, Adminvision ? true : false));
 

@@ -350,10 +350,10 @@ namespace ACE.Server.Managers
                     //target.SetProperty(PropertyInt.Attuned, 0);
                     break;
                 case MaterialType.Leather:
-                    target.SetProperty(PropertyBool.Retained, true);
+                    target.Retained = true;
                     break;
                 case MaterialType.Sandstone:
-                    target.SetProperty(PropertyBool.Retained, false);
+                    target.Retained = false;
                     break;
                 case MaterialType.Moonstone:
                     target.ItemMaxMana += 500;
@@ -559,8 +559,8 @@ namespace ACE.Server.Managers
 
             if (IconUnderlay.TryGetValue(effect, out var icon))
             {
-                target.SetProperty(PropertyDataId.IconUnderlay, icon);
-                player.Session.Network.EnqueueSend(new GameMessagePublicUpdatePropertyDataID(target, PropertyDataId.IconUnderlay, icon));
+                target.IconUnderlayId = icon;
+                player.Session.Network.EnqueueSend(new GameMessagePublicUpdatePropertyDataID(target, PropertyDataId.IconUnderlay, target.IconUnderlayId.Value));
             }
 
             return true;

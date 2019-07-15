@@ -81,7 +81,7 @@ namespace ACE.Server.WorldObjects
                 KillerId = topDamager.Guid.Full;
 
             CurrentMotionState = new Motion(MotionStance.NonCombat, MotionCommand.Ready);
-            IsMonster = false;
+            //IsMonster = false;
 
             // broadcast death animation
             var motionDeath = new Motion(MotionStance.NonCombat, MotionCommand.Dead);
@@ -270,7 +270,6 @@ namespace ACE.Server.WorldObjects
             if (CanGenerateRare && killer != null)
                 corpse.GenerateRare(killer);
 
-            corpse.MarkAsInventoryLoaded();
             corpse.EnterWorld();
 
             if (this is Player p)

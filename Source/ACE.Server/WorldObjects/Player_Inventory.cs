@@ -169,7 +169,9 @@ namespace ACE.Server.WorldObjects
             TradeItem,
             SellItem,
 
-            ToCorpseOnDeath
+            ToCorpseOnDeath,
+
+            ConsumeItem
         }
 
         public bool TryRemoveFromInventoryWithNetworking(uint objectGuid, out WorldObject item, RemoveFromInventoryAction removeFromInventoryAction)
@@ -202,6 +204,11 @@ namespace ACE.Server.WorldObjects
                 // the player will end up loading with this object in their inventory even though the landblock is the true owner. This is because
                 // when we load player inventory, the database still has the record that shows this player as the ContainerId for the item.
                 item.SaveBiotaToDatabase();
+            }
+
+            if (removeFromInventoryAction == RemoveFromInventoryAction.ConsumeItem)
+            {
+                Session.Network.EnqueueSend(new GameMessageDeleteObject(item));
             }
 
             return true;
@@ -385,6 +392,7 @@ namespace ACE.Server.WorldObjects
             WieldedByOther      = 0x10,
             TradedByOther       = 0x20,
             ObjectsKnownByMe    = 0x40,
+            LastUsedHook        = 0x80,
             LocationsICanMove   = MyInventory | MyEquippedItems | Landblock | LastUsedContainer,
             Everywhere          = 0xFF
         }
@@ -500,6 +508,20 @@ namespace ACE.Server.WorldObjects
 
                 if (result != null)
                     return result;
+            }
+
+            if (searchLocations.HasFlag(SearchLocations.LastUsedHook))
+            {
+                if (CurrentLandblock?.GetObject(LasUsedHookId) is Hook lastUsedHook)
+                {
+                    result = lastUsedHook.GetInventoryItem(objectGuid, out foundInContainer);
+
+                    if (result != null)
+                    {
+                        rootOwner = lastUsedHook;
+                        return result;
+                    }
+                }
             }
 
             return null;
@@ -620,7 +642,7 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            if (!item.Guid.IsDynamic() || item is Creature || (item.BaseDescriptionFlags & ObjectDescriptionFlag.Stuck) != 0)
+            if (!item.Guid.IsDynamic() || item is Creature || item.Stuck)
             {
                 log.WarnFormat("Player 0x{0:X8}:{1} tried to move item 0x{2:X8}:{3}.", Guid.Full, Name, item.Guid.Full, item.Name);
                 Session.Network.EnqueueSend(new GameEventCommunicationTransientString(Session, "You can't move that!")); // Custom error message
@@ -666,7 +688,7 @@ namespace ACE.Server.WorldObjects
 
             if (containerRootOwner is Corpse corpse)
             {
-                if (corpse.IsMonster == false)
+                if (!corpse.IsMonster)
                 {
                     Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, itemGuid, WeenieError.Dead));
                     return;
@@ -682,27 +704,14 @@ namespace ACE.Server.WorldObjects
                     return;
                 }
 
-                Container itemAsContainer = item as Container;
-
-                // Checking to see if item to pick is an container itself and IsOpen
-                if (itemAsContainer != null && itemAsContainer.IsOpen)
-                {
-                    if (itemAsContainer.Viewer == Session.Player.Guid.Full)
-                    {
-                        // We're the one that has it open. Close it before picking it up
-                        itemAsContainer.Close(this);
-                    }
-                    else
-                    {
-                        // We're not who has it open. Can't pick up something someone else is viewing!
-                        Session.Network.EnqueueSend(new GameEventWeenieErrorWithString(Session, WeenieErrorWithString.The_IsCurrentlyInUse, item.Name));
-                        Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, itemGuid));
-                        return;
-                    }
-                }
+                var itemAsContainer = item as Container;
 
                 if (itemAsContainer != null)
                 {
+                    // Checking to see if item to pick is an container itself and IsOpen
+                    if (!VerifyContainerOpenStatus(itemAsContainer, item))
+                        return;
+
                     foreach (var obj in itemAsContainer.Inventory.Values)
                     {
                         if ((obj.Attuned ?? 0) >= 1)
@@ -750,6 +759,20 @@ namespace ACE.Server.WorldObjects
                         if (itemRootOwner == null && item.CurrentLandblock == null)
                         {
                             Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, itemGuid, WeenieError.ActionCancelled));
+                            EnqueueBroadcastMotion(returnStance);
+                            return;
+                        }
+
+                        // Checking to see if item to pick is an container itself and IsOpen
+                        if (!VerifyContainerOpenStatus(itemAsContainer, item))
+                        {
+                            EnqueueBroadcastMotion(returnStance);
+                            return;
+                        }
+
+                        if (item.QuestRestriction != null && !QuestManager.HasQuest(item.QuestRestriction))
+                        {
+                            QuestManager.HandleNoQuestError(item);
                             EnqueueBroadcastMotion(returnStance);
                             return;
                         }
@@ -826,6 +849,27 @@ namespace ACE.Server.WorldObjects
             {
                 DoHandleActionPutItemInContainer(item, itemRootOwner, itemWasEquipped, container, containerRootOwner, placement);
             }
+        }
+
+        private bool VerifyContainerOpenStatus(Container itemAsContainer, WorldObject item)
+        {
+            // Checking to see if item to pick is an container itself and IsOpen
+            if (itemAsContainer != null && itemAsContainer.IsOpen)
+            {
+                if (itemAsContainer.Viewer == Session.Player.Guid.Full)
+                {
+                    // We're the one that has it open. Close it before picking it up
+                    itemAsContainer.Close(this);
+                }
+                else
+                {
+                    // We're not who has it open. Can't pick up something someone else is viewing!
+                    Session.Network.EnqueueSend(new GameEventWeenieErrorWithString(Session, WeenieErrorWithString.The_IsCurrentlyInUse, item.Name));
+                    Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full));
+                    return false;
+                }
+            }
+            return true;
         }
 
         private bool DoHandleActionPutItemInContainer(WorldObject item, Container itemRootOwner, bool itemWasEquipped, Container container, Container containerRootOwner, int placement)
@@ -992,6 +1036,8 @@ namespace ACE.Server.WorldObjects
 
                 if (item.WeenieType == WeenieType.Coin || item.WeenieType == WeenieType.Container)
                     UpdateCoinValue();
+
+                Session.Network.EnqueueSend(new GameEventInventoryServerSaveFailed(Session, item.Guid.Full));
             }
         }
 
@@ -1102,10 +1148,16 @@ namespace ACE.Server.WorldObjects
             // the client handles dequipping a lot of conflicting items automatically,
             // but there are some cases it misses that must be handled specifically here:
 
-            // Unwield wand/missile launcher if dual wielding
+            // Unwield wand/missile launcher/two-handed if dual wielding
             if (wieldedLocation == EquipMask.Shield && !item.IsShield)
             {
-                var mainWeapon = EquippedObjects.Values.FirstOrDefault(e => e.CurrentWieldedLocation == EquipMask.MissileWeapon || e.CurrentWieldedLocation == EquipMask.Held);
+                var mainWeapon = GetEquippedMeleeWeapon(true);
+
+                if (mainWeapon != null && !mainWeapon.IsTwoHanded)
+                    mainWeapon = null;
+
+                mainWeapon = mainWeapon ?? GetEquippedMissileWeapon() ?? GetEquippedWand();
+
                 if (mainWeapon != null)
                 {
                     if (!TryDequipObjectWithNetworking(mainWeapon.Guid, out var dequippedItem, DequipObjectAction.DequipToPack))
@@ -2294,7 +2346,7 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
-            if (item.Inscribable == true)
+            if (item.Inscribable)
             {
                 var doInscribe = false;
                 if (string.IsNullOrWhiteSpace(item.ScribeAccount) && string.IsNullOrWhiteSpace(item.ScribeName))

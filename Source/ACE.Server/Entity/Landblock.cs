@@ -637,12 +637,6 @@ namespace ACE.Server.Entity
             actionQueue.EnqueueAction(action);
         }
 
-        private void AddPlayerTracking(List<WorldObject> wolist, Player player)
-        {
-            foreach (var wo in wolist)
-                player.AddTrackedObject(wo);
-        }
-
         /// <summary>
         /// This will fail if the wo doesn't have a valid location.
         /// </summary>
@@ -687,14 +681,6 @@ namespace ACE.Server.Entity
                 pendingAdditions[wo.Guid] = wo;
             else
                 pendingRemovals.Remove(wo.Guid);
-
-            // if adding a player to this landblock,
-            // tell them about other nearby objects
-            if (wo is Player || wo is CombatPet)
-            {
-                var newlyVisible = wo.PhysicsObj.handle_visible_cells();
-                wo.PhysicsObj.enqueue_objs(newlyVisible);
-            }
 
             // broadcast to nearby players
             wo.NotifyPlayers();
@@ -851,14 +837,6 @@ namespace ACE.Server.Entity
                 }
             }
             return null;
-        }
-
-        public void ResendObjectsInRange(WorldObject wo)
-        {
-            wo.PhysicsObj.ObjMaint.RemoveAllObjects();
-
-            var visibleObjs = wo.PhysicsObj.handle_visible_cells();
-            wo.PhysicsObj.enqueue_objs(visibleObjs);
         }
 
         /// <summary>

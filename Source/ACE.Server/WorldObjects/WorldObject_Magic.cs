@@ -360,7 +360,7 @@ namespace ACE.Server.WorldObjects
             var spellTarget = spell.BaseRangeConstant > 0 ? target as Creature : creature;
             var targetPlayer = spellTarget as Player;
 
-            if (this is Gem)
+            if (this is Gem || this is Hook)
                 spellTarget = target as Creature;
 
             if (spellTarget == null || !spellTarget.IsAlive)
@@ -1334,6 +1334,12 @@ namespace ACE.Server.WorldObjects
 
             if (target != null)
             {
+                if (Location == null || target.Location == null)
+                {
+                    log.Error($"{Name}.CreateSpellProjectile({spell.Name}, {target.Name}): Location={Location}, target.Location={target.Location}");
+                    return null;
+                }
+
                 var matchIndoors = Location.Indoors == target.Location.Indoors;
                 var globalDest = matchIndoors ? target.Location.ToGlobal() : target.Location.Pos;
                 globalDest.Z += target.Height / 2.0f;

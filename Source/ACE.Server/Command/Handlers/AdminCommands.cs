@@ -243,7 +243,7 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            var wo = session.Player.CurrentLandblock?.GetObject(objectId);
+            var wo = session.Player.FindObject(objectId.Full, Player.SearchLocations.Everywhere, out _, out Container rootOwner, out bool wasEquipped);
 
             if (wo == null)
             {
@@ -264,6 +264,29 @@ namespace ACE.Server.Command.Handlers
 
             if (wo.IsGenerator)
                 wo.ResetGenerator();
+
+            if (wo.WielderId != null)
+            {
+                var wielder = session.Player.CurrentLandblock.GetObject(wo.WielderId.Value);
+
+                if (wielder != null)
+                {
+                    if (wielder is Player player)
+                        player.TryDequipObjectWithNetworking(objectId, out _, Player.DequipObjectAction.ConsumeItem);
+                    else if (wielder is Creature creature)
+                        creature.TryUnwieldObjectWithBroadcasting(objectId, out _, out _);
+                }
+            }
+            else if (rootOwner != null)
+            {
+                if (rootOwner is Player player)
+                    player.TryRemoveFromInventoryWithNetworking(objectId, out _, Player.RemoveFromInventoryAction.ConsumeItem);
+                else
+                {
+                    rootOwner.TryRemoveFromInventory(objectId);
+                    session.Network.EnqueueSend(new GameMessageDeleteObject(wo));
+                }
+            }
 
             wo.Destroy();
 
@@ -843,12 +866,14 @@ namespace ACE.Server.Command.Handlers
             {
                 if (parameters[0] == "all")
                 {
-                    foreach (var wo in session.Player.GetKnownObjects())
+                    foreach (var obj in session.Player.PhysicsObj.ObjMaint.VisibleObjects.Values)
                     {
+                        var wo = obj.WeenieObj.WorldObject;
+
                         if (wo is Player) // I don't recall if @smite all would kill players in range, assuming it didn't
                             continue;
 
-                        if (wo is Creature creature && creature.IsAttackable())
+                        if (wo is Creature creature && creature.Attackable)
                             creature.Smite(session.Player);
                     }
 
