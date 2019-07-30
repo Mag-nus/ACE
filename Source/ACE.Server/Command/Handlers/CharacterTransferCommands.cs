@@ -76,7 +76,7 @@ namespace ACE.Server.Command.Handlers
             using (var context = GetShardDbContext(server))
             {
                 var result = context.Character
-                    .Include(r => r.CharacterPropertiesContract)
+                    .Include(r => r.CharacterPropertiesContractRegistry)
                     .Include(r => r.CharacterPropertiesFillCompBook)
                     .Include(r => r.CharacterPropertiesFriendList)
                     .Include(r => r.CharacterPropertiesQuestRegistry)
