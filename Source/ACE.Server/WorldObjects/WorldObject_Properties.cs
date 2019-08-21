@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 
 using ACE.Common;
 using ACE.Database;
@@ -637,11 +638,11 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyFloat.Translucency); else SetProperty(PropertyFloat.Translucency, value.Value); }
         }
 
-        public AceVector3 Velocity = null;
+        public Vector3? Velocity = null;
 
-        public AceVector3 Acceleration { get; set; }
+        public Vector3? Acceleration = null;
 
-        public AceVector3 Omega = null;
+        public Vector3? Omega = null;
 
         public SetupModel CSetup => DatManager.PortalDat.ReadFromDat<SetupModel>(SetupTableId);
 
@@ -824,6 +825,20 @@ namespace ACE.Server.WorldObjects
             set => SetProperty(PropertyString.Name, value);
         }
 
+        public string NameWithMaterial => GetNameWithMaterial();
+
+        public string GetNameWithMaterial(int? stackSize = null)
+        {
+            var name = stackSize != null && stackSize != 1 ? GetPluralName() : Name;
+
+            if (MaterialType == null)
+                return name;
+
+            var material = RecipeManager.GetMaterialName(MaterialType ?? 0);
+
+            return $"{material} {name}";
+        }
+
         public string DisplayName
         {
             get => GetProperty(PropertyString.DisplayName);
@@ -992,6 +1007,14 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyFloat.ManaConversionMod); else SetProperty(PropertyFloat.ManaConversionMod, value.Value); }
         }
 
+        // for missile launchers, additive
+        public int? ElementalDamageBonus
+        {
+            get => GetProperty(PropertyInt.ElementalDamageBonus);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.ElementalDamageBonus); else SetProperty(PropertyInt.ElementalDamageBonus, value.Value); }
+        }
+
+        // for casters, multiplicative
         public double? ElementalDamageMod
         {
             get => GetProperty(PropertyFloat.ElementalDamageMod);
@@ -1158,6 +1181,32 @@ namespace ACE.Server.WorldObjects
         {
             get => (CoverageMask?)GetProperty(PropertyInt.ClothingPriority);
             set { if (!value.HasValue) RemoveProperty(PropertyInt.ClothingPriority); else SetProperty(PropertyInt.ClothingPriority, (int)value.Value); }
+        }
+
+        /// <summary>
+        /// Returns the VisualClothingPriority, if set, else returns ClothingPriority
+        /// </summary>
+        public CoverageMask? VisualClothingPriority
+        {
+            get { if ((CoverageMask?)GetProperty(PropertyInt.VisualClothingPriority) != null) { return (CoverageMask?)GetProperty(PropertyInt.VisualClothingPriority); } else { return (CoverageMask?)GetProperty(PropertyInt.ClothingPriority); }; }
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.VisualClothingPriority); else SetProperty(PropertyInt.VisualClothingPriority, (int)value.Value); }
+        }
+        /// <summary>
+        /// Function to genreate and set the VisualClothingPriority of the armor piece
+        /// </summary>
+        public void setVisualClothingPriority()
+        {
+            if (ClothingBase.HasValue && (CurrentWieldedLocation & (EquipMask.Armor | EquipMask.HandWear)) != 0)
+            {
+                ClothingTable item = DatManager.PortalDat.ReadFromDat<ClothingTable>((uint)ClothingBase);
+                VisualClothingPriority = item.GetVisualPriority();
+            }
+        }
+
+        public bool? TopLayerPriority
+        {
+            get => (bool?)GetProperty(PropertyBool.TopLayerPriority);
+            set { if (!value.HasValue) RemoveProperty(PropertyBool.TopLayerPriority); else SetProperty(PropertyBool.TopLayerPriority, (bool)value.Value); }
         }
 
         public RadarColor? RadarColor
@@ -1358,7 +1407,7 @@ namespace ACE.Server.WorldObjects
         public uint? IconUnderlayId
         {
             get => GetProperty(PropertyDataId.IconUnderlay);
-            set { if (!value.HasValue) RemoveProperty(PropertyDataId.IconUnderlay); else SetProperty(PropertyDataId.IconUnderlay, value.Value);  }
+            set { if (!value.HasValue) RemoveProperty(PropertyDataId.IconUnderlay); else SetProperty(PropertyDataId.IconUnderlay, value.Value); }
         }
 
         public int? CooldownId
@@ -1673,6 +1722,18 @@ namespace ACE.Server.WorldObjects
         {
             get => GetProperty(PropertyInt.CreationTimestamp);
             set { if (!value.HasValue) RemoveProperty(PropertyInt.CreationTimestamp); else SetProperty(PropertyInt.CreationTimestamp, value.Value); }
+        }
+
+        public double? ReleasedTimestamp
+        {
+            get => GetProperty(PropertyFloat.ReleasedTimestamp);
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.ReleasedTimestamp); else SetProperty(PropertyFloat.ReleasedTimestamp, value.Value); }
+        }
+
+        public double? CheckpointTimestamp
+        {
+            get => GetProperty(PropertyFloat.CheckpointTimestamp);
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.CheckpointTimestamp); else SetProperty(PropertyFloat.CheckpointTimestamp, value.Value); }
         }
 
         public bool UseBackpackSlot => WeenieType == WeenieType.Container || RequiresPackSlot;
@@ -2088,37 +2149,37 @@ namespace ACE.Server.WorldObjects
             get { return GetPosition(PositionType.Destination); }
             set { SetPosition(PositionType.Destination, value); }
         }
-        
+
         public Position Instantiation
         {
             get { return GetPosition(PositionType.Instantiation); }
             set { SetPosition(PositionType.Instantiation, value); }
         }
-       
+
         public Position Sanctuary
         {
             get { return GetPosition(PositionType.Sanctuary); }
             set { SetPosition(PositionType.Sanctuary, value); }
         }
-        
+
         public Position Home
         {
             get { return GetPosition(PositionType.Home); }
             set { SetPosition(PositionType.Home, value); }
         }
-        
+
         public Position ActivationMove
         {
             get { return GetPosition(PositionType.ActivationMove); }
             set { SetPosition(PositionType.ActivationMove, value); }
         }
-        
+
         public Position Target
         {
             get { return GetPosition(PositionType.Target); }
             set { SetPosition(PositionType.Target, value); }
         }
-        
+
         public Position LinkedPortalOne
         {
             get { return GetPosition(PositionType.LinkedPortalOne); }
@@ -2323,29 +2384,22 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInstanceId.RequestedAppraisalTarget); else SetProperty(PropertyInstanceId.RequestedAppraisalTarget, value.Value); }
         }
 
-        public int PkLevelModifier
+        public PKLevel PkLevel
         {
-            get => GetProperty(PropertyInt.PkLevelModifier) ?? -1;
-            set { if (value == -1) RemoveProperty(PropertyInt.PkLevelModifier); else SetProperty(PropertyInt.PkLevelModifier, value); }
+            get => (PKLevel)PkLevelModifier;
+            set => PkLevelModifier = (int)value;
         }
 
-        private PlayerKillerStatus _playerKillerStatus
+        public int PkLevelModifier
         {
-            get => (PlayerKillerStatus?)GetProperty(PropertyInt.PlayerKillerStatus) ?? PlayerKillerStatus.NPK;
-            set { SetProperty(PropertyInt.PlayerKillerStatus, (int)value); }
+            get => GetProperty(PropertyInt.PkLevelModifier) ?? 0;
+            set { if (value == 0) RemoveProperty(PropertyInt.PkLevelModifier); else SetProperty(PropertyInt.PkLevelModifier, value); }
         }
 
         public PlayerKillerStatus PlayerKillerStatus
         {
-            get
-            {
-                var pk_server = PropertyManager.GetBool("pk_server").Item;
-                if (this is Player && pk_server && GetProperty(PropertyFloat.MinimumTimeSincePk) == null)
-                    return PlayerKillerStatus.PK;
-                else
-                    return _playerKillerStatus;
-            }
-            set => _playerKillerStatus = value;
+            get => (PlayerKillerStatus?)GetProperty(PropertyInt.PlayerKillerStatus) ?? PlayerKillerStatus.NPK;
+            set { SetProperty(PropertyInt.PlayerKillerStatus, (int)value); }
         }
 
         public CloakStatus CloakStatus
@@ -2585,6 +2639,12 @@ namespace ACE.Server.WorldObjects
             set { if (value == null) RemoveProperty(PropertyDataId.UseCreateItem); else SetProperty(PropertyDataId.UseCreateItem, value.Value); }
         }
 
+        public int? UseCreateQuantity
+        {
+            get => GetProperty(PropertyInt.UseCreateQuantity);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.UseCreateQuantity); else SetProperty(PropertyInt.UseCreateQuantity, value.Value); }
+        }
+
         public int? ResistLockpick
         {
             get => GetProperty(PropertyInt.ResistLockpick);
@@ -2688,7 +2748,54 @@ namespace ACE.Server.WorldObjects
             get => GetProperty(PropertyInt.PKDamageResistRating);
             set { if (!value.HasValue) RemoveProperty(PropertyInt.PKDamageResistRating); else SetProperty(PropertyInt.PKDamageResistRating, value.Value); }
         }
+
+        public int? Lifespan
+        {
+            get => GetProperty(PropertyInt.Lifespan);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.Lifespan); else SetProperty(PropertyInt.Lifespan, value.Value); }
+        }
+
+        public int? RemainingLifespan
+        {
+            get => GetProperty(PropertyInt.RemainingLifespan);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.RemainingLifespan); else SetProperty(PropertyInt.RemainingLifespan, value.Value); }
+        }
+
+        public bool HearLocalSignals
+        {
+            get => (GetProperty(PropertyInt.HearLocalSignals) ?? 0) != 0;
+            set { if (!value) RemoveProperty(PropertyInt.HearLocalSignals); else SetProperty(PropertyInt.HearLocalSignals, 1); }
+        }
+
+        public int HearLocalSignalsRadius
+        {
+            get => GetProperty(PropertyInt.HearLocalSignalsRadius) ?? 0;
+            set { if (value == 0) RemoveProperty(PropertyInt.HearLocalSignalsRadius); else SetProperty(PropertyInt.HearLocalSignalsRadius, value); }
+        }
+
+        public string TinkerLog
+        {
+            get => GetProperty(PropertyString.TinkerLog);
+            set { if (value == null) RemoveProperty(PropertyString.TinkerLog); else SetProperty(PropertyString.TinkerLog, value); }
+        }
         
+        public int? CreatureKills
+        {
+            get => GetProperty(PropertyInt.CreatureKills);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.CreatureKills); else SetProperty(PropertyInt.CreatureKills, value.Value); }
+        }
+
+        public int? PlayerKillsPk
+        {
+            get => GetProperty(PropertyInt.PlayerKillsPk);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.PlayerKillsPk); else SetProperty(PropertyInt.PlayerKillsPk, value.Value); }
+        }
+
+        public int? PlayerKillsPkl
+        {
+            get => GetProperty(PropertyInt.PlayerKillsPkl);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.PlayerKillsPkl); else SetProperty(PropertyInt.PlayerKillsPkl, value.Value); }
+        }
 
         /// <summary>
         /// In addition to setting StackSize, this will also set the EncumbranceVal and Value appropriately.

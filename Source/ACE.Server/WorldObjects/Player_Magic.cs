@@ -10,6 +10,7 @@ using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Server.Entity;
 using ACE.Server.Entity.Actions;
+using ACE.Server.Managers;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.Structure;
@@ -215,7 +216,7 @@ namespace ACE.Server.WorldObjects
 
                 case MagicSchool.LifeMagic:
 
-                    LifeMagic(player, spell, out uint damage, out bool critical, out enchantmentStatus);
+                    LifeMagic(spell, out uint damage, out bool critical, out enchantmentStatus, player);
                     if (enchantmentStatus.Message != null)
                         EnqueueBroadcast(new GameMessageScript(player.Guid, spell.TargetEffect, spell.Formula.Scale));
                     break;
@@ -420,7 +421,7 @@ namespace ACE.Server.WorldObjects
 
             string spellWords = spell._spellBase.GetSpellWords(DatManager.PortalDat.SpellComponentsTable);
             if (!string.IsNullOrWhiteSpace(spellWords) && !isWeaponSpell)
-                EnqueueBroadcast(new GameMessageCreatureMessage(spellWords, Name, Guid.Full, ChatMessageType.Spellcasting), LocalBroadcastRange);
+                EnqueueBroadcast(new GameMessageCreatureMessage(spellWords, Name, Guid.Full, ChatMessageType.Spellcasting), LocalBroadcastRange, ChatMessageType.Spellcasting);
 
             var spellChain = new ActionChain();
             var castSpeed = 2.0f;   // hardcoded for player spell casting?
@@ -443,18 +444,18 @@ namespace ACE.Server.WorldObjects
                 }
             }
 
+            var castGesture = spell.Formula.CastGesture;
+            if (isWeaponSpell && caster.UseUserAnimation != 0)
+                castGesture = caster.UseUserAnimation;
+
             // cast spell
             spellChain.AddAction(this, () =>
             {
-                var castGesture = spell.Formula.CastGesture;
-                if (isWeaponSpell && caster.UseUserAnimation != 0)
-                    castGesture = caster.UseUserAnimation;
-
                 var motionCastSpell = new Motion(MotionStance.Magic, castGesture, castSpeed);
                 EnqueueBroadcastMotion(motionCastSpell);
             });
 
-            var castingDelay = spell.Formula.GetCastTime(MotionTableId, castSpeed, isWeaponSpell);
+            var castingDelay = spell.Formula.GetCastTime(MotionTableId, castSpeed, isWeaponSpell ? (MotionCommand?)castGesture : null);
             spellChain.AddDelaySeconds(castingDelay);
 
             bool movedTooFar = false;
@@ -500,7 +501,8 @@ namespace ACE.Server.WorldObjects
                         }
 
                         // handle self procs
-                        TryProcEquippedItems(this, true);
+                        if (spell.IsHarmful && target != this)
+                            TryProcEquippedItems(this, true);
 
                         break;
 
@@ -517,7 +519,7 @@ namespace ACE.Server.WorldObjects
                                     VoidMagic(target, spell);
                                     break;
                                 case MagicSchool.LifeMagic:
-                                    LifeMagic(target, spell, out uint damage, out bool critical, out var enchantmentStatus);
+                                    LifeMagic(spell, out uint damage, out bool critical, out var enchantmentStatus, target);
                                     break;
                             }
                         }
@@ -637,7 +639,7 @@ namespace ACE.Server.WorldObjects
                     }
 
                     EnqueueBroadcast(new GameMessageScript(target.Guid, spell.TargetEffect, spell.Formula.Scale));
-                    targetDeath = LifeMagic(target, spell, out uint damage, out bool critical, out enchantmentStatus);
+                    targetDeath = LifeMagic(spell, out uint damage, out bool critical, out enchantmentStatus, target);
 
                     if (spell.MetaSpellType != SpellType.LifeProjectile)
                     {
@@ -740,7 +742,7 @@ namespace ACE.Server.WorldObjects
                                     // 'fails to affect'?
                                     player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You fail to affect {creatureTarget.Name} with {spell.Name}", ChatMessageType.Magic));
 
-                                    if (targetPlayer != null)
+                                    if (targetPlayer != null && !targetPlayer.SquelchManager.Squelches.Contains(player, ChatMessageType.Magic))
                                         targetPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"{Name} fails to affect you with {spell.Name}", ChatMessageType.Magic));
                                 }
                             }
@@ -778,7 +780,7 @@ namespace ACE.Server.WorldObjects
                                 // 'fails to affect'?
                                 player.Session.Network.EnqueueSend(new GameMessageSystemChat($"You fail to affect {creatureTarget.Name} with {spell.Name}", ChatMessageType.Magic));
 
-                                if (targetPlayer != null)
+                                if (targetPlayer != null && !targetPlayer.SquelchManager.Squelches.Contains(player, ChatMessageType.Magic))
                                     targetPlayer.Session.Network.EnqueueSend(new GameMessageSystemChat($"{Name} fails to affect you with {spell.Name}", ChatMessageType.Magic));
                             }
                         }
@@ -879,7 +881,7 @@ namespace ACE.Server.WorldObjects
 
             string spellWords = spell._spellBase.GetSpellWords(DatManager.PortalDat.SpellComponentsTable);
             if (!string.IsNullOrWhiteSpace(spellWords))
-                EnqueueBroadcast(new GameMessageCreatureMessage(spellWords, Name, Guid.Full, ChatMessageType.Magic), LocalBroadcastRange);
+                EnqueueBroadcast(new GameMessageCreatureMessage(spellWords, Name, Guid.Full, ChatMessageType.Spellcasting), LocalBroadcastRange, ChatMessageType.Spellcasting);
 
             ActionChain spellChain = new ActionChain();
             var castSpeed = 2.0f;   // hardcoded for player spell casting?
@@ -941,13 +943,17 @@ namespace ACE.Server.WorldObjects
                             case MagicSchool.VoidMagic:
                                 WarMagic(spell);
                                 break;
+                            case MagicSchool.LifeMagic:
+                                LifeMagic(spell, out uint damage, out bool critical, out var enchantmentStatus);
+                                break;
                             default:
                                 Session.Network.EnqueueSend(new GameMessageSystemChat("Untargeted SpellID " + spellId + " not yet implemented!", ChatMessageType.System));
                                 break;
                         }
 
                         // handle self procs
-                        TryProcEquippedItems(this, true);
+                        if (spell.IsHarmful)
+                            TryProcEquippedItems(this, true);
 
                         break;
                     default:
@@ -955,6 +961,9 @@ namespace ACE.Server.WorldObjects
                         EnqueueBroadcast(new GameMessageScript(Guid, ACE.Entity.Enum.PlayScript.Fizzle, 0.5f));
                         break;
                 }
+
+                if (spell.CasterEffect != 0)
+                    EnqueueBroadcast(new GameMessageScript(Guid, spell.CasterEffect, spell.Formula.Scale));
 
                 // return to magic combat stance
                 var returnStance = new Motion(MotionStance.Magic, MotionCommand.Ready, 1.0f);
@@ -1045,7 +1054,7 @@ namespace ACE.Server.WorldObjects
                     EnchantmentStatus ec;
                     lifeBuffsForPlayer.ForEach(spl =>
                     {
-                        bool casted = targetPlayer.LifeMagic(targetPlayer, spl.Spell, out dmg, out crit, out ec, this);
+                        bool casted = targetPlayer.LifeMagic(spl.Spell, out dmg, out crit, out ec, targetPlayer, this);
                     });
                     critterBuffsForPlayer.ForEach(spl =>
                     {
@@ -1221,6 +1230,8 @@ namespace ACE.Server.WorldObjects
         public bool HasComponentsForSpell(Spell spell)
         {            
             spell.Formula.GetPlayerFormula(this);
+
+            if (!PropertyManager.GetBool("require_spell_comps").Item) return true;
 
             if (!SpellComponentsRequired) return true;
 

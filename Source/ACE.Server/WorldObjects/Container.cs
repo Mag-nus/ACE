@@ -284,6 +284,34 @@ namespace ACE.Server.WorldObjects
         }
 
         /// <summary>
+        /// Returns the inventory items matching a weenie class name
+        /// </summary>
+        public List<WorldObject> GetInventoryItemsOfWeenieClass(string weenieClassName)
+        {
+            var items = new List<WorldObject>();
+
+            // search main pack / creature
+            var localInventory = Inventory.Values.Where(i => i.WeenieClassName.Equals(weenieClassName, StringComparison.OrdinalIgnoreCase)).ToList();
+
+            items.AddRange(localInventory);
+
+            // next search any side containers
+            var sideContainers = Inventory.Values.Where(i => i.WeenieType == WeenieType.Container).Select(i => i as Container).ToList();
+            foreach (var container in sideContainers)
+                items.AddRange(container.GetInventoryItemsOfWeenieClass(weenieClassName));
+
+            return items;
+        }
+
+        /// <summary>
+        /// Returns the total # of inventory items matching a weenie class name
+        /// </summary>
+        public int GetNumInventoryItemsOfWeenieClass(string weenieClassName)
+        {
+            return GetInventoryItemsOfWeenieClass(weenieClassName).Select(i => i.StackSize ?? 1).Sum();
+        }
+
+        /// <summary>
         /// Returns all of the trade notes from inventory + side packs
         /// </summary>
         public List<WorldObject> GetTradeNotes()
@@ -308,9 +336,9 @@ namespace ACE.Server.WorldObjects
         /// If enough burden is available, this will try to add an item to the main pack. If the main pack is full, it will try to add it to the first side pack with room.<para />
         /// It will also increase the EncumbranceVal and Value.
         /// </summary>
-        public bool TryAddToInventory(WorldObject worldObject, int placementPosition = 0, bool limitToMainPackOnly = false)
+        public bool TryAddToInventory(WorldObject worldObject, int placementPosition = 0, bool limitToMainPackOnly = false, bool burdenCheck = true)
         {
-            return TryAddToInventory(worldObject, out _, placementPosition, limitToMainPackOnly);
+            return TryAddToInventory(worldObject, out _, placementPosition, limitToMainPackOnly, burdenCheck);
         }
 
         /// <summary>
@@ -383,9 +411,10 @@ namespace ACE.Server.WorldObjects
         /// If enough burden is available, this will try to add an item to the main pack. If the main pack is full, it will try to add it to the first side pack with room.<para />
         /// It will also increase the EncumbranceVal and Value.
         /// </summary>
-        public bool TryAddToInventory(WorldObject worldObject, out Container container, int placementPosition = 0, bool limitToMainPackOnly = false)
+        public bool TryAddToInventory(WorldObject worldObject, out Container container, int placementPosition = 0, bool limitToMainPackOnly = false, bool burdenCheck = true)
         {
-            if (this is Player player)
+            // bug: should be root owner
+            if (this is Player player && burdenCheck)
             {
                 if (!player.HasEnoughBurdenToAddToInventory(worldObject))
                 {

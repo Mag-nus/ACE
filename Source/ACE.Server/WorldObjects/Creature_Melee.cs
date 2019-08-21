@@ -54,11 +54,10 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public AttackType GetWeaponAttackType(WorldObject weapon)
         {
-            var attackType = AttackType.Undef;     // unarmed?
-            if (weapon != null)
-                attackType = (AttackType)(weapon.GetProperty(PropertyInt.AttackType) ?? 0);
+            if (weapon == null)
+                return AttackType.Undef;
 
-            return attackType;
+            return weapon.W_AttackType;
         }
 
         /// <summary>
@@ -130,12 +129,12 @@ namespace ACE.Server.WorldObjects
 
                 // only cleave creatures
                 var creature = obj.WeenieObj.WorldObject as Creature;
-                if (creature == null || creature.Teleporting) continue;
+                if (creature == null || creature.Teleporting || creature.IsDead) continue;
 
                 if (player != null && creature is Player && player.CheckPKStatusVsTarget(player, creature, null) != null)
                     continue;
 
-                if (!creature.Attackable)
+                if (!creature.Attackable || creature.Teleporting)
                     continue;
 
                 if (creature is CombatPet && (player != null || this is CombatPet))

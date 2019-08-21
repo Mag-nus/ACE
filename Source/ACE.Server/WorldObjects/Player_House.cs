@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using ACE.Common;
 using ACE.Database;
+using ACE.Database.Models.Shard;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
@@ -290,7 +291,7 @@ namespace ACE.Server.WorldObjects
                     Session.Network.EnqueueSend(new GameMessageSystemChat("Warning!  You have not paid your maintenance costs for the last 30 day maintenance period.  Please pay these costs by this deadline or you will lose your house, and all your items within it.", ChatMessageType.System));
                 }
 
-                if (!House.SlumLord.HasRequirements(this) && PropertyManager.GetBool("house_purchase_requirements").Item)
+                if (House.HouseOwner == Guid.Full && !House.SlumLord.HasRequirements(this) && PropertyManager.GetBool("house_purchase_requirements").Item)
                 {
                     var rankStr = AllegianceNode != null ? $"{AllegianceNode.Rank}" : "";
                     Session.Network.EnqueueSend(new GameMessageSystemChat($"Warning!  Your allegiance rank {rankStr} is now below the requirements for owning a mansion.  Please raise your allegiance rank to {House.SlumLord.GetAllegianceMinLevel()} before the end of the maintenance period or you will lose your mansion, and all your items within it.", ChatMessageType.System));
@@ -344,6 +345,8 @@ namespace ACE.Server.WorldObjects
 
             SaveBiotaToDatabase();
 
+            house.EnqueueBroadcast(new GameMessagePublicUpdateInstanceID(house, PropertyInstanceId.HouseOwner, new ObjectGuid(house.HouseOwner ?? 0)));
+
             house.SaveBiotaToDatabase();
             slumlord.SaveBiotaToDatabase();
 
@@ -354,6 +357,7 @@ namespace ACE.Server.WorldObjects
             actionChain.AddAction(this, () =>
             {
                 HandleActionQueryHouse();
+                house.UpdateRestrictionDB();
 
                 // boot anyone who may have been wandering around inside...
                 HandleActionBootAll(false);
@@ -785,6 +789,8 @@ namespace ACE.Server.WorldObjects
             }
 
             house.OpenStatus = openStatus;
+            house.Biota.SetProperty(PropertyBool.Open, house.OpenStatus, house.BiotaDatabaseLock, out _);
+            house.ChangesDetected = true;
             house.UpdateRestrictionDB();
 
             if (openStatus)
@@ -820,15 +826,9 @@ namespace ACE.Server.WorldObjects
 
             house.HouseHooksVisible = visible;
 
-            var state = PhysicsState.Ethereal | PhysicsState.IgnoreCollisions;
-            if (!visible) state |= PhysicsState.NoDraw;
-
             foreach (var hook in house.Hooks.Where(i => i.Inventory.Count == 0))
             {
-                var setState = new GameMessageSetState(hook, state);
-                var update = new GameMessagePublicUpdatePropertyBool(hook, PropertyBool.UiHidden, !visible);
-
-                house.EnqueueBroadcast(setState, update);
+                hook.UpdateHookVisibility();
             }
 
             // if house has dungeon, repeat this process
@@ -839,10 +839,7 @@ namespace ACE.Server.WorldObjects
 
                 foreach (var hook in dungeonHouse.Hooks.Where(i => i.Inventory.Count == 0))
                 {
-                    var setState = new GameMessageSetState(hook, state);
-                    var update = new GameMessagePublicUpdatePropertyBool(hook, PropertyBool.UiHidden, !visible);
-
-                    dungeonHouse.EnqueueBroadcast(setState, update);
+                    hook.UpdateHookVisibility();
                 }
             }
 
@@ -1071,10 +1068,14 @@ namespace ACE.Server.WorldObjects
 
                 if (rootHouse.HouseOwner != null && !rootHouse.HasPermission(this, false))
                 {
-                    Teleport(rootHouse.BootSpot.Location);
-                    break;
+                    if (!rootHouse.IsOpen || (rootHouse.HouseType != HouseType.Apartment && CurrentLandblock.IsDungeon))
+                    {
+                        Teleport(rootHouse.BootSpot.Location);
+                        break;
+                    }
                 }
-                if (rootHouse.HouseOwner == null && rootHouse.HouseType != ACE.Entity.Enum.HouseType.Apartment && CurrentLandblock.IsDungeon)
+
+                if (rootHouse.HouseOwner == null && rootHouse.HouseType != HouseType.Apartment && CurrentLandblock.IsDungeon)
                 {
                     Teleport(rootHouse.BootSpot.Location);
                     break;
@@ -1261,7 +1262,7 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
-            if (allegianceHouse.HouseType < ACE.Entity.Enum.HouseType.Villa)
+            if (allegianceHouse.HouseType < HouseType.Villa)
             {
                 Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.YourMonarchsHouseIsNotAMansionOrVilla));
                 return;
