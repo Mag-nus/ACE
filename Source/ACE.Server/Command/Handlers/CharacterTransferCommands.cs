@@ -514,7 +514,7 @@ namespace ACE.Server.Command.Handlers
                     foreach (var entry in retailCharacter.CharacterPropertiesShortcutBar)
                     {
                         if (guidConversions.TryGetValue(entry.ShortcutObjectId, out var value))
-                            player.Character.TryAddOrUpdateShortcut(entry.ShortcutBarIndex, value, player.CharacterDatabaseLock);
+                            player.Character.AddOrUpdateShortcut(entry.ShortcutBarIndex, value, player.CharacterDatabaseLock);
                     }
 
                     player.Character.CharacterPropertiesSpellBar.Clear();
@@ -619,6 +619,9 @@ namespace ACE.Server.Command.Handlers
                     else if (name == "Stipend")                 altWeenieClassName = "coinstack";
                     else if (name == "Writ of Apology")         altWeenieClassName = "coinstack";
                 }
+
+                if (altWeenieClassName == null)
+                    return CreateIOU(biota);
 
                 weenie = DatabaseManager.World.GetCachedWeenie(altWeenieClassName);
 
