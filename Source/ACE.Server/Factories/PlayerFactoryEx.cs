@@ -7,6 +7,8 @@ using ACE.Database.Models.World;
 using ACE.DatLoader;
 using ACE.Entity;
 using ACE.Entity.Enum;
+using ACE.Entity.Enum.Properties;
+using ACE.Server.Managers;
 using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Factories
@@ -170,6 +172,7 @@ namespace ACE.Server.Factories
                 var item = LootGenerationFactory.CreateMeleeWeapon(7, true);
                 if (item?.WeaponSkill == Skill.HeavyWeapons)
                 {
+                    AddRend(item);
                     player.TryAddToInventory(item);
                     hits++;
                 }
@@ -217,6 +220,7 @@ namespace ACE.Server.Factories
                 var item = LootGenerationFactory.CreateMissileWeapon(7, true);
                 if (item?.WeaponSkill == Skill.MissileWeapons)
                 {
+                    AddRend(item);
                     player.TryAddToInventory(item);
                     hits++;
                 }
@@ -263,6 +267,7 @@ namespace ACE.Server.Factories
                 var item = LootGenerationFactory.CreateCaster(7, true);
                 if (item?.WieldSkillType == (int)Skill.WarMagic)
                 {
+                    AddRend(item);
                     player.TryAddToInventory(item);
                     hits++;
                 }
@@ -342,6 +347,26 @@ namespace ACE.Server.Factories
                 player.LearnSpellsInBulk(MagicSchool.LifeMagic, spellLevel, false);
                 player.LearnSpellsInBulk(MagicSchool.VoidMagic, spellLevel, false);
                 player.LearnSpellsInBulk(MagicSchool.WarMagic, spellLevel, false);
+            }
+        }
+
+        private static void AddRend(WorldObject worldObject)
+        {
+            ImbuedEffectType imbuedEffectType = ImbuedEffectType.Undef;
+
+            if (worldObject.W_DamageType == DamageType.Slash) imbuedEffectType = ImbuedEffectType.SlashRending;
+            if (worldObject.W_DamageType == DamageType.Pierce) imbuedEffectType = ImbuedEffectType.PierceRending;
+            if (worldObject.W_DamageType == DamageType.Bludgeon) imbuedEffectType = ImbuedEffectType.BludgeonRending;
+            if (worldObject.W_DamageType == DamageType.Cold) imbuedEffectType = ImbuedEffectType.ColdRending;
+            if (worldObject.W_DamageType == DamageType.Fire) imbuedEffectType = ImbuedEffectType.FireRending;
+            if (worldObject.W_DamageType == DamageType.Acid) imbuedEffectType = ImbuedEffectType.AcidRending;
+            if (worldObject.W_DamageType == DamageType.Electric) imbuedEffectType = ImbuedEffectType.ElectricRending;
+
+            if (imbuedEffectType != ImbuedEffectType.Undef)
+            {
+                worldObject.SetProperty(PropertyInt.ImbuedEffect, (int)imbuedEffectType);
+                worldObject.IconUnderlayId = RecipeManager.IconUnderlay[imbuedEffectType];
+                worldObject.NumTimesTinkered++;
             }
         }
 
