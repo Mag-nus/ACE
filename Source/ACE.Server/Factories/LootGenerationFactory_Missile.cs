@@ -6,7 +6,7 @@ namespace ACE.Server.Factories
 {
     public static partial class LootGenerationFactory
     {
-        private static WorldObject CreateMissileWeapon(int tier, bool isMagical)
+        public static WorldObject CreateMissileWeapon(int tier, bool isMagical)
         {
             int weaponWeenie;
             int chance;

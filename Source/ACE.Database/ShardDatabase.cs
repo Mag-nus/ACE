@@ -851,6 +851,35 @@ namespace ACE.Database
             return true;
         }
 
+        public List<bool> AddStarterCharactersInParallel(List<(Biota biota, ReaderWriterLockSlim biotaLock, IEnumerable<(Biota biota, ReaderWriterLockSlim rwLock)> possessions, Character character, ReaderWriterLockSlim characterLock)> characters)
+        {
+            var results = new List<bool>();
+
+            var namePrefix = CharacterNames.GetRandomWithNumbers(100);
+
+            foreach (var character in characters)
+            {
+                var name = $"{namePrefix} {character.character.Name}";
+
+                if (!IsCharacterNameAvailable(name))
+                {
+                    // todo generate a new name instead of failing
+                    results.Add(false);
+                    continue;
+                }
+
+                character.biota.SetProperty(PropertyString.Name, name, character.biotaLock, out _);
+                character.character.Name = name;
+
+                if (!AddCharacterInParallel(character.biota, character.biotaLock, character.possessions, character.character, character.characterLock))
+                    results.Add(false);
+                else
+                    results.Add(true);
+            }
+
+            return results;
+        }
+
 
         /// <summary>
         /// This will get all player biotas that are backed by characters that are not deleted.

@@ -353,6 +353,15 @@ namespace ACE.Database
             }));
         }
 
+        public void AddStarterCharactersInParallel(List<(Biota biota, ReaderWriterLockSlim biotaLock, IEnumerable<(Biota biota, ReaderWriterLockSlim rwLock)> possessions, Character character, ReaderWriterLockSlim characterLock)> characters, Action<List<bool>> callback)
+        {
+            _queue.Add(new Task(() =>
+            {
+                var result = _wrappedDatabase.AddStarterCharactersInParallel(characters);
+                callback?.Invoke(result);
+            }));
+        }
+
 
         /// <summary>
         /// This will get all player biotas that are backed by characters that are not deleted.

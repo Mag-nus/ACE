@@ -19,6 +19,7 @@ using ACE.Server.Network.Enum;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.Managers;
 using ACE.Server.Network.Packets;
+using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Network.Handlers
 {
@@ -211,42 +212,76 @@ namespace ACE.Server.Network.Handlers
                 DatabaseManager.Shard.GetCharacters(session.AccountId, false, result =>
                 {
                     // If you want to create default characters for accounts that have none, here is where you would do it.
-                    if (result.Count == 0)
+                    if (result.Count == 0 || true) // TODO remove this after testing
                     {
-                        var weenie = DatabaseManager.World.GetCachedWeenie("admin");
-                        var guid = GuidManager.NewPlayerGuid();
-                        var player = PlayerFactory.Create275HeavyWeapons(weenie, guid, session.AccountId, session.Account + " Heavy");
+                        var weenie = DatabaseManager.World.GetCachedWeenie("human");
 
-                        player.Invincible = true;
+                        var characters = new List<(Biota biota, ReaderWriterLockSlim biotaLock, IEnumerable<(Biota biota, ReaderWriterLockSlim rwLock)> possessions, Character character , ReaderWriterLockSlim characterLock)>();
+                        var players = new List<Player>();
 
-
-                        player.Character.TotalLogins = 1; // Prevent first login instruction popup
-
-                        DatabaseManager.Shard.IsCharacterNameAvailable(player.Character.Name, isAvailable =>
                         {
-                            if (!isAvailable)
-                            {
-                                SendConnectResponse(session, result);
-                            }
-                            else
-                            {
-                                var possessions = player.GetAllPossessions();
-                                var possessedBiotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
-                                foreach (var possession in possessions)
-                                    possessedBiotas.Add((possession.Biota, possession.BiotaDatabaseLock));
+                            var guid = GuidManager.NewPlayerGuid();
+                            var player =
+                                PlayerFactoryEx.Create275HeavyWeapons(weenie, guid, session.AccountId, "Heavy");
 
-                                // We must await here -- 
-                                DatabaseManager.Shard.AddCharacterInParallel(player.Biota, player.BiotaDatabaseLock, possessedBiotas, player.Character, player.CharacterDatabaseLock, saveSuccess =>
+                            //player.Invincible = true;
+                            //player.Character.TotalLogins = 1; // Prevent first login instruction popup
+
+                            var possessions = player.GetAllPossessions();
+                            var possessedBiotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
+                            foreach (var possession in possessions)
+                                possessedBiotas.Add((possession.Biota, possession.BiotaDatabaseLock));
+
+                            characters.Add((player.Biota, player.BiotaDatabaseLock, possessedBiotas,
+                                player.Character, player.CharacterDatabaseLock));
+                            players.Add(player);
+                        }
+
+                        {
+                            var guid = GuidManager.NewPlayerGuid();
+                            var player = PlayerFactoryEx.Create275MissileWeapons(weenie, guid, session.AccountId, "Missile");
+
+                            //player.Invincible = true;
+                            //player.Character.TotalLogins = 1; // Prevent first login instruction popup
+
+                            var possessions = player.GetAllPossessions();
+                            var possessedBiotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
+                            foreach (var possession in possessions)
+                                possessedBiotas.Add((possession.Biota, possession.BiotaDatabaseLock));
+
+                            characters.Add((player.Biota, player.BiotaDatabaseLock, possessedBiotas, player.Character, player.CharacterDatabaseLock));
+                            players.Add(player);
+                        }
+
+                        {
+                            var guid = GuidManager.NewPlayerGuid();
+                            var player = PlayerFactoryEx.Create275WarMagic(weenie, guid, session.AccountId, "War");
+
+                            //player.Invincible = true;
+                            //player.Character.TotalLogins = 1; // Prevent first login instruction popup
+
+                            var possessions = player.GetAllPossessions();
+                            var possessedBiotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
+                            foreach (var possession in possessions)
+                                possessedBiotas.Add((possession.Biota, possession.BiotaDatabaseLock));
+
+                            characters.Add((player.Biota, player.BiotaDatabaseLock, possessedBiotas, player.Character, player.CharacterDatabaseLock));
+                            players.Add(player);
+                        }
+
+                        // We must await here -- 
+                        DatabaseManager.Shard.AddStarterCharactersInParallel(characters, saveSuccesses =>
+                        {
+                            for (int i = 0; i < saveSuccesses.Count; i++)
+                            {
+                                if (saveSuccesses[i])
                                 {
-                                    if (saveSuccess)
-                                    {
-                                        PlayerManager.AddOfflinePlayer(player);
-                                        result.Add(player.Character);
-                                    }
-
-                                    SendConnectResponse(session, result);
-                                });
+                                    PlayerManager.AddOfflinePlayer(players[i]);
+                                    result.Add(players[i].Character);
+                                }
                             }
+
+                            SendConnectResponse(session, result);
                         });
                     }
                     else

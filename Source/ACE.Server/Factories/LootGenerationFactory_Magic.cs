@@ -102,7 +102,7 @@ namespace ACE.Server.Factories
             return LootTables.Level8SpellComps[chance];
         }
 
-        private static WorldObject CreateCaster(int tier, bool isMagical)
+        public static WorldObject CreateCaster(int tier, bool isMagical)
         {
             int casterWeenie = 0; //done
             double elementalDamageMod = 0;
