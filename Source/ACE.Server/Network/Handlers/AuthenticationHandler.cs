@@ -11,6 +11,7 @@ using ACE.Common;
 using ACE.Database;
 using ACE.Database.Models.Auth;
 using ACE.Database.Models.Shard;
+using ACE.Database.Models.World;
 using ACE.Entity.Enum;
 using ACE.Server.Entity;
 using ACE.Server.Factories;
@@ -212,9 +213,20 @@ namespace ACE.Server.Network.Handlers
                 DatabaseManager.Shard.GetCharacters(session.AccountId, false, result =>
                 {
                     // If you want to create default characters for accounts that have none, here is where you would do it.
-                    if (result.Count == 0 || true) // TODO remove this after testing
+                    if (result.Count == 0)
                     {
-                        var weenie = DatabaseManager.World.GetCachedWeenie("human");
+                        Weenie weenie;
+                        if (ConfigManager.Config.Server.Accounts.OverrideCharacterPermissions)
+                        {
+                            if (session.AccessLevel >= AccessLevel.Developer && session.AccessLevel <= AccessLevel.Admin)
+                                weenie = DatabaseManager.World.GetCachedWeenie("admin");
+                            else if (session.AccessLevel >= AccessLevel.Sentinel && session.AccessLevel <= AccessLevel.Envoy)
+                                weenie = DatabaseManager.World.GetCachedWeenie("sentinel");
+                            else
+                                weenie = DatabaseManager.World.GetCachedWeenie("human");
+                        }
+                        else
+                            weenie = DatabaseManager.World.GetCachedWeenie("human");
 
                         var characters = new List<(Biota biota, ReaderWriterLockSlim biotaLock, IEnumerable<(Biota biota, ReaderWriterLockSlim rwLock)> possessions, Character character , ReaderWriterLockSlim characterLock)>();
                         var players = new List<Player>();
