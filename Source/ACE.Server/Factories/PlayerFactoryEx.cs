@@ -166,6 +166,7 @@ namespace ACE.Server.Factories
 
             AddCommonInventory(player, RelicAlduressa);
 
+            // todo this is slow, but it works for now
             var hits = 0;
             while (hits < 12)
             {
@@ -214,6 +215,7 @@ namespace ACE.Server.Factories
 
             AddCommonInventory(player, NobleRelic);
 
+            // todo this is slow, but it works for now
             var hits = 0;
             while (hits < 12)
             {
@@ -261,6 +263,7 @@ namespace ACE.Server.Factories
 
             AddCommonInventory(player, AncientRelic);
 
+            // todo this is slow, but it works for now
             var hits = 0;
             while (hits < 12)
             {
