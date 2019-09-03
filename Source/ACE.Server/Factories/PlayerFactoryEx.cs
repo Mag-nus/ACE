@@ -362,6 +362,8 @@ namespace ACE.Server.Factories
             if (worldObject.W_DamageType == DamageType.Acid) imbuedEffectType = ImbuedEffectType.AcidRending;
             if (worldObject.W_DamageType == DamageType.Electric) imbuedEffectType = ImbuedEffectType.ElectricRending;
 
+            if (worldObject.W_DamageType == (DamageType.Slash | DamageType.Pierce)) imbuedEffectType = ImbuedEffectType.SlashRending;
+
             if (imbuedEffectType != ImbuedEffectType.Undef)
             {
                 worldObject.SetProperty(PropertyInt.ImbuedEffect, (int)imbuedEffectType);
