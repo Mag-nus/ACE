@@ -133,6 +133,7 @@ namespace ACE.Server.Entity
         public readonly RateMonitor Monitor1h = new RateMonitor();
         private readonly TimeSpan last1hClearInteval = TimeSpan.FromHours(1);
         private DateTime last1hClear;
+        private bool monitorsRequireEventStart = true;
 
         private EnvironChangeType fogColor;
 
@@ -357,6 +358,7 @@ namespace ACE.Server.Entity
         {
             Monitor5m.RegisterEventStart();
             Monitor1h.RegisterEventStart();
+            monitorsRequireEventStart = false;
 
             foreach (WorldObject wo in GetWorldObjectsForPhysicsHandling())
             {
@@ -408,8 +410,16 @@ namespace ACE.Server.Entity
 
         public void Tick(double currentUnixTime)
         {
-            Monitor5m.ResumeEvent();
-            Monitor1h.ResumeEvent();
+            if (monitorsRequireEventStart)
+            {
+                Monitor5m.RegisterEventStart();
+                Monitor1h.RegisterEventStart();
+            }
+            else
+            {
+                Monitor5m.ResumeEvent();
+                Monitor1h.ResumeEvent();
+            }
 
             ServerPerformanceMonitor.ResumeEvent(ServerPerformanceMonitor.MonitorType.Landblock_Tick_RunActions);
             actionQueue.RunActions();
@@ -549,6 +559,7 @@ namespace ACE.Server.Entity
 
             Monitor5m.RegisterEventEnd();
             Monitor1h.RegisterEventEnd();
+            monitorsRequireEventStart = true;
 
             if (DateTime.UtcNow - last5mClear >= last5mClearInteval)
             {
@@ -755,10 +766,13 @@ namespace ACE.Server.Entity
                     wo.CurrentLandblock = null;
 
                     if (wo.Generator != null)
-                        log.Debug($"AddWorldObjectInternal: couldn't spawn 0x{wo.Guid}:{wo.Name} from generator {wo.Generator.WeenieClassId} - 0x{wo.Generator.Guid}:{wo.Generator.Name}");
+                    {
+                        log.Debug($"AddWorldObjectInternal: couldn't spawn 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}] from generator {wo.Generator.WeenieClassId} - 0x{wo.Generator.Guid}:{wo.Generator.Name}");
+                        wo.NotifyOfEvent(RegenerationType.PickUp); // Notify generator the generated object is effectively destroyed, use Pickup to catch both cases.
+                    }
 
                     else if (wo.ProjectileTarget == null)
-                        log.Warn($"AddWorldObjectInternal: couldn't spawn 0x{wo.Guid}:{wo.Name}");
+                        log.Warn($"AddWorldObjectInternal: couldn't spawn 0x{wo.Guid}:{wo.Name} [{wo.WeenieClassId} - {wo.WeenieType}]");
 
                     return false;
                 }

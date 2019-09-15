@@ -219,39 +219,56 @@ namespace ACE.Server.Network.Structure
             {
                 // If the hook has any inventory, we need to send THOSE properties instead.
                 var hook = wo as Container;
+
+                string baseDescString = "";
+                if (wo.ParentLink.HouseOwner != null)
+                {
+                    // This is for backwards compatibility. This value was not set/saved in earlier versions.
+                    // It will get the player's name and save that to the HouseOwnerName property of the house. This is now done when a player purchases a house.
+                    if (wo.ParentLink.HouseOwnerName == null)
+                    {
+                        var houseOwnerPlayer = PlayerManager.FindByGuid((uint)wo.ParentLink.HouseOwner);
+                        if (houseOwnerPlayer != null)
+                        {
+                            wo.ParentLink.HouseOwnerName = houseOwnerPlayer.Name;
+                            wo.ParentLink.SaveBiotaToDatabase();
+                        }
+                    }
+                    baseDescString = "This hook is owned by " + wo.ParentLink.HouseOwnerName + ". "; //if house is owned, display this text
+                }
+
+                var containsString = "";
                 if (hook.Inventory.Count == 1)
                 {
                     WorldObject hookedItem = hook.Inventory.First().Value;
 
                     // Hooked items have a custom "description", containing the desc of the sub item and who the owner of the house is (if any)
                     BuildProfile(hookedItem, examiner, success);
-                    string baseDescString = "";
-                    if (wo.ParentLink.HouseOwner != null)
-                    {
-                        // This is for backwards compatibility. This value was not set/saved in earlier versions.
-                        // It will get the player's name and save that to the HouseOwnerName property of the house. This is now done when a player purchases a house.
-                        if(wo.ParentLink.HouseOwnerName == null)
-                        {
-                            var houseOwnerPlayer = PlayerManager.FindByGuid((uint)wo.ParentLink.HouseOwner);
-                            if(houseOwnerPlayer != null)
-                            {
-                                wo.ParentLink.HouseOwnerName = houseOwnerPlayer.Name;
-                                wo.ParentLink.SaveBiotaToDatabase();
-                            }
-                        }
-                        baseDescString = "This hook is owned by " + wo.ParentLink.HouseOwnerName + ". "; //if house is owned, display this text
-                    }
+
+                    containsString = "It contains: \n";
+
                     if (PropertiesString.ContainsKey(PropertyString.LongDesc) && PropertiesString[PropertyString.LongDesc] != null)
                     {
-                        PropertiesString[PropertyString.LongDesc] = baseDescString + "It contains: \n" + PropertiesString[PropertyString.LongDesc];
+                        containsString += PropertiesString[PropertyString.LongDesc];
                     }
                     else if (PropertiesString.ContainsKey(PropertyString.ShortDesc) && PropertiesString[PropertyString.ShortDesc] != null)
                     {
-                        PropertiesString[PropertyString.LongDesc] = baseDescString + "It contains: \n" + PropertiesString[PropertyString.ShortDesc];
+                        containsString += PropertiesString[PropertyString.ShortDesc];
+                    }
+                    else
+                    {
+                        containsString += PropertiesString[PropertyString.Name];
                     }
 
                     BuildHookProfile(hookedItem);
                 }
+
+                if (PropertiesString.ContainsKey(PropertyString.LongDesc) && PropertiesString[PropertyString.LongDesc] != null)
+                    PropertiesString[PropertyString.LongDesc] = baseDescString + containsString;
+                else if (PropertiesString.ContainsKey(PropertyString.ShortDesc) && PropertiesString[PropertyString.ShortDesc] != null)
+                    PropertiesString[PropertyString.LongDesc] = baseDescString + containsString;
+                else
+                    PropertiesString[PropertyString.LongDesc] = baseDescString + containsString;
             }
 
             if (wo is ManaStone)
@@ -382,7 +399,10 @@ namespace ACE.Server.Network.Structure
             if (wo.SpellDID.HasValue)
                 SpellBook.Add(new AppraisalSpellBook { SpellId = (ushort)wo.SpellDID.Value, EnchantmentState = AppraisalSpellBook._EnchantmentState.Off });
 
-            foreach ( var biotaPropertiesSpellBook in wo.Biota.BiotaPropertiesSpellBook.Where(i => i.Spell != wo.SpellDID))
+            if (wo.ProcSpell.HasValue)
+                SpellBook.Add(new AppraisalSpellBook { SpellId = (ushort)wo.ProcSpell.Value, EnchantmentState = AppraisalSpellBook._EnchantmentState.Off });
+
+            foreach ( var biotaPropertiesSpellBook in wo.Biota.BiotaPropertiesSpellBook.Where(i => i.Spell != wo.SpellDID && i.Spell != wo.ProcSpell))
                 SpellBook.Add(new AppraisalSpellBook { SpellId = (ushort)biotaPropertiesSpellBook.Spell, EnchantmentState = AppraisalSpellBook._EnchantmentState.Off });
         }
 
@@ -596,22 +616,18 @@ namespace ACE.Server.Network.Structure
         private void BuildHookProfile(WorldObject hookedItem)
         {
             HookProfile = new HookProfile();
-            if (hookedItem.Inscription != null)
+            if (hookedItem.Inscribable)
                 HookProfile.Flags |= HookFlags.Inscribable;
+            if (hookedItem is Healer)
+                HookProfile.Flags |= HookFlags.IsHealer;
+            if (hookedItem is Food)
+                HookProfile.Flags |= HookFlags.IsFood;
+            if (hookedItem is Lockpick)
+                HookProfile.Flags |= HookFlags.IsLockpick;
             if (hookedItem.ValidLocations != null)
-                HookProfile.ValidLocations = (uint)hookedItem.ValidLocations;
-
-            // This only handles basic Arrow, Quarrels and Darts. It does not, for instance, handle Crystal Arrows.
-            // How were those handled?
+                HookProfile.ValidLocations = hookedItem.ValidLocations.Value;
             if (hookedItem.AmmoType != null)
-            {
-                if ((hookedItem.AmmoType & AmmoType.Arrow) != 0)
-                    HookProfile.AmmoType |= HookAmmoType.Arrow;
-                if ((hookedItem.AmmoType & AmmoType.Bolt) != 0)
-                    HookProfile.AmmoType |= HookAmmoType.Bolt;
-                if ((hookedItem.AmmoType & AmmoType.Atlatl) != 0)
-                    HookProfile.AmmoType |= HookAmmoType.Dart;
-            }
+                HookProfile.AmmoType = hookedItem.AmmoType.Value;
         }
 
         /// <summary>
