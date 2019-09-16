@@ -13,6 +13,7 @@ using ACE.Server.Network;
 using ACE.Server.Network.Managers;
 using ACE.Server.Physics.Common;
 using ACE.Server.Physics.Entity;
+using ACE.Server.Physics.Managers;
 using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Command.Handlers
@@ -102,7 +103,7 @@ namespace ACE.Server.Command.Handlers
 
             sb.Append($"Physics Cache Counts - BSPCache: {BSPCache.Count:N0}, GfxObjCache: {GfxObjCache.Count:N0}, PolygonCache: {PolygonCache.Count:N0}, VertexCache: {VertexCache.Count:N0}{'\n'}");
 
-            sb.Append($"Physics Landblocks Count - {LScape.LandblocksCount:N0}, Total Server Objects: {ObjectMaint.ServerObjects.Count:N0}{'\n'}");
+            sb.Append($"Physics Landblocks Count - {LScape.LandblocksCount:N0}, Total Server Objects: {ServerObjectManager.ServerObjects.Count:N0}{'\n'}");
 
             sb.Append($"PhysicsObj Count - {ACE.Server.Physics.PhysicsObj.WeakReferences.Count:N0}{'\n'}");
 
