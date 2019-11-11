@@ -124,6 +124,8 @@ namespace ACE.Server
                 log.Error(ex.ToString());
             }
 
+            InitMetrics();
+
             log.Info("Starting ACEmulator...");
 
             if (IsRunningInContainer)
@@ -376,6 +378,8 @@ namespace ACE.Server
                 ServerManager.DoShutdownNow();
                 DatabaseManager.Stop();
             }
+
+            ShutdownMetrics();
         }
     }
 }
