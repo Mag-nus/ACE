@@ -416,8 +416,8 @@ namespace ACE.Server.Command.Handlers
                     { retailBiota.Id, player.Guid.Full },
                 };
 
-                // Sort the inventory by PlacementPosition
-                var sortedInventory = possessions.Inventory.OrderByDescending(r => r.BiotaPropertiesInt.FirstOrDefault(p => p.Type == (ushort)PropertyInt.PlacementPosition)?.Value).ToList();
+                // Sort the inventory by InventoryOrder
+                var sortedInventory = possessions.Inventory.OrderByDescending(r => r.BiotaPropertiesInt.FirstOrDefault(p => p.Type == (ushort)PropertyInt.InventoryOrder)?.Value).ToList();
 
                 // Main pack and side slot items
                 foreach (var possession in sortedInventory.Where(r => r.BiotaPropertiesIID.FirstOrDefault(p => p.Type == (ushort)PropertyInstanceId.Container && p.Value == retailBiota.Id) != null))
@@ -786,7 +786,7 @@ namespace ACE.Server.Command.Handlers
             // Clean up container properties
             wo.OwnerId = null;
             wo.ContainerId = null;
-            wo.PlacementPosition = null;
+            wo.InventoryOrder = null;
 
             // Clean wielded properties
             wo.RemoveProperty(PropertyInt.CurrentWieldedLocation);

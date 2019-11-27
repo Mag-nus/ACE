@@ -1765,6 +1765,12 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt.PlacementPosition); else SetProperty(PropertyInt.PlacementPosition, value.Value); }
         }
 
+        public int? InventoryOrder
+        {
+            get => GetProperty(PropertyInt.InventoryOrder);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.InventoryOrder); else SetProperty(PropertyInt.InventoryOrder, value.Value); }
+        }
+
         /* books */
         public string ScribeName
         {
