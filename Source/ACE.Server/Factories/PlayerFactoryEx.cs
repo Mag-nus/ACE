@@ -469,14 +469,15 @@ namespace ACE.Server.Factories
             player.TrainSkill(Skill.MeleeDefense, 10);
             player.TrainSkill(Skill.MissileDefense, 6);
             player.TrainSkill(Skill.MissileWeapons, 6);
+            player.TrainSkill(Skill.Fletching, 4);
 
             // Specialized skills
-            player.SpecializeSkill(Skill.Healing, 4);
             player.SpecializeSkill(Skill.MagicDefense, 12);
             player.SpecializeSkill(Skill.MeleeDefense, 10);
             player.SpecializeSkill(Skill.MissileWeapons, 6);
+            player.SpecializeSkill(Skill.Fletching, 4);
 
-            // 4 remaining skill points.
+            // 0 remaining skill points.
             // If/When we add the 4 skill points in LevelUpPlayer, we can spend them here as well
 
             LoadSkillSpecificDefaultSpellBar(player);
