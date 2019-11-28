@@ -181,7 +181,7 @@ namespace ACE.Server.Factories
             // Buffs - Self
             barNumber++;
             indexInBar = 0;
-            player.Character.AddSpellToBar(barNumber, indexInBar++, 4324, player.CharacterDatabaseLock); // "Incantation of Strength Other","Increases the target's Strength by 45 points."
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4325, player.CharacterDatabaseLock); // "Incantation of Strength Self","Increases the caster's Strength by 45 points."
             player.Character.AddSpellToBar(barNumber, indexInBar++, 4299, player.CharacterDatabaseLock); // "Incantation of Endurance Self","Increases the caster's Endurance by 45 points."
             player.Character.AddSpellToBar(barNumber, indexInBar++, 4297, player.CharacterDatabaseLock); // "Incantation of Coordination Self","Increases the caster's Coordination by 45 points."
             player.Character.AddSpellToBar(barNumber, indexInBar++, 4319, player.CharacterDatabaseLock); // "Incantation of Quickness Self","Increases the caster's Quickness by 45 points."
@@ -211,6 +211,7 @@ namespace ACE.Server.Factories
             player.Character.AddSpellToBar(barNumber, indexInBar++, 4624, player.CharacterDatabaseLock); // "Incantation of Heavy Weapon Mastery Self","Increases the caster's Heavy Weapons skill by 45 points."
             player.Character.AddSpellToBar(barNumber, indexInBar++, 4522, player.CharacterDatabaseLock); // "Incantation of Missile Weapon Mastery Self","Increases the caster's Missile Weapons skill by 45 points."
             player.Character.AddSpellToBar(barNumber, indexInBar++, 4638, player.CharacterDatabaseLock); // "Incantation of War Magic Mastery Self","Increases the caster's War Magic skill by 45 points."
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 6123, player.CharacterDatabaseLock); // "Incantation of Summoning Mastery Self","Increases the caster's Summoning skill by 45 points."
 
             player.Character.AddSpellToBar(barNumber, indexInBar++, 4556, player.CharacterDatabaseLock); // "Incantation of Healing Mastery Self","Increases the caster's Healing skill by 45 points."
             player.Character.AddSpellToBar(barNumber, indexInBar++, 4552, player.CharacterDatabaseLock); // "Incantation of Fletching Mastery Self","Increases the caster's Fletching skill by 45 points."
@@ -245,7 +246,48 @@ namespace ACE.Server.Factories
             // Buffs - Other
             barNumber++;
             indexInBar = 0;
-            // todo creature/life buffs
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4324, player.CharacterDatabaseLock); // "Incantation of Strength Other","Increases the target's Strength by 45 points."
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4298, player.CharacterDatabaseLock); // "Incantation of Endurance Other","Increases the target's Endurance by 45 points."
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4296, player.CharacterDatabaseLock); // "Incantation of Coordination Other","Increases the target's Coordination by 45 points."
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4318, player.CharacterDatabaseLock); // "Incantation of Quickness Other","Increases the target's Quickness by 45 points."
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4304, player.CharacterDatabaseLock); // "Incantation of Focus Other","Increases the target's Focus by 45 points."
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4328, player.CharacterDatabaseLock); // "Incantation of Willpower Self","Increases the caster's Self by 45 points."
+
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4495, player.CharacterDatabaseLock); // "Incantation of Regeneration Other","Increase target's natural healing rate by 145%."
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4497, player.CharacterDatabaseLock); // "Incantation of Rejuvenation Other","Increases the rate at which the target regains Stamina by 145%."
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4493, player.CharacterDatabaseLock); // "Incantation of Mana Renewal Other","Increases the target's natural mana rate by 145%."
+
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4529, player.CharacterDatabaseLock); // "Incantation of Creature Enchantment Mastery Other","Increases the target's Creature Enchantment skill by 45 points."
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4581, player.CharacterDatabaseLock); // "Incantation of Life Magic Mastery Other","Increases the target's Life Magic skill by 45 points."
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4563, player.CharacterDatabaseLock); // "Incantation of Item Enchantment Mastery Other","Increases the target's Item Enchantment skill by 45 points."
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4601, player.CharacterDatabaseLock); // "Incantation of Mana Conversion Mastery Other","Increases the target's Mana Conversion skill by 45 points."
+
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4509, player.CharacterDatabaseLock); // "Incantation of Arcane Enlightenment Other","Increases the target's Arcane Lore skill by 45 points."
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4615, player.CharacterDatabaseLock); // "Incantation of Sprint Other","Increases the target's Run skill by 45 points."
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4571, player.CharacterDatabaseLock); // "Incantation of Jumping Mastery Other","Increases the target's Jump skill by 45 points."
+
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4547, player.CharacterDatabaseLock); // "Incantation of Fealty Other","Increases the target's Loyalty skill by 45 points."
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4577, player.CharacterDatabaseLock); // "Incantation of Leadership Mastery Other","Increases the target's Leadership skill by 45 points."
+
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4559, player.CharacterDatabaseLock); // "Incantation of Invulnerability Other","Increases the target's Melee Defense skill by 45 points."
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4557, player.CharacterDatabaseLock); // "Incantation of Impregnability Other","Increases the target's Missile Defense skill by 45 points."
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4595, player.CharacterDatabaseLock); // "Incantation of Magic Resistance Other","Increases the target's Magic Defense skill by 45 points."
+
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4623, player.CharacterDatabaseLock); // "Incantation of Heavy Weapon Mastery Other","Increases the target's Heavy Weapons skill by 45 points."
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4521, player.CharacterDatabaseLock); // "Incantation of Missile Weapon Mastery Other","Increases the target's Missile Weapons skill by 45 points."
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4637, player.CharacterDatabaseLock); // "Incantation of War Magic Mastery Other","Increases the target's War Magic skill by 45 points."
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 6115, player.CharacterDatabaseLock); // "Incantation of Summoning Mastery Other","Increases the target's Summoning skill by 45 points."
+
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4555, player.CharacterDatabaseLock); // "Incantation of Healing Mastery Other","Increases the target's Healing skill by 45 points."
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4551, player.CharacterDatabaseLock); // "Incantation of Fletching Mastery Other","Increases the target's Fletching skill by 45 points."
+
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4467, player.CharacterDatabaseLock); // "Incantation of Fire Protection Other","Reduces damage the target takes from fire by 68%"
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4469, player.CharacterDatabaseLock); // "Incantation of Lightning Protection Other","Reduces damage the target takes from Lightning by 68%"
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4461, player.CharacterDatabaseLock); // "Incantation of Blade Protection Other","Reduces damage the target takes from Slashing by 68%"
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4471, player.CharacterDatabaseLock); // "Incantation of Piercing Protection Other","Reduces damage the target takes from Piercing by 68%"
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4463, player.CharacterDatabaseLock); // "Incantation of Bludgeoning Protection Other","Reduces damage the target takes from Bludgeoning by 68%"
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4465, player.CharacterDatabaseLock); // "Incantation of Cold Protection Other","Reduces damage the target takes from Cold by 68%"
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 4459, player.CharacterDatabaseLock); // "Incantation of Acid Protection Other","Reduces damage the target takes from acid by 68%"
 
             player.Character.AddSpellToBar(barNumber, indexInBar++, 5997, player.CharacterDatabaseLock); // "Aura of Incantation of Blood Drinker Other","Increases a weapon's damage value by 24 points."
             player.Character.AddSpellToBar(barNumber, indexInBar++, 6022, player.CharacterDatabaseLock); // "Aura of Incantation of Spirit Drinker Other","Increases the elemental damage bonus of an elemental magic caster by 8%."
