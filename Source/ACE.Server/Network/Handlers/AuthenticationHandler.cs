@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 
 using log4net;
@@ -11,16 +9,13 @@ using ACE.Common;
 using ACE.Database;
 using ACE.Database.Models.Auth;
 using ACE.Database.Models.Shard;
-using ACE.Database.Models.World;
 using ACE.Entity.Enum;
 using ACE.Server.Entity;
-using ACE.Server.Factories;
 using ACE.Server.Managers;
 using ACE.Server.Network.Enum;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.Managers;
 using ACE.Server.Network.Packets;
-using ACE.Server.WorldObjects;
 
 namespace ACE.Server.Network.Handlers
 {
@@ -233,8 +228,7 @@ namespace ACE.Server.Network.Handlers
 
                         {
                             var guid = GuidManager.NewPlayerGuid();
-                            var player =
-                                PlayerFactoryEx.Create275HeavyWeapons(weenie, guid, session.AccountId, "Heavy");
+                            var player = PlayerFactoryEx.Create275HeavyWeapons(weenie, guid, session.AccountId, "Heavy");
 
                             //player.Invincible = true;
                             //player.Character.TotalLogins = 1; // Prevent first login instruction popup
@@ -244,8 +238,7 @@ namespace ACE.Server.Network.Handlers
                             foreach (var possession in possessions)
                                 possessedBiotas.Add((possession.Biota, possession.BiotaDatabaseLock));
 
-                            characters.Add((player.Biota, player.BiotaDatabaseLock, possessedBiotas,
-                                player.Character, player.CharacterDatabaseLock));
+                            characters.Add((player.Biota, player.BiotaDatabaseLock, possessedBiotas, player.Character, player.CharacterDatabaseLock));
                             players.Add(player);
                         }
 

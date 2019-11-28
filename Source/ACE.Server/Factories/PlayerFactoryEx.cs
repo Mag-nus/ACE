@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 
 using ACE.Database.Models.World;
+using ACE.Database.Models.Shard;
 using ACE.DatLoader;
 using ACE.Entity;
 using ACE.Entity.Enum;
@@ -95,7 +96,7 @@ namespace ACE.Server.Factories
 
 
         /// <summary>
-        /// Creates a fully leveled/augmented 275 Heavy Weapons character player
+        /// Creates a fully leveled/augmented 275 base character player
         /// </summary>
         private static Player Create275Base(CharacterCreateInfo characterCreateInfo, Weenie weenie, ObjectGuid guid, uint accountId)
         {
@@ -110,6 +111,10 @@ namespace ACE.Server.Factories
             player.TryRemoveFromInventory(player.Inventory.FirstOrDefault(k => k.Value.Name.Contains("Letter From Home")).Key);
 
             LevelUpPlayer(player);
+
+            AddAllSpells(player);
+
+            LoadDefaultSpellBars(player);
 
             return player;
         }
@@ -130,6 +135,33 @@ namespace ACE.Server.Factories
             // todo add all augmentations except the element protection and attribute raising ones
 
             // todo add Luminance quest flags + 2 luminance quest flags + skill credits
+        }
+
+        private static void LoadDefaultSpellBars(Player player)
+        {
+            // todo
+
+            // Recall Spells
+            player.Character.AddSpellToBar(7, 0, 2645, player.CharacterDatabaseLock); // Portal Recall
+            player.Character.AddSpellToBar(7, 1, 48, player.CharacterDatabaseLock); // Primary Portal Recall
+            player.Character.AddSpellToBar(7, 2, 157, player.CharacterDatabaseLock); // Summon Primary Portal I
+            player.Character.AddSpellToBar(7, 3, 47, player.CharacterDatabaseLock); // Primary Portal Tie
+            player.Character.AddSpellToBar(7, 4, 2647, player.CharacterDatabaseLock); // Secondary Portal Recall
+            player.Character.AddSpellToBar(7, 5, 2648, player.CharacterDatabaseLock); // Summon Secondary Portal I
+            player.Character.AddSpellToBar(7, 6, 2646, player.CharacterDatabaseLock); // Secondary Portal Tie
+            player.Character.AddSpellToBar(7, 7, 1635, player.CharacterDatabaseLock); // Lifestone Recall
+            player.Character.AddSpellToBar(7, 8, 2644, player.CharacterDatabaseLock); // Lifestone Tie
+            player.Character.AddSpellToBar(7, 9, 2041, player.CharacterDatabaseLock); // Aerlinthe Recall
+            player.Character.AddSpellToBar(7, 10, 2931, player.CharacterDatabaseLock); // Recall Aphus Lassel
+            player.Character.AddSpellToBar(7, 11, 2941, player.CharacterDatabaseLock); // Ulgrim's Recall
+            player.Character.AddSpellToBar(7, 12, 3865, player.CharacterDatabaseLock); // Glenden Wood Recall
+            player.Character.AddSpellToBar(7, 13, 4084, player.CharacterDatabaseLock); // Bur Recall
+            player.Character.AddSpellToBar(7, 14, 4128, player.CharacterDatabaseLock); // Call of the Mhoire Forge
+            player.Character.AddSpellToBar(7, 15, 4198, player.CharacterDatabaseLock); // Paradox-touched Olthoi
+            player.Character.AddSpellToBar(7, 16, 4213, player.CharacterDatabaseLock); // Colosseum Recall
+            player.Character.AddSpellToBar(7, 17, 5330, player.CharacterDatabaseLock); // Gear Knight Invasion Area Camp Recall
+            player.Character.AddSpellToBar(7, 18, 5541, player.CharacterDatabaseLock); // Lost City of Neftet Recall
+            player.Character.AddSpellToBar(7, 19, 6321, player.CharacterDatabaseLock); // Viridian Rise Recall
         }
 
 
@@ -166,20 +198,12 @@ namespace ACE.Server.Factories
 
             AddCommonInventory(player, RelicAlduressa);
 
-            // todo this is slow, but it works for now
-            var hits = 0;
-            while (hits < 12)
+            for (int i = 0; i < 12; i++)
             {
-                var item = LootGenerationFactory.CreateMeleeWeapon(7, true);
-                if (item?.WeaponSkill == Skill.HeavyWeapons)
-                {
-                    AddRend(item);
-                    player.TryAddToInventory(item);
-                    hits++;
-                }
+                var item = LootGenerationFactory.CreateMeleeWeapon(7, true, 0);
+                AddRend(item);
+                player.TryAddToInventory(item);
             }
-
-            AddAllSpells(player);
 
             return player;
         }
@@ -215,20 +239,12 @@ namespace ACE.Server.Factories
 
             AddCommonInventory(player, NobleRelic);
 
-            // todo this is slow, but it works for now
-            var hits = 0;
-            while (hits < 12)
+            for (int i = 0; i < 12; i++)
             {
                 var item = LootGenerationFactory.CreateMissileWeapon(7, true);
-                if (item?.WeaponSkill == Skill.MissileWeapons)
-                {
-                    AddRend(item);
-                    player.TryAddToInventory(item);
-                    hits++;
-                }
+                AddRend(item);
+                player.TryAddToInventory(item);
             }
-
-            AddAllSpells(player);
 
             return player;
         }
@@ -263,20 +279,12 @@ namespace ACE.Server.Factories
 
             AddCommonInventory(player, AncientRelic);
 
-            // todo this is slow, but it works for now
-            var hits = 0;
-            while (hits < 12)
+            for (int i = 0; i < 12; i++)
             {
-                var item = LootGenerationFactory.CreateCaster(7, true);
-                if (item?.WieldSkillType == (int)Skill.WarMagic)
-                {
-                    AddRend(item);
-                    player.TryAddToInventory(item);
-                    hits++;
-                }
+                var item = LootGenerationFactory.CreateCaster(7, true, 1, true);
+                AddRend(item);
+                player.TryAddToInventory(item);
             }
-
-            AddAllSpells(player);
 
             return player;
         }
