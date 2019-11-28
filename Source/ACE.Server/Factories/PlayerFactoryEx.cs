@@ -139,8 +139,6 @@ namespace ACE.Server.Factories
 
         private static void LoadDefaultSpellBars(Player player)
         {
-            // todo
-
             // Recall Spells
             uint barNumber = 0;
             uint indexInBar = 0;
@@ -320,18 +318,52 @@ namespace ACE.Server.Factories
             player.Character.AddSpellToBar(barNumber, indexInBar++, 4408, player.CharacterDatabaseLock); // "Incantation of Leaden Weapon","Worsens a weapon's speed by 80 points."
             player.Character.AddSpellToBar(barNumber, indexInBar++, 4415, player.CharacterDatabaseLock); // "Incantation of Spirit Loather","Decreases the elemental damage bonus of an elemental magic caster by 8%."
             player.Character.AddSpellToBar(barNumber, indexInBar++, 4406, player.CharacterDatabaseLock); // "Incantation of Hermetic Void","Decreases a magic casting implement's mana conversion bonus by 80%."
+        }
 
-            // War
-            barNumber++;
-            indexInBar = 0;
+        private static void LoadSkillSpecificDefaultSpellBar(Player player)
+        {
+            if (player.Skills.ContainsKey(Skill.WarMagic) && player.Skills[Skill.WarMagic].AdvancementClass == SkillAdvancementClass.Specialized)
+            {
+                // War
+                uint barNumber = 7;
+                uint indexInBar = 0;
 
-            // todo normal
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 4423, player.CharacterDatabaseLock); // "Incantation of Flame Arc","Shoots a bolt of flame at the target.  The bolt does 142-204 points of fire damage to the first thing it hits."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 4426, player.CharacterDatabaseLock); // "Incantation of Lightning Arc","Shoots a bolt of lighting at the target. The bolt does 142-204 points of electrical damage to the first thing it hits."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 4422, player.CharacterDatabaseLock); // "Incantation of Blade Arc","Shoots a magical blade at the target. The bolt does 142-204 points of slashing damage to the first thing it hits."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 4424, player.CharacterDatabaseLock); // "Incantation of Force Arc","Shoots a bolt of force at the target. The bolt does 142-204 points of piercing damage to the first thing it hits."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 4427, player.CharacterDatabaseLock); // "Incantation of Shock Arc","Shoots a shock wave at the target. The wave does 142-204 points of bludgeoning damage to the first thing it hits."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 4421, player.CharacterDatabaseLock); // "Incantation of Acid Arc","Shoots a stream of acid at the target. The stream does 142-204 points of acid damage to the first thing it hits."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 4425, player.CharacterDatabaseLock); // "Incantation of Frost Arc","Shoots a bolt of cold at the target. The bolt does 142-204 points of cold damage to the first thing it hits."
 
-            // todo streak
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 4439, player.CharacterDatabaseLock); // "Incantation of Flame Bolt","Shoots a bolt of flame at the target.  The bolt does 142-204 points of fire damage to the first thing it hits."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 4451, player.CharacterDatabaseLock); // "Incantation of Lightning Bolt","Shoots a bolt of lighting at the target. The bolt does 142-204 points of electrical damage to the first thing it hits."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 4457, player.CharacterDatabaseLock); // "Incantation of Whirling Blade","Shoots a magical blade at the target. The bolt does 142-204 points of slashing damage to the first thing it hits."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 4443, player.CharacterDatabaseLock); // "Incantation of Force Bolt","Shoots a bolt of force at the target. The bolt does 142-204 points of piercing damage to the first thing it hits."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 4455, player.CharacterDatabaseLock); // "Incantation of Shock Wave","Shoots a shock wave at the target. The wave does 142-204 points of bludgeoning damage to the first thing it hits."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 4447, player.CharacterDatabaseLock); // "Incantation of Frost Bolt","Shoots a bolt of cold at the target. The bolt does 142-204 points of cold damage to the first thing it hits."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 4433, player.CharacterDatabaseLock); // "Incantation of Acid Stream","Shoots a stream of acid at the target. The stream does 142-204 points of acid damage to the first thing it hits."
 
-            // todo wall
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 4440, player.CharacterDatabaseLock); // "Incantation of Flame Streak","Sends a bolt of flame streaking towards the target.  The bolt does 47-94 points of fire damage to the first thing it hits."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 4452, player.CharacterDatabaseLock); // "Incantation of Lightning Streak","Sends a bolt of lighting streaking towards the target. The bolt does 47-94 points of electrical damage to the first thing it hits."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 4458, player.CharacterDatabaseLock); // "Incantation of Whirling Blade Streak","Sends a magical blade streaking towards the target. The bolt does 47-94 points of slashing damage to the first thing it hits."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 4444, player.CharacterDatabaseLock); // "Incantation of Force Streak","Sends a bolt of force streaking towards the target. The bolt does 47-94 points of piercing damage to the first thing it hits."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 4456, player.CharacterDatabaseLock); // "Incantation of Shock Wave Streak","Sends a shock wave streaking towards the target. The wave does 47-94 points of bludgeoning damage to the first thing it hits."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 4432, player.CharacterDatabaseLock); // "Incantation of Acid Streak","Sends a stream of acid streaking towards the target. The stream does 47-94 points of acid damage to the first thing it hits."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 4448, player.CharacterDatabaseLock); // "Incantation of Frost Streak","Sends a bolt of cold streaking towards the target. The bolt does 47-94 points of cold damage to the first thing it hits."
 
-            // todo life/drains
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 2934, player.CharacterDatabaseLock); // "Tusker Fists","A hail of tusker fists pummels a clear path ahead of the caster."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 1785, player.CharacterDatabaseLock); // "Cassius' Ring of Fire","Shoots eight waves of flame outward from the caster. Each wave does 42-84 points of fire damage to the first thing it hits."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 1788, player.CharacterDatabaseLock); // "Eye of the Storm","Shoots eight waves of lightning outward from the caster. Each wave does 42-84 points of electric damage to the first thing it hits."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 1784, player.CharacterDatabaseLock); // "Horizon's Blades","Shoots eight blades outward from the caster. Each blade does 42-84 points of slashing damage to the first thing it hits."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 1786, player.CharacterDatabaseLock); // "Nuhmudira's Spines","Shoots eight waves of force outward from the caster. Each wave does 42-84 points of piercing damage to the first thing it hits."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 1789, player.CharacterDatabaseLock); // "Tectonic Rifts","Shoots eight shock waves outward from the caster. Each wave does 42-84 points of bludgeoning damage to the first thing it hits."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 1787, player.CharacterDatabaseLock); // "Halo of Frost","Shoots eight waves of frost outward from the caster. Each wave does 42-84 points of cold damage to the first thing it hits."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 1783, player.CharacterDatabaseLock); // "Searing Disc","Shoots eight waves of acid outward from the caster. Each wave does 42-84 points of acid damage to the first thing it hits.",
+
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 4428, player.CharacterDatabaseLock); // "Incantation of Martyr's Hecatomb","Drains one-quarter of the caster's health into a bolt of energy.  When struck by the bolt, the target's health is reduced by 200% of the amount drained."
+                player.Character.AddSpellToBar(barNumber, indexInBar++, 3818, player.CharacterDatabaseLock); // "Curse of Raven Fury","Drains half of the caster�s health and projects a ring of vicious energy outwards. When struck, the target�s health is reduced by 200% of the amount drained from the caster."
+            }
         }
 
 
@@ -361,6 +393,8 @@ namespace ACE.Server.Factories
 
             // 0 remaining skill points.
             // If/When we add the 4 skill points in LevelUpPlayer, we can spend them here as well
+
+            LoadSkillSpecificDefaultSpellBar(player);
 
             // todo aug endurance
 
@@ -403,6 +437,8 @@ namespace ACE.Server.Factories
             // 4 remaining skill points.
             // If/When we add the 4 skill points in LevelUpPlayer, we can spend them here as well
 
+            LoadSkillSpecificDefaultSpellBar(player);
+
             // todo aug what attribute?
 
             SpendAllXp(player);
@@ -442,6 +478,11 @@ namespace ACE.Server.Factories
 
             // 0 remaining skill points
             // If/When we add the 4 skill points in LevelUpPlayer, we can spend them here as well
+
+            var foci = WorldObjectFactory.CreateNewWorldObject(15271); // Foci of Strife
+            player.TryAddToInventory(foci);
+
+            LoadSkillSpecificDefaultSpellBar(player);
 
             // todo aug what attribute?
 
