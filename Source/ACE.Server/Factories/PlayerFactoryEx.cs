@@ -133,6 +133,7 @@ namespace ACE.Server.Factories
             player.AugmentationLessDeathItemLoss = 3;
             player.AugmentationSpellsRemainPastDeath = 1;
             player.AugmentationIncreasedSpellDuration = 5;
+            player.AugmentationJackOfAllTrades = 1;
 
             // todo: Optionally add other augs
         }
@@ -595,6 +596,8 @@ namespace ACE.Server.Factories
             // biota_properties_float
             orb.ManaRate = -0.033333;
             orb.WeaponDefense = 1.15;
+            orb.ObjScale = 1.3f;
+            orb.Translucency = 0.6f;
             orb.ManaConversionMod = 0.31;
             orb.ElementalDamageMod = 1.2;
             // biota_properties_d_i_d
@@ -602,9 +605,13 @@ namespace ACE.Server.Factories
             orb.LongDesc = "Same same, but different.";
             // biota_properties_d_i_d
             orb.SetupTableId = 33558259;
+            orb.SoundTableId = 536870932;
+            orb.PaletteBaseDID = 67111919;
             orb.IconId = 100674116;
             orb.PhysicsTableId = 872415275;
-            orb.SpellDID = 2073;
+            orb.SpellDID = 2076;
+            orb.RemoveProperty(PropertyDataId.MutateFilter);
+            orb.RemoveProperty(PropertyDataId.TsysMutationFilter);
             orb.IconUnderlayId = 100686604;
             // biota_properties_spell_book
             orb.Biota.GetOrAddKnownSpell(2076, orb.BiotaDatabaseLock, out _);
