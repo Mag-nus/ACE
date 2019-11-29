@@ -581,6 +581,13 @@ namespace ACE.Server.Factories
                 AddWeeniesToInventory(player, group);
 
             var orb = WorldObjectFactory.CreateNewWorldObject("Orb");
+            orb.RemoveProperty(PropertyInt.PaletteTemplate);
+            orb.RemoveProperty(PropertyFloat.Shade);
+            orb.RemoveProperty(PropertyFloat.Shade2);
+            orb.RemoveProperty(PropertyFloat.Shade3);
+            orb.RemoveProperty(PropertyFloat.Shade4);
+            orb.RemoveProperty(PropertyDataId.MutateFilter);
+            orb.RemoveProperty(PropertyDataId.TsysMutationFilter);
             // biota_properties_int
             orb.UiEffects = UiEffects.Magical;
             orb.Bonded = 1;
@@ -610,8 +617,6 @@ namespace ACE.Server.Factories
             orb.IconId = 100674116;
             orb.PhysicsTableId = 872415275;
             orb.SpellDID = 2076;
-            orb.RemoveProperty(PropertyDataId.MutateFilter);
-            orb.RemoveProperty(PropertyDataId.TsysMutationFilter);
             orb.IconUnderlayId = 100686604;
             // biota_properties_spell_book
             orb.Biota.GetOrAddKnownSpell(2076, orb.BiotaDatabaseLock, out _);
