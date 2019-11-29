@@ -127,14 +127,14 @@ namespace ACE.Server.Factories
             player.AvailableSkillCredits += 46;
             player.TotalSkillCredits += 46;
 
-            // todo add spec arcane lore quest flag + spec arcane lore
+            // Playability Augs
+            player.AugmentationExtraPackSlot = 1;
+            player.AugmentationIncreasedCarryingCapacity = 5;
+            player.AugmentationLessDeathItemLoss = 3;
+            player.AugmentationSpellsRemainPastDeath = 1;
+            player.AugmentationIncreasedSpellDuration = 5;
 
-            // todo add Hunting Aun Ralirea quest flag + skill credit
-            // todo add Chasing Oswald quest flag + skill credit
-
-            // todo add all augmentations except the element protection and attribute raising ones
-
-            // todo add Luminance quest flags + 2 luminance quest flags + skill credits
+            // todo: Optionally add other augs
         }
 
         private static void LoadDefaultSpellBars(Player player)
@@ -143,9 +143,9 @@ namespace ACE.Server.Factories
             uint barNumber = 0;
             uint indexInBar = 0;
             player.Character.AddSpellToBar(barNumber, indexInBar++, 2645, player.CharacterDatabaseLock); // Portal Recall
-            player.Character.AddSpellToBar(barNumber, indexInBar++, 48, player.CharacterDatabaseLock); // Primary Portal Recall
-            player.Character.AddSpellToBar(barNumber, indexInBar++, 157, player.CharacterDatabaseLock); // Summon Primary Portal I
-            player.Character.AddSpellToBar(barNumber, indexInBar++, 47, player.CharacterDatabaseLock); // Primary Portal Tie
+            player.Character.AddSpellToBar(barNumber, indexInBar++,   48, player.CharacterDatabaseLock); // Primary Portal Recall
+            player.Character.AddSpellToBar(barNumber, indexInBar++,  157, player.CharacterDatabaseLock); // Summon Primary Portal I
+            player.Character.AddSpellToBar(barNumber, indexInBar++,   47, player.CharacterDatabaseLock); // Primary Portal Tie
             player.Character.AddSpellToBar(barNumber, indexInBar++, 2647, player.CharacterDatabaseLock); // Secondary Portal Recall
             player.Character.AddSpellToBar(barNumber, indexInBar++, 2648, player.CharacterDatabaseLock); // Summon Secondary Portal I
             player.Character.AddSpellToBar(barNumber, indexInBar++, 2646, player.CharacterDatabaseLock); // Secondary Portal Tie
@@ -181,6 +181,10 @@ namespace ACE.Server.Factories
             // Buffs - Self
             barNumber++;
             indexInBar = 0;
+            player.Character.AddSpellToBar(barNumber, indexInBar++,  562, player.CharacterDatabaseLock); // "Creature Enchantment Mastery Self VI","Increases the caster's Creature Enchantment skill by 35 points."
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 1426, player.CharacterDatabaseLock); // "Focus Self VI","Increases the caster's Focus by 35 points."
+            player.Character.AddSpellToBar(barNumber, indexInBar++, 1450, player.CharacterDatabaseLock); // "Willpower Self VI","Increases the caster's Self by 35 points."
+
             player.Character.AddSpellToBar(barNumber, indexInBar++, 4325, player.CharacterDatabaseLock); // "Incantation of Strength Self","Increases the caster's Strength by 45 points."
             player.Character.AddSpellToBar(barNumber, indexInBar++, 4299, player.CharacterDatabaseLock); // "Incantation of Endurance Self","Increases the caster's Endurance by 45 points."
             player.Character.AddSpellToBar(barNumber, indexInBar++, 4297, player.CharacterDatabaseLock); // "Incantation of Coordination Self","Increases the caster's Coordination by 45 points."
@@ -561,7 +565,7 @@ namespace ACE.Server.Factories
         private static void AddCommonInventory(Player player, params HashSet<uint>[] additionalGroups)
         {
             // MMD
-            AddWeeniesToInventory(player, new HashSet<uint> { 20630 });
+            AddWeeniesToInventory(player, new List<uint> { 20630, 20630, 20630, 20630, 20630, 20630 });
 
             // Spell Components
             AddWeeniesToInventory(player, CommonSpellComponents);
@@ -575,12 +579,47 @@ namespace ACE.Server.Factories
             foreach (var group in additionalGroups)
                 AddWeeniesToInventory(player, group);
 
-            // todo Drudge Scrying Orb
+            var orb = WorldObjectFactory.CreateNewWorldObject("Orb");
+            // biota_properties_int
+            orb.UiEffects = UiEffects.Magical;
+            orb.Bonded = 1;
+            orb.W_DamageType = DamageType.Slash;
+            orb.TargetType = ItemType.Creature;
+            orb.ItemSpellcraft = 325;
+            orb.ItemCurMana = 1000;
+            orb.ItemMaxMana = 1000;
+            orb.ItemDifficulty = 280;
+            orb.WieldRequirements = WieldRequirement.Skill;
+            orb.WieldSkillType = 31;
+            orb.WieldDifficulty = 355;
+            // biota_properties_float
+            orb.ManaRate = -0.033333;
+            orb.WeaponDefense = 1.15;
+            orb.ManaConversionMod = 0.31;
+            orb.ElementalDamageMod = 1.2;
+            // biota_properties_d_i_d
+            orb.Name = "Replica Drudge Scrying Orb";
+            orb.LongDesc = "Same same, but different.";
+            // biota_properties_d_i_d
+            orb.SetupTableId = 33558259;
+            orb.IconId = 100674116;
+            orb.PhysicsTableId = 872415275;
+            orb.SpellDID = 2073;
+            orb.IconUnderlayId = 100686604;
+            // biota_properties_spell_book
+            orb.Biota.GetOrAddKnownSpell(2076, orb.BiotaDatabaseLock, out _);
+            orb.Biota.GetOrAddKnownSpell(2101, orb.BiotaDatabaseLock, out _);
+            orb.Biota.GetOrAddKnownSpell(2242, orb.BiotaDatabaseLock, out _);
+            orb.Biota.GetOrAddKnownSpell(2244, orb.BiotaDatabaseLock, out _);
+            orb.Biota.GetOrAddKnownSpell(2507, orb.BiotaDatabaseLock, out _);
+            orb.Biota.GetOrAddKnownSpell(2577, orb.BiotaDatabaseLock, out _);
+            orb.Biota.GetOrAddKnownSpell(2581, orb.BiotaDatabaseLock, out _);
+            player.TryAddToInventory(orb);
 
             // todo Buffing wand that has all defenses maxed
         }
 
-        private static void AddWeeniesToInventory(Player player, HashSet<uint> weenieIds, ushort? stackSize = null)
+        private static void AddWeeniesToInventory(Player player, IEnumerable<uint> weenieIds, ushort? stackSize = null)
         {
             foreach (uint weenieId in weenieIds)
             {
