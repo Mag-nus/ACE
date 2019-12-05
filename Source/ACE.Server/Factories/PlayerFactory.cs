@@ -476,9 +476,6 @@ namespace ACE.Server.Factories
         /// <summary>
         /// Set Heritage based Melee and Ranged Masteries
         /// </summary>
-        /// <param name="heritageGroup"></param>
-        /// <param name="meleeMastery"></param>
-        /// <param name="rangedMastery"></param>
         private static void GetMasteries(HeritageGroup heritageGroup, out WeaponType meleeMastery, out WeaponType rangedMastery)
         {
             switch (heritageGroup)
