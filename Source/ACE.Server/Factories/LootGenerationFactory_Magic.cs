@@ -110,7 +110,7 @@ namespace ACE.Server.Factories
         {
             // Refactored 11/20/19  - HarliQ
 
-            int casterWeenie = 0; 
+            int casterWeenie = 0;
             double elementalDamageMod = 0;
             Skill wieldSkillType = Skill.None;
             WieldRequirement wieldRequirement = WieldRequirement.RawSkill;
@@ -218,7 +218,7 @@ namespace ACE.Server.Factories
                 wo.WieldSkillType = null;
                 wo.WieldDifficulty = null;
             }
-           
+
             // Adjusting Properties if weapon has magic (spells)
             double manaConMod = GetManaCMod(tier);
             if (manaConMod > 0.0f)
@@ -233,7 +233,7 @@ namespace ACE.Server.Factories
                 wo.ItemCurMana = null;
                 wo.ItemSpellcraft = null;
                 wo.ItemDifficulty = null;
-            }          
+            }
 
             wo = RandomizeColor(wo);
 

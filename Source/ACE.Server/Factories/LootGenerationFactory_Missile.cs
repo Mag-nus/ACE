@@ -15,7 +15,7 @@ namespace ACE.Server.Factories
 
             int wieldDifficulty = GetWield(tier, 1);
 
-           // Changing based on wield, not tier. Refactored, less code, best results.  HarliQ 11/18/19
+            // Changing based on wield, not tier. Refactored, less code, best results.  HarliQ 11/18/19
             if (wieldDifficulty < 315)
                 weaponWeenie = GetNonElementalMissileWeapon();
             else
@@ -40,7 +40,7 @@ namespace ACE.Server.Factories
 
             double meleeDMod = GetWieldReqMeleeDMod(wieldDifficulty);
             // double meleeDMod = GetMeleeDMod(tier);
-            if (meleeDMod > 0.0f) 
+            if (meleeDMod > 0.0f)
                 wo.SetProperty(PropertyFloat.WeaponDefense, meleeDMod);
 
             double missileDMod = GetMissileDMod(tier);
