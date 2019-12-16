@@ -447,7 +447,12 @@ namespace ACE.Server.Factories
 
             SpendAllXp(player);
 
-            AddCommonInventory(player, RelicAlduressa);
+            AddCommonInventory(player);
+
+            AddWeeniesToInventory(player, RelicAlduressa);
+
+            // Treated Healing Kits
+            AddWeeniesToInventory(player, new List<uint> { 9229, 9229, 9229, 9229, 9229, 9229 });
 
             for (int i = 0; i < 12; i++)
             {
@@ -491,7 +496,12 @@ namespace ACE.Server.Factories
 
             SpendAllXp(player);
 
-            AddCommonInventory(player, NobleRelic);
+            AddCommonInventory(player);
+
+            AddWeeniesToInventory(player, NobleRelic);
+
+            // Treated Healing Kits
+            AddWeeniesToInventory(player, new List<uint> { 9229, 9229, 9229, 9229, 9229, 9229 });
 
             for (int i = 0; i < 12; i++)
             {
@@ -536,7 +546,9 @@ namespace ACE.Server.Factories
 
             SpendAllXp(player);
 
-            AddCommonInventory(player, AncientRelic);
+            AddCommonInventory(player);
+
+            AddWeeniesToInventory(player, AncientRelic);
 
             for (int i = 0; i < 12; i++)
             {
@@ -557,28 +569,23 @@ namespace ACE.Server.Factories
             player.Mana.Current = player.Mana.MaxValue;
         }
 
-        public static readonly HashSet<uint> CommonSpellComponents = new HashSet<uint> { 691, 689, 686, 688, 687, 690, 8897, 7299, 37155, 20631 };
-
         private static readonly HashSet<uint> NobleRelic = new HashSet<uint> { 33584, 33585, 33586, 33587, 33588 };
         private static readonly HashSet<uint> RelicAlduressa = new HashSet<uint> { 33574, 33575, 33576, 33577, 33578 };
         private static readonly HashSet<uint> AncientRelic = new HashSet<uint> { 33579, 33580, 33581, 33582, 33583 };
 
-        private static void AddCommonInventory(Player player, params HashSet<uint>[] additionalGroups)
+        private static void AddCommonInventory(Player player)
         {
             // MMD
             AddWeeniesToInventory(player, new List<uint> { 20630, 20630, 20630, 20630, 20630, 20630 });
 
             // Spell Components
-            AddWeeniesToInventory(player, CommonSpellComponents);
+            AddWeeniesToInventory(player, new HashSet<uint> { 691, 689, 686, 688, 687, 690, 8897, 7299, 37155, 20631 });
 
             // Focusing Stone
             AddWeeniesToInventory(player, new HashSet<uint> { 8904 });
 
             AddWeeniesToInventory(player, new HashSet<uint> { 5893 }); // Hoary Robe
             AddWeeniesToInventory(player, new HashSet<uint> { 14594 }); // Helm of the Elements
-
-            foreach (var group in additionalGroups)
-                AddWeeniesToInventory(player, group);
 
             var orb = WorldObjectFactory.CreateNewWorldObject("Orb");
             orb.RemoveProperty(PropertyInt.PaletteTemplate);
