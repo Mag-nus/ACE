@@ -569,6 +569,8 @@ namespace ACE.Server.Factories
             player.Mana.Current = player.Mana.MaxValue;
         }
 
+        public static readonly HashSet<uint> CommonSpellComponents = new HashSet<uint> { 691, 689, 686, 688, 687, 690, 8897, 7299, 37155, 20631 };
+
         private static readonly HashSet<uint> NobleRelic = new HashSet<uint> { 33584, 33585, 33586, 33587, 33588 };
         private static readonly HashSet<uint> RelicAlduressa = new HashSet<uint> { 33574, 33575, 33576, 33577, 33578 };
         private static readonly HashSet<uint> AncientRelic = new HashSet<uint> { 33579, 33580, 33581, 33582, 33583 };
@@ -579,7 +581,7 @@ namespace ACE.Server.Factories
             AddWeeniesToInventory(player, new List<uint> { 20630, 20630, 20630, 20630, 20630, 20630 });
 
             // Spell Components
-            AddWeeniesToInventory(player, new HashSet<uint> { 691, 689, 686, 688, 687, 690, 8897, 7299, 37155, 20631 });
+            AddWeeniesToInventory(player, CommonSpellComponents);
 
             // Focusing Stone
             AddWeeniesToInventory(player, new HashSet<uint> { 8904 });
