@@ -2375,12 +2375,6 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInstanceId.CurrentFollowTarget); else SetProperty(PropertyInstanceId.CurrentFollowTarget, value.Value); }
         }
 
-        public uint? CurrentAppraisalTarget
-        {
-            get => GetProperty(PropertyInstanceId.CurrentAppraisalTarget);
-            set { if (!value.HasValue) RemoveProperty(PropertyInstanceId.CurrentAppraisalTarget); else SetProperty(PropertyInstanceId.CurrentAppraisalTarget, value.Value); }
-        }
-
         public uint? CurrentFellowshipAppraisalTarget
         {
             get => GetProperty(PropertyInstanceId.CurrentFellowshipAppraisalTarget);
@@ -2403,12 +2397,6 @@ namespace ACE.Server.WorldObjects
         {
             get => GetProperty(PropertyInstanceId.ManaQueryTarget);
             set { if (!value.HasValue) RemoveProperty(PropertyInstanceId.ManaQueryTarget); else SetProperty(PropertyInstanceId.ManaQueryTarget, value.Value); }
-        }
-
-        public uint? RequestedAppraisalTarget
-        {
-            get => GetProperty(PropertyInstanceId.RequestedAppraisalTarget);
-            set { if (!value.HasValue) RemoveProperty(PropertyInstanceId.RequestedAppraisalTarget); else SetProperty(PropertyInstanceId.RequestedAppraisalTarget, value.Value); }
         }
 
         public PKLevel PkLevel
@@ -2783,11 +2771,11 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt.Lifespan); else SetProperty(PropertyInt.Lifespan, value.Value); }
         }
 
-        public int? RemainingLifespan
-        {
-            get => GetProperty(PropertyInt.RemainingLifespan);
-            set { if (!value.HasValue) RemoveProperty(PropertyInt.RemainingLifespan); else SetProperty(PropertyInt.RemainingLifespan, value.Value); }
-        }
+        //public int? RemainingLifespan
+        //{
+        //    get => GetProperty(PropertyInt.RemainingLifespan);
+        //    set { if (!value.HasValue) RemoveProperty(PropertyInt.RemainingLifespan); else SetProperty(PropertyInt.RemainingLifespan, value.Value); }
+        //}
 
         public bool HearLocalSignals
         {
@@ -2823,6 +2811,18 @@ namespace ACE.Server.WorldObjects
         {
             get => GetProperty(PropertyInt.PlayerKillsPkl);
             set { if (!value.HasValue) RemoveProperty(PropertyInt.PlayerKillsPkl); else SetProperty(PropertyInt.PlayerKillsPkl, value.Value); }
+        }
+
+        public SummoningMastery? SummoningMastery
+        {
+            get => (SummoningMastery?)GetProperty(PropertyInt.SummoningMastery);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.SummoningMastery); else SetProperty(PropertyInt.SummoningMastery, (int)value.Value); }
+        }
+
+        public double? MaximumVelocity
+        {
+            get => GetProperty(PropertyFloat.MaximumVelocity);
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.MaximumVelocity); else SetProperty(PropertyFloat.MaximumVelocity, value.Value); }
         }
 
         /// <summary>
