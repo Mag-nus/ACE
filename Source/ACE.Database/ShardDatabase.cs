@@ -896,7 +896,7 @@ namespace ACE.Database
                     .AsNoTracking()
                     .ToList();
 
-                Parallel.ForEach(results, result =>
+                Parallel.ForEach(results, ConfigManager.Config.Server.Threading.DatabaseParallelOptions, result =>
                 {
                     var biota = GetBiota(result.Id);
 
