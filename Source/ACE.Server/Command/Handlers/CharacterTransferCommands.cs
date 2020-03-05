@@ -233,7 +233,7 @@ namespace ACE.Server.Command.Handlers
                 var human = DatabaseManager.World.GetCachedWeenie("human");
                 // Removes the generic knife and buckler, hidden Javelin, 30 stack of arrows, and 5 stack of coins that are given to all characters
                 // Starter Gear from the JSON file are added to the character later in the CharacterCreateEx() process
-                human.WeeniePropertiesCreateList.Clear();
+                human.PropertiesCreateList = null;
 
                 var guid = GuidManager.NewPlayerGuid();
 
@@ -631,7 +631,7 @@ namespace ACE.Server.Command.Handlers
                 altWeenieUsed = true;
             }
 
-            if (weenie.Type == 0)
+            if (weenie.WeenieType == 0)
                 return CreateIOU(biota);
 
             var wo = WorldObjectFactory.CreateNewWorldObject(weenie);
@@ -825,8 +825,8 @@ namespace ACE.Server.Command.Handlers
 
             iou.SetProperties("IOU", "An IOU for a missing database object.", $"Sorry about that chief... but I couldn't import your {biota.Id:X8}:{biota.GetProperty(PropertyString.Name)}", "ACEmulator", "prewritten");
             iou.AddPage(uint.MaxValue, "ACEmulator", "prewritten", false, $"{biota.WeenieClassId}\n\nSorry but the database does not have a weenie for weenieClassId #{biota.WeenieClassId} so in lieu of that here is an IOU for that item.");
-            iou.Bonded = (int)BondedStatus.Bonded;
-            iou.Attuned = (int)AttunedStatus.Attuned;
+            iou.Bonded = BondedStatus.Bonded;
+            iou.Attuned = AttunedStatus.Attuned;
             iou.SetProperty(PropertyBool.IsSellable, false);
             iou.Value = 0;
             iou.EncumbranceVal = 0;
