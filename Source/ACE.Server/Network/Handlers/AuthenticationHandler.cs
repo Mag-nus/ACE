@@ -222,7 +222,7 @@ namespace ACE.Server.Network.Handlers
                     // If you want to create default characters for accounts that have none, here is where you would do it.
                     if (result.Count == 0)
                     {
-                        Weenie weenie;
+                        ACE.Entity.Models.Weenie weenie;
                         if (ConfigManager.Config.Server.Accounts.OverrideCharacterPermissions)
                         {
                             if (session.AccessLevel >= AccessLevel.Developer && session.AccessLevel <= AccessLevel.Admin)
