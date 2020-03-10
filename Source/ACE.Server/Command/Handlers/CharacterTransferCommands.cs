@@ -355,27 +355,36 @@ namespace ACE.Server.Command.Handlers
 
                 {
                     var property = retailBiota.BiotaPropertiesAttribute2nd.FirstOrDefault(r => r.Type == (ushort)PropertyAttribute2nd.Health);
-                    var vital = player.GetCreatureVital(PropertyAttribute2nd.Health);
-                    vital.StartingValue = property.InitLevel;
-                    vital.Ranks = property.LevelFromCP;
-                    vital.ExperienceSpent = property.CPSpent;
-                    vital.Current = property.CurrentLevel;
+                    if (property != null)
+                    {
+                        var vital = player.GetCreatureVital(PropertyAttribute2nd.Health);
+                        vital.StartingValue = property.InitLevel;
+                        vital.Ranks = property.LevelFromCP;
+                        vital.ExperienceSpent = property.CPSpent;
+                        vital.Current = property.CurrentLevel;
+                    }
                 }
                 {
                     var property = retailBiota.BiotaPropertiesAttribute2nd.FirstOrDefault(r => r.Type == (ushort)PropertyAttribute2nd.Stamina);
-                    var vital = player.GetCreatureVital(PropertyAttribute2nd.Stamina);
-                    vital.StartingValue = property.InitLevel;
-                    vital.Ranks = property.LevelFromCP;
-                    vital.ExperienceSpent = property.CPSpent;
-                    vital.Current = property.CurrentLevel;
+                    if (property != null)
+                    {
+                        var vital = player.GetCreatureVital(PropertyAttribute2nd.Stamina);
+                        vital.StartingValue = property.InitLevel;
+                        vital.Ranks = property.LevelFromCP;
+                        vital.ExperienceSpent = property.CPSpent;
+                        vital.Current = property.CurrentLevel;
+                    }
                 }
                 {
                     var property = retailBiota.BiotaPropertiesAttribute2nd.FirstOrDefault(r => r.Type == (ushort)PropertyAttribute2nd.Mana);
-                    var vital = player.GetCreatureVital(PropertyAttribute2nd.Mana);
-                    vital.StartingValue = property.InitLevel;
-                    vital.Ranks = property.LevelFromCP;
-                    vital.ExperienceSpent = property.CPSpent;
-                    vital.Current = property.CurrentLevel;
+                    if (property != null)
+                    {
+                        var vital = player.GetCreatureVital(PropertyAttribute2nd.Mana);
+                        vital.StartingValue = property.InitLevel;
+                        vital.Ranks = property.LevelFromCP;
+                        vital.ExperienceSpent = property.CPSpent;
+                        vital.Current = property.CurrentLevel;
+                    }
                 }
 
                 foreach (var property in retailBiota.BiotaPropertiesSkill)
