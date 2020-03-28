@@ -256,12 +256,5 @@ namespace ACE.Database
 
             return List[index];
         }
-
-        public static string GetRandomWithNumbers(int maxValue)
-        {
-            var numbers = rand.Next(maxValue);
-
-            return $"{GetRandom()} {numbers}";
-        }
     }
 }

@@ -852,22 +852,50 @@ namespace ACE.Database
             return true;
         }
 
+        private static string ToRoman(int number)
+        {
+            if ((number < 0) || (number > 3999)) throw new ArgumentOutOfRangeException("insert value betwheen 1 and 3999");
+            if (number < 1) return string.Empty;
+            if (number >= 1000) return "M" + ToRoman(number - 1000);
+            if (number >= 900) return "CM" + ToRoman(number - 900);
+            if (number >= 500) return "D" + ToRoman(number - 500);
+            if (number >= 400) return "CD" + ToRoman(number - 400);
+            if (number >= 100) return "C" + ToRoman(number - 100);
+            if (number >= 90) return "XC" + ToRoman(number - 90);
+            if (number >= 50) return "L" + ToRoman(number - 50);
+            if (number >= 40) return "XL" + ToRoman(number - 40);
+            if (number >= 10) return "X" + ToRoman(number - 10);
+            if (number >= 9) return "IX" + ToRoman(number - 9);
+            if (number >= 5) return "V" + ToRoman(number - 5);
+            if (number >= 4) return "IV" + ToRoman(number - 4);
+            if (number >= 1) return "I" + ToRoman(number - 1);
+            throw new ArgumentOutOfRangeException("something bad happened");
+        }
+
         public List<bool> AddStarterCharactersInParallel(List<(Biota biota, ReaderWriterLockSlim biotaLock, IEnumerable<(Biota biota, ReaderWriterLockSlim rwLock)> possessions, Character character, ReaderWriterLockSlim characterLock)> characters)
         {
             var results = new List<bool>();
 
-            var namePrefix = CharacterNames.GetRandomWithNumbers(100);
+            var randomName = CharacterNames.GetRandom();
+
+            retry:
+            var number = 1;
+            var roman = ToRoman(number);
 
             foreach (var character in characters)
             {
-                var name = $"{namePrefix} {character.character.Name}";
+                var name = $"{randomName} {roman} {character.character.Name}";
 
                 if (!IsCharacterNameAvailable(name))
                 {
-                    // todo generate a new name instead of failing
-                    results.Add(false);
-                    continue;
+                    number++;
+                    goto retry;
                 }
+            }
+
+            foreach (var character in characters)
+            {
+                var name = $"{randomName} {roman} {character.character.Name}";
 
                 character.biota.SetProperty(PropertyString.Name, name, character.biotaLock, out _);
                 character.character.Name = name;
