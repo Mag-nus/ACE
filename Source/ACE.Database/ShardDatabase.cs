@@ -878,8 +878,8 @@ namespace ACE.Database
 
             var randomName = CharacterNames.GetRandom();
 
-            retry:
             var number = 1;
+            retry:
             var roman = ToRoman(number);
 
             foreach (var character in characters)
