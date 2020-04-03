@@ -59,7 +59,7 @@ namespace ACE.Server.Command.Handlers
         {
            var matches = new List<(uint ClothingBase, int PaletteTemplate)>();
 
-            CurrentSetup = biota.GetProperty(PropertyDataId.Setup, new System.Threading.ReaderWriterLockSlim()) ?? 0;
+            CurrentSetup = biota.GetProperty(PropertyDataId.Setup) ?? 0;
             uint setup = CurrentSetup;
             //ObjDesc objdesc = wo.ObjD
 

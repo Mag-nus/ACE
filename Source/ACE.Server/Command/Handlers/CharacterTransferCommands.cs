@@ -23,6 +23,8 @@ using ACE.Server.Network;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
 
+using Biota = ACE.Database.Models.Shard.Biota;
+
 namespace ACE.Server.Command.Handlers
 {
     public static class CharacterTransferCommands
@@ -92,7 +94,11 @@ namespace ACE.Server.Command.Handlers
         private static Biota GetBiota(Server server, uint id)
         {
             using (var context = GetShardDbContext(server))
-                return ShardDatabase.GetBiota(context, id);
+            {
+                var shardDatabase = new ShardDatabase();
+
+                return shardDatabase.GetBiota(context, id);
+            }
         }
 
         private static Biota GetBiota(Server server, string name)
@@ -104,7 +110,9 @@ namespace ACE.Server.Command.Handlers
                 if (result == null)
                     return null;
 
-                return ShardDatabase.GetBiota(context, result.ObjectId);
+                var shardDatabase = new ShardDatabase();
+
+                return shardDatabase.GetBiota(context, result.ObjectId);
             }
         }
 
@@ -131,7 +139,9 @@ namespace ACE.Server.Command.Handlers
                 {
                     using (var context2 = GetShardDbContext(server))
                     {
-                        var biota = ShardDatabase.GetBiota(context2, result.ObjectId);
+                        var shardDatabase = new ShardDatabase();
+
+                        var biota = shardDatabase.GetBiota(context2, result.ObjectId);
 
                         if (biota != null)
                         {
@@ -166,7 +176,9 @@ namespace ACE.Server.Command.Handlers
                 {
                     using (var context2 = GetShardDbContext(server))
                     {
-                        var biota = ShardDatabase.GetBiota(context2, result.ObjectId);
+                        var shardDatabase = new ShardDatabase();
+
+                        var biota = shardDatabase.GetBiota(context2, result.ObjectId);
 
                         if (biota != null)
                             wieldedItems.Add(biota);
@@ -414,7 +426,7 @@ namespace ACE.Server.Command.Handlers
 
                 session.Network.EnqueueSend(new GameMessageSystemChat("Pulling retail possessions...", ChatMessageType.Broadcast));
 
-                var possessedBiotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
+                var possessedBiotas = new Collection<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)>();
 
                 var possessions = GetPossessedBiotasInParallel(server, retailBiota.Id);
 
@@ -453,7 +465,7 @@ namespace ACE.Server.Command.Handlers
 
                     guidConversions[possession.Id] = wo.Guid.Full;
 
-                    var containerId = possession.GetProperty(PropertyInstanceId.Container, new ReaderWriterLockSlim()) ?? 0;
+                    var containerId = possession.GetProperty(PropertyInstanceId.Container) ?? 0;
 
                     if (guidConversions.TryGetValue(containerId, out var value))
                     {
@@ -482,7 +494,7 @@ namespace ACE.Server.Command.Handlers
                     else
                     {
                         // We don't wield selectable items (weapons, orbs, etc..), it bugs the player
-                        var wieldLocation = possession.GetProperty(PropertyInt.CurrentWieldedLocation, new ReaderWriterLockSlim()) ?? 0;
+                        var wieldLocation = possession.GetProperty(PropertyInt.CurrentWieldedLocation) ?? 0;
                         if (wieldLocation == 0 || (wieldLocation & (int)EquipMask.Selectable) != 0 || !player.TryEquipObject(wo, (EquipMask)wieldLocation))
                             player.TryAddToInventory(wo);
                     }
@@ -592,7 +604,7 @@ namespace ACE.Server.Command.Handlers
 
                 if (altWeenieClassName == null)
                 {
-                    var validLocations = biota.GetProperty(PropertyInt.ValidLocations, new ReaderWriterLockSlim());
+                    var validLocations = biota.GetProperty(PropertyInt.ValidLocations);
 
                     if (validLocations == (int)EquipMask.NeckWear)              altWeenieClassName = "necklace";
                     else if (validLocations == (int)EquipMask.TrinketOne)       altWeenieClassName = "ace41513-pathwardentrinket";
@@ -614,7 +626,7 @@ namespace ACE.Server.Command.Handlers
                 if (altWeenieClassName == null)
                 {
                     // https://asheron.fandom.com/wiki/Currency
-                    var name = biota.GetProperty(PropertyString.Name, new ReaderWriterLockSlim());
+                    var name = biota.GetProperty(PropertyString.Name);
 
                     if (name == "Ancient Mhoire Coin")          altWeenieClassName = "coinstack";
                     else if (name == "A'nekshay Token")         altWeenieClassName = "coinstack";
@@ -681,11 +693,10 @@ namespace ACE.Server.Command.Handlers
             foreach (var property in biota.BiotaPropertiesIID)
                 wo.SetProperty((PropertyInstanceId)property.Type, property.Value);
 
+            if (wo.Biota.PropertiesSpellBook == null)
+                wo.Biota.PropertiesSpellBook = new Dictionary<int, float>();
             foreach (var property in biota.BiotaPropertiesSpellBook)
-            {
-                var result = wo.Biota.GetOrAddKnownSpell(property.Spell, wo.BiotaDatabaseLock, out _);
-                result.Probability = property.Probability;
-            }
+                wo.Biota.PropertiesSpellBook[property.Spell] = property.Probability;
 
             // Remove the enchantments effects from the item. We will not re-add any enchantments to the item
             foreach (var enchantment in biota.BiotaPropertiesEnchantmentRegistry)
@@ -752,7 +763,7 @@ namespace ACE.Server.Command.Handlers
             // Try to determine the correct ClothingBase and PaletteTemplate from PCap data using OptimShi's ClothingBaseLookup
             if (wo.ClothingBase != null && wo.PaletteTemplate != null)
             {
-                var validLocations = biota.GetProperty(PropertyInt.ValidLocations, new ReaderWriterLockSlim()) ?? 0;
+                var validLocations = biota.GetProperty(PropertyInt.ValidLocations) ?? 0;
 
                 if (((EquipMask)validLocations & EquipMask.Clothing) != 0 || ((EquipMask)validLocations & EquipMask.Armor) != 0)
                 {
@@ -833,7 +844,7 @@ namespace ACE.Server.Command.Handlers
             var iou = (Book)WorldObjectFactory.CreateNewWorldObject("parchment");
 
             iou.SetProperties("IOU", "An IOU for a missing database object.", $"Sorry about that chief... but I couldn't import your {biota.Id:X8}:{biota.GetProperty(PropertyString.Name)}", "ACEmulator", "prewritten");
-            iou.AddPage(uint.MaxValue, "ACEmulator", "prewritten", false, $"{biota.WeenieClassId}\n\nSorry but the database does not have a weenie for weenieClassId #{biota.WeenieClassId} so in lieu of that here is an IOU for that item.");
+            iou.AddPage(uint.MaxValue, "ACEmulator", "prewritten", false, $"{biota.WeenieClassId}\n\nSorry but the database does not have a weenie for weenieClassId #{biota.WeenieClassId} so in lieu of that here is an IOU for that item.", out _);
             iou.Bonded = BondedStatus.Bonded;
             iou.Attuned = AttunedStatus.Attuned;
             iou.SetProperty(PropertyBool.IsSellable, false);
