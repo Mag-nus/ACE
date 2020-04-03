@@ -11,8 +11,8 @@ using ACE.Common;
 using ACE.Database;
 using ACE.Database.Models.Auth;
 using ACE.Database.Models.Shard;
-using ACE.Database.Models.World;
 using ACE.Entity.Enum;
+using ACE.Entity.Models;
 using ACE.Server.Entity;
 using ACE.Server.Factories;
 using ACE.Server.Managers;
@@ -21,6 +21,8 @@ using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.Managers;
 using ACE.Server.Network.Packets;
 using ACE.Server.WorldObjects;
+
+using Biota = ACE.Entity.Models.Biota;
 
 namespace ACE.Server.Network.Handlers
 {

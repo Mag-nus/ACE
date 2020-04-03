@@ -734,7 +734,7 @@ namespace ACE.Database
             throw new ArgumentOutOfRangeException("something bad happened");
         }
 
-        public List<bool> AddStarterCharactersInParallel(List<(Biota biota, ReaderWriterLockSlim biotaLock, IEnumerable<(Biota biota, ReaderWriterLockSlim rwLock)> possessions, Character character, ReaderWriterLockSlim characterLock)> characters)
+        public List<bool> AddStarterCharactersInParallel(List<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim biotaLock, IEnumerable<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)> possessions, Character character, ReaderWriterLockSlim characterLock)> characters)
         {
             var results = new List<bool>();
 
@@ -759,7 +759,7 @@ namespace ACE.Database
             {
                 var name = $"{randomName} {roman} {character.character.Name}";
 
-                character.biota.SetProperty(PropertyString.Name, name, character.biotaLock, out _);
+                character.biota.PropertiesString[PropertyString.Name] = name;
                 character.character.Name = name;
 
                 if (!AddCharacterInParallel(character.biota, character.biotaLock, character.possessions, character.character, character.characterLock))
