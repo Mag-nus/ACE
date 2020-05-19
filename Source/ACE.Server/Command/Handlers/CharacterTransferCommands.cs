@@ -685,7 +685,13 @@ namespace ACE.Server.Command.Handlers
             foreach (var property in biota.BiotaPropertiesBool)
                 wo.SetProperty((PropertyBool)property.Type, property.Value);
             foreach (var property in biota.BiotaPropertiesFloat)
+            {
+                // Some float properties were sent over the wire as 1, instead of the actual server value
+                if ((PropertyFloat)property.Type == PropertyFloat.CriticalFrequency && property.Value == 1)
+                    continue;
+
                 wo.SetProperty((PropertyFloat)property.Type, property.Value);
+            }
             foreach (var property in biota.BiotaPropertiesString)
                 wo.SetProperty((PropertyString)property.Type, property.Value);
             foreach (var property in biota.BiotaPropertiesDID)
