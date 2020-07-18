@@ -50,7 +50,7 @@ namespace ACE.Server.Factories
             wo.GemCount = ThreadSafeRandom.Next(1, 5);
             wo.GemType = (MaterialType)ThreadSafeRandom.Next(10, 50);
             wo.LongDesc = wo.Name;
-            wo.AppraisalLongDescDecoration = AppraisalLongDescDecorations.PrependWorkmanship | AppraisalLongDescDecorations.AppendGemInfo;
+            //wo.AppraisalLongDescDecoration = AppraisalLongDescDecorations.PrependWorkmanship | AppraisalLongDescDecorations.AppendGemInfo;
 
             // Burden
             MutateBurden(wo, profile.Tier, true);
@@ -58,7 +58,7 @@ namespace ACE.Server.Factories
             // MeleeD/MagicD/Missile Bonus
             wo.WeaponMagicDefense = GetMagicMissileDMod(profile.Tier);
             wo.WeaponMissileDefense = GetMagicMissileDMod(profile.Tier);
-            double meleeDMod = GetWieldReqMeleeDMod(wieldDifficulty);
+            double meleeDMod = GetWieldReqMeleeDMod(wieldDifficulty, profile);
             if (meleeDMod > 0.0f)
                 wo.WeaponDefense = meleeDMod;
 
