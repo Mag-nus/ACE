@@ -771,7 +771,7 @@ namespace ACE.Server.Command.Handlers
             {
                 var validLocations = biota.GetProperty(PropertyInt.ValidLocations) ?? 0;
 
-                if (((EquipMask)validLocations & EquipMask.Clothing) != 0 || ((EquipMask)validLocations & EquipMask.Armor) != 0)
+                if (((EquipMask)validLocations & EquipMask.Clothing) != 0 || ((EquipMask)validLocations & EquipMask.Armor) != 0 || wo is Container)
                 {
                     var results = clothingBaseLookup.DoSearch(biota);
 
