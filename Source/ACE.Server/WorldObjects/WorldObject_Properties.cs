@@ -1905,6 +1905,12 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyFloat.BulkMod); else SetProperty(PropertyFloat.BulkMod, value.Value); }
         }
 
+        public double? SizeMod
+        {
+            get => GetProperty(PropertyFloat.SizeMod);
+            set { if (!value.HasValue) RemoveProperty(PropertyFloat.SizeMod); else SetProperty(PropertyFloat.SizeMod, value.Value); }
+        }
+
         public uint? PaletteBaseId
         {
             get => GetProperty(PropertyDataId.PaletteBase);
@@ -1965,10 +1971,10 @@ namespace ACE.Server.WorldObjects
             set { if (!value.HasValue) RemoveProperty(PropertyInt.AppraisalItemSkill); else SetProperty(PropertyInt.AppraisalItemSkill, value.Value); }
         }
 
-        public uint? ItemSkillLimit
+        public Skill? ItemSkillLimit
         {
-            get => GetProperty(PropertyDataId.ItemSkillLimit);
-            set { if (!value.HasValue) RemoveProperty(PropertyDataId.ItemSkillLimit); else SetProperty(PropertyDataId.ItemSkillLimit, value.Value); }
+            get => (Skill?)GetProperty(PropertyDataId.ItemSkillLimit);
+            set { if (!value.HasValue) RemoveProperty(PropertyDataId.ItemSkillLimit); else SetProperty(PropertyDataId.ItemSkillLimit, (uint)value); }
         }
 
         public int? ItemSkillLevelLimit
@@ -2186,6 +2192,16 @@ namespace ACE.Server.WorldObjects
             get => GetProperty(PropertyInt.TsysMutationData);
             set { if (!value.HasValue) RemoveProperty(PropertyInt.TsysMutationData); else SetProperty(PropertyInt.TsysMutationData, value.Value); }
         }
+
+        // helpers
+        public byte? MaterialCode => (byte?)TsysMutationData;
+
+        public byte? GemCode => (byte?)(TsysMutationData >> 8);
+
+        public byte? ColorCode => (byte?)(TsysMutationData >> 16);
+
+        public byte? SpellSelectionCode => (byte?)(TsysMutationData >> 24);
+
 
         /// <summary>
         /// If TRUE, this is an admin-only visible object, only seen with /adminvision
@@ -3003,6 +3019,24 @@ namespace ACE.Server.WorldObjects
         {
             get => GetProperty(PropertyInt.GearCritResist);
             set { if (!value.HasValue) RemoveProperty(PropertyInt.GearCritResist); else SetProperty(PropertyInt.GearCritResist, value.Value); }
+        }
+
+        /// <summary>
+        /// The Healing Boost Rating on a non-creature item
+        /// </summary>
+        public int? GearHealingBoost
+        {
+            get => GetProperty(PropertyInt.GearHealingBoost);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.GearHealingBoost); else SetProperty(PropertyInt.GearHealingBoost, value.Value); }
+        }
+
+        /// <summary>
+        /// The MaxHealth Boost Rating on a creature or item
+        /// </summary>
+        public int? GearMaxHealth
+        {
+            get => GetProperty(PropertyInt.GearMaxHealth);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.GearMaxHealth); else SetProperty(PropertyInt.GearMaxHealth, value.Value); }
         }
 
         public int? ResistItemAppraisal
