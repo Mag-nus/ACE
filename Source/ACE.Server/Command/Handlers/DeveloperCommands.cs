@@ -1443,43 +1443,16 @@ namespace ACE.Server.Command.Handlers
         public static void ToggleMovementDebug(Session session, params string[] parameters)
         {
             // get the last appraised object
-            var targetID = session.Player.CurrentAppraisalTarget;
-            if (targetID == null)
-            {
-                ChatPacket.SendServerMessage(session, "ERROR: no appraisal target", ChatMessageType.System);
-                return;
-            }
-            var targetGuid = new ObjectGuid(targetID.Value);
-            var target = session.Player.CurrentLandblock?.GetObject(targetGuid);
-            if (target == null)
-            {
-                ChatPacket.SendServerMessage(session, "Couldn't find " + targetGuid, ChatMessageType.System);
-                return;
-            }
-            var creature = target as Creature;
+            var creature = CommandHandlerHelper.GetLastAppraisedObject(session) as Creature;
+
             if (creature == null)
-            {
-                ChatPacket.SendServerMessage(session, target.Name + " is not a creature / monster", ChatMessageType.System);
                 return;
-            }
 
             bool enabled = true;
             if (parameters.Length > 0 && parameters[0].Equals("off"))
                 enabled = false;
 
             creature.DebugMove = enabled;
-        }
-
-        [CommandHandler("forcepos", AccessLevel.Developer, CommandHandlerFlag.None, 0, "Toggles server monster position", "forcepos <on/off>")]
-        public static void ToggleForcePos(Session session, params string[] parameters)
-        {
-            bool enabled = true;
-            if (parameters.Length > 0 && parameters[0].Equals("off"))
-                enabled = false;
-
-            CommandHandlerHelper.WriteOutputInfo(session, "Setting forcepos to " + enabled);
-
-            Creature.ForcePos = enabled;
         }
 
         [CommandHandler("lostest", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Tests for direct visibilty with latest appraised object")]
@@ -3401,6 +3374,32 @@ namespace ACE.Server.Command.Handlers
             monster.CastSpell(spell);
 
             monster.AttackTarget = prevAttackTarget;
+        }
+
+        [CommandHandler("trywield", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 2)]
+        public static void HandleTryWield(Session session, params string[] parameters)
+        {
+            if (!uint.TryParse(parameters[0], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var itemGuid))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Invalid item guid {parameters[0]}", ChatMessageType.Broadcast);
+                return;
+            }
+
+            var item = session.Player.FindObject(itemGuid, Player.SearchLocations.MyInventory);
+
+            if (item == null)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Couldn't find item guid {parameters[0]}", ChatMessageType.Broadcast);
+                return;
+            }
+
+            if (!Enum.TryParse(parameters[1], out EquipMask equipMask))
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Invalid EquipMask {parameters[1]}", ChatMessageType.Broadcast);
+                return;
+            }
+
+            session.Player.HandleActionGetAndWieldItem(itemGuid, equipMask);
         }
     }
 }
