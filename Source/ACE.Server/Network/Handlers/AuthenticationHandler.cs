@@ -271,6 +271,22 @@ namespace ACE.Server.Network.Handlers
 
                         {
                             var guid = GuidManager.NewPlayerGuid();
+                            var player = PlayerFactoryEx.Create275TwoHander(weenie, guid, session.AccountId, "Two Hander");
+
+                            //player.Invincible = true;
+                            //player.Character.TotalLogins = 1; // Prevent first login instruction popup
+
+                            var possessions = player.GetAllPossessions();
+                            var possessedBiotas = new Collection<(Biota biota, ReaderWriterLockSlim rwLock)>();
+                            foreach (var possession in possessions)
+                                possessedBiotas.Add((possession.Biota, possession.BiotaDatabaseLock));
+
+                            characters.Add((player.Biota, player.BiotaDatabaseLock, possessedBiotas, player.Character, player.CharacterDatabaseLock));
+                            players.Add(player);
+                        }
+
+                        {
+                            var guid = GuidManager.NewPlayerGuid();
                             var player = PlayerFactoryEx.Create275MissileWeapons(weenie, guid, session.AccountId, "Missile");
 
                             //player.Invincible = true;

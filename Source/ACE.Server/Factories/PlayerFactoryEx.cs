@@ -473,6 +473,61 @@ namespace ACE.Server.Factories
         }
 
         /// <summary>
+        /// Creates a fully leveled 275 Heavy Weapons character player
+        /// No augmentations are included
+        /// </summary>
+        public static Player Create275TwoHander(Weenie weenie, ObjectGuid guid, uint accountId, string name)
+        {
+            var characterCreateInfo = CreateCharacterCreateInfo(name, 100, 10, 100, 100, 10, 10);
+
+            var player = Create275Base(characterCreateInfo, weenie, guid, accountId);
+
+            // Trained skills
+            player.TrainSkill(Skill.TwoHandedCombat, 8);
+            player.TrainSkill(Skill.Healing, 6);
+            player.TrainSkill(Skill.MeleeDefense, 10);
+            player.TrainSkill(Skill.MissileDefense, 6);
+
+            // Specialized skills
+            player.SpecializeSkill(Skill.TwoHandedCombat, 8);
+            player.SpecializeSkill(Skill.Healing, 4);
+            player.SpecializeSkill(Skill.MagicDefense, 12);
+            player.SpecializeSkill(Skill.MeleeDefense, 10);
+
+            // 0 remaining skill points.
+            // If/When we add the 4 skill points in LevelUpPlayer, we can spend them here as well
+
+            LoadSkillSpecificDefaultSpellBar(player);
+
+            // todo aug endurance
+
+            SpendAllXp(player);
+
+            AddCommonInventory(player);
+
+            AddWeeniesToInventory(player, RelicAlduressa);
+
+            // Treated Healing Kits
+            AddWeeniesToInventory(player, new List<uint> { 9229, 9229, 9229, 9229, 9229, 9229 });
+
+            // Create a dummy treasure profile for passing in tier value
+            var profile = new Database.Models.World.TreasureDeath
+            {
+                Tier = 7,
+                LootQualityMod = 0
+            };
+
+            for (int i = 0; i < 12; i++)
+            {
+                var item = LootGenerationFactory.CreateMeleeWeapon(profile, true, MeleeWeaponSkill.TwoHandedCombat);
+                AddRend(item);
+                player.TryAddToInventory(item);
+            }
+
+            return player;
+        }
+
+        /// <summary>
         /// Creates a fully leveled 275 Missile Weapons character player
         /// No augmentations are included
         /// </summary>
