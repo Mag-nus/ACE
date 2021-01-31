@@ -116,6 +116,14 @@ namespace ACE.Server.Command.Handlers
                     // 4319,"Incantation of Quickness Self"
                     AddWeeniesToInventory(session.Player, new List<uint> { 30529 }, null, UpgradeOptions.All, null, new List<int> { 4616 , 4319 });
 
+                    // necklaceraregoldensnake
+                    // Add:
+                    // "Incantation of Creature Enchantment Mastery Self"
+                    // "Legendary Creature Enchantment Aptitude"
+                    // "Incantation of Life Magic Mastery Self"
+                    // "Legendary Life Magic Aptitude"
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30357 }, null, UpgradeOptions.All, null, new List<int> { 4530, 6046, 4582, 6060 });
+
                     // braceletrareelementalharmony
                     // Add:
                     // 6085,"Legendary Slashing Ward"
@@ -130,13 +138,23 @@ namespace ACE.Server.Command.Handlers
                     // 4472,"Incantation of Piercing Protection Self"
                     AddWeeniesToInventory(session.Player, new List<uint> { 30354 }, null, UpgradeOptions.All, null, new List<int> { 6085, 6084, 6081, 4460, 4462, 4464, 4466, 4468, 4470, 4472 });
 
-                    // necklaceraregoldensnake
-                    // Add:
-                    // "Incantation of Creature Enchantment Mastery Self"
-                    // "Legendary Creature Enchantment Aptitude"
-                    // "Incantation of Life Magic Mastery Self"
-                    // "Legendary Life Magic Aptitude"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30357 }, null, UpgradeOptions.All, null, new List<int> { 4530, 6046, 4582, 6060 });
+                    // braceletraredreamseerbangle
+                    // 2666,"Essence Glutton"
+                    // 2006,"Warrior's Ultimate Vitality"
+                    // 4071,"Empyrean Stamina Absorbtion"
+                    // 2010,"Warrior's Ultimate Vigor"
+                    // 4070,"Empyrean Mana Absorbtion"
+                    // 2014,"Wizard's Ultimate Intellect"
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30353 }, null, UpgradeOptions.All, new List<int> { int.MaxValue }, new List<int> { 2666, 2006, 4071, 2010, 4070, 2014 });
+
+                    // ringrareweeping = 30364,
+                    // 6329,"Gauntlet Critical Damage Boost II"
+                    // 6331,"Gauntlet Damage Boost II"
+                    // 6333,"Gauntlet Damage Reduction II"
+                    // 6335,"Gauntlet Critical Damage Reduction II"
+                    // 6337,"Gauntlet Healing Boost II"
+                    // 6340,"Gauntlet Vitality III"
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30364 }, null, UpgradeOptions.All, new List<int> { int.MaxValue }, new List<int> { 6329, 6331, 6333, 6335, 6337, 6340 });
 
                     // Infinite mana stone
                     AddWeeniesToInventory(session.Player, new List<uint> { 30254 }, null, UpgradeOptions.All);
