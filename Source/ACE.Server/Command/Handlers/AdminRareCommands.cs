@@ -48,24 +48,87 @@ namespace ACE.Server.Command.Handlers
                     AddWeeniesToInventory(session.Player, new List<uint> { 30310, 30314, 30315, 30320, 30324, 30328, 30329, 30333, 30338, 30342, 30343 }, null, UpgradeOptions.All);
                     break;
                 case "2h":
-                    AddWeeniesToInventory(session.Player, new List<uint> { 42662, 42663, 42664, 42665, 42666 }, null, UpgradeOptions.All);
+                    // Add
+                    // 4395,"Aura of Incantation of Blood Drinker Self"
+                    // 4400,"Aura of Incantation of Defender Self"
+                    // 4405,"Aura of Incantation of Heart Seeker Self"
+                    // 4417,"Aura of Incantation of Swift Killer Self"
+                    // 6089,"Legendary Blood Thirst"
+                    // 6091,"Legendary Defender"
+                    // 6094,"Legendary Heart Thirst"
+                    // 6100,"Legendary Swift Hunter"
+                    // 5032,"Incantation of Two Handed Combat Mastery Self"
+                    // 6073,"Legendary Two Handed Combat Aptitude"
+                    // 2966,"Aura of Murderous Thirst"
+                    AddWeeniesToInventory(session.Player, new List<uint> { 42662, 42663, 42664, 42665, 42666 }, null, UpgradeOptions.All, new List<int> { int.MaxValue }, new List<int> { 4395, 4400, 4405, 4417, 6089, 6091, 6094, 6100, 5032, 6073, 2966 });
                     break;
                 case "wand":
-                    AddWeeniesToInventory(session.Player, new List<uint> {30374, 30375, 30376, 30377, 30378, 43848}, null, UpgradeOptions.All);
+                    // 5182,"Aura of Incantation of Spirit Drinker"
+                    // 4418,"Aura of Incantation of Hermetic Link Self"
+                    // 4400,"Aura of Incantation of Defender Self"
+                    // 6098,"Legendary Spirit Thirst"
+                    // 6087,"Legendary Hermetic Link"
+                    // 6091,"Legendary Defender"
+                    // 6075,"Legendary War Magic Aptitude"
+                    // 4638,"Incantation of War Magic Mastery Self"
+                    // 6074,"Legendary Void Magic Aptitude"
+                    // 5418,"Incantation of Void Magic Mastery Self"
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30374, 30375, 30376, 30377, 30378, 43848 }, null, UpgradeOptions.All, new List<int> { int.MaxValue }, new List<int> { 5182, 4418, 4400, 6098, 6087, 6091, 6075, 4638, 6074, 5418 });
                     break;
                 case "shield":
-                    AddWeeniesToInventory(session.Player, new List<uint> {30370, 30371, 30372, 30373}, null, UpgradeOptions.All);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30370, 30371, 30372, 30373 }, null, UpgradeOptions.All);
                     break;
                 case "mag":
                     // Gelidite
-                    AddWeeniesToInventory(session.Player, new List<uint> {30511, 30514, 30515, 30517, 30519, 30522, 30524, 30526, 30529}, null, UpgradeOptions.All);
+                    // 4602,"Incantation of Mana Conversion Mastery Self"
+                    // 4305,"Incantation of Focus Self"
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30511 }, null, UpgradeOptions.All, null, new List<int> { 4602, 4305 });
+                    // Gelidite
+                    // 4498,"Incantation of Rejuvenation Self"
+                    // 4560,"Incantation of Invulnerability Self"
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30514 }, null, UpgradeOptions.All, null, new List<int> { 4498 , 4560 });
+                    // Gelidite
+                    // 4329,"Incantation of Willpower Self"
+                    // 4494,"Incantation of Mana Renewal Self"
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30515 }, null, UpgradeOptions.All, null, new List<int> { 4329 , 4494 });
+                    // Gelidite
+                    // 4596,"Incantation of Magic Resistance Self"
+                    // 4090,"Scarab's Shell"
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30517 }, null, UpgradeOptions.All, null, new List<int> { 4596 , 4090 });
+                    // Gelidite
+                    // 4299,"Incantation of Endurance Self"
+                    // 4558,"Incantation of Impregnability Self"
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30519 }, null, UpgradeOptions.All, null, new List<int> { 4299 , 4558 });
+                    // Gelidite
+                    // 4510,"Incantation of Arcane Enlightenment Self"
+                    // 4496,"Incantation of Regeneration Self"
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30522 }, null, UpgradeOptions.All, null, new List<int> { 4510 , 4496 });
+                    // Gelidite
+                    // 4548,"Incantation of Fealty Self"
+                    // 4325,"Incantation of Strength Self"
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30524 }, null, UpgradeOptions.All, null, new List<int> { 4548, 4325 });
+                    // Gelidite
+                    // 4556,"Incantation of Healing Mastery Self"
+                    // 4297,"Incantation of Coordination Self"
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30526 }, null, UpgradeOptions.All, null, new List<int> { 4556 , 4297 });
+                    // Gelidite
+                    // 4616,"Incantation of Sprint Self"
+                    // 4319,"Incantation of Quickness Self"
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30529 }, null, UpgradeOptions.All, null, new List<int> { 4616 , 4319 });
 
                     // braceletrareelementalharmony
                     // Add:
-                    // "Legendary Slashing Ward"
-                    // "Legendary Piercing Ward"
-                    // "Legendary Bludgeoning Ward"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30354 }, null, UpgradeOptions.All, null, new List<int> { 6085, 6084, 6081 });
+                    // 6085,"Legendary Slashing Ward"
+                    // 6084,"Legendary Piercing Ward"
+                    // 6081,"Legendary Bludgeoning Ward"
+                    // 4460,"Incantation of Acid Protection Self"
+                    // 4462,"Incantation of Blade Protection Self"
+                    // 4464,"Incantation of Bludgeoning Protection Self"
+                    // 4466,"Incantation of Cold Protection Self"
+                    // 4468,"Incantation of Fire Protection Self"
+                    // 4470,"Incantation of Lightning Protection Self"
+                    // 4472,"Incantation of Piercing Protection Self"
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30354 }, null, UpgradeOptions.All, null, new List<int> { 6085, 6084, 6081, 4460, 4462, 4464, 4466, 4468, 4470, 4472 });
 
                     // necklaceraregoldensnake
                     // Add:
@@ -78,6 +141,12 @@ namespace ACE.Server.Command.Handlers
                     // Infinite mana stone
                     AddWeeniesToInventory(session.Player, new List<uint> { 30254 }, null, UpgradeOptions.All);
 
+                    // Medicated Kits
+                    // healingkitrarevolatilehealth = 30250,
+                    // healingkitrarevolatilemana = 30251,
+                    // healingkitrarevolatilestamina = 30252,
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30250, 30251, 30252 }, null, UpgradeOptions.All);
+
                     break;
             }
         }
@@ -85,16 +154,18 @@ namespace ACE.Server.Command.Handlers
         [Flags]
         enum UpgradeOptions
         {
-            None                = 0x0000,
-            Spells              = 0x0001,
-            Bonded              = 0x0002,
-            DoubleMaxMana       = 0x0004,
-            HalveManaRate       = 0x0008,
+            None                    = 0x0000,
+            Spells                  = 0x0001,
+            Bonded                  = 0x0002,
+            DoubleMaxMana           = 0x0004,
+            HalveManaRate           = 0x0008,
 
-            All                 = 0xFFFF,
+            MakeKitsUnlimitedUse    = 0x0010,
+
+            All                     = 0xFFFF,
         }
 
-        private static void AddWeeniesToInventory(Player player, IEnumerable<uint> weenieIds, ushort? stackSize = null, UpgradeOptions upgradeOptions = UpgradeOptions.None, IEnumerable<int> spellsToRemove = null, IEnumerable<int> spellsToAdd = null)
+        private static void AddWeeniesToInventory(Player player, IEnumerable<uint> weenieIds, ushort? stackSize = null, UpgradeOptions upgradeOptions = UpgradeOptions.None, IList<int> spellsToRemove = null, IList<int> spellsToAdd = null)
         {
             foreach (uint weenieId in weenieIds)
             {
@@ -110,8 +181,31 @@ namespace ACE.Server.Command.Handlers
                     loot.SetStackSize(stackSize);
 
 
+                if (spellsToRemove != null) // Remove spells before upgrade
+                {
+                    if (spellsToRemove.Count == 1 && spellsToRemove[0] == int.MaxValue) // remove all spells
+                        loot.Biota.ClearSpells(loot.BiotaDatabaseLock);
+                    else
+                    {
+                        foreach (var spell in spellsToRemove)
+                            loot.Biota.TryRemoveKnownSpell(spell, loot.BiotaDatabaseLock);
+                    }
+                }
+
                 if (upgradeOptions.HasFlag(UpgradeOptions.Spells))
                     UpgradeItemSpells(loot);
+
+                if (spellsToRemove != null) // Remove spells after upgrade
+                {
+                    foreach (var spell in spellsToRemove)
+                        loot.Biota.TryRemoveKnownSpell(spell, loot.BiotaDatabaseLock);
+                }
+
+                if (spellsToAdd != null)
+                {
+                    foreach (var spell in spellsToAdd)
+                        loot.Biota.GetOrAddKnownSpell(spell, loot.BiotaDatabaseLock, out _);
+                }
 
 
                 if (upgradeOptions.HasFlag(UpgradeOptions.Bonded))
@@ -125,16 +219,11 @@ namespace ACE.Server.Command.Handlers
                     loot.ManaRate = loot.ManaRate / 2;
 
 
-                if (spellsToRemove != null)
+                if (upgradeOptions.HasFlag(UpgradeOptions.MakeKitsUnlimitedUse) && loot.ItemType == ItemType.Misc && loot.HealkitMod.HasValue && loot.Structure.HasValue && loot.MaxStructure.HasValue)
                 {
-                    foreach (var spell in spellsToRemove)
-                        loot.Biota.TryRemoveKnownSpell(spell, loot.BiotaDatabaseLock);
-                }
-
-                if (spellsToAdd != null)
-                {
-                    foreach (var spell in spellsToAdd)
-                        loot.Biota.GetOrAddKnownSpell(spell, loot.BiotaDatabaseLock, out _);
+                    loot.SetProperty(ACE.Entity.Enum.Properties.PropertyInt.Structure, -1);
+                    loot.MaxStructure = null;
+                    loot.UnlimitedUse = true;
                 }
 
 
