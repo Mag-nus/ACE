@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Text;
 
 using ACE.Entity.Enum;
 using ACE.Entity.Models;
@@ -23,92 +22,79 @@ namespace ACE.Server.Command.Handlers
             {
                 case "armor":
                     // Gelidite
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30511, 30514, 30515, 30517, 30519, 30522, 30524, 30526, 30529 }, null, true, true);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30511, 30514, 30515, 30517, 30519, 30522, 30524, 30526, 30529 }, null, UpgradeOptions.All);
                     // Leikotha's Tears
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30513, 30516, 30518, 30520, 30521, 30523, 30525, 30528 }, null, true, true);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30513, 30516, 30518, 30520, 30521, 30523, 30525, 30528 }, null, UpgradeOptions.All);
                     // Dusk
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30532, 30530 }, null, true, true);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30532, 30530 }, null, UpgradeOptions.All);
                     // Patriarch's Twilight
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30533, 30531 }, null, true, true);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30533, 30531 }, null, UpgradeOptions.All);
                     // Helm
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30512, 30527 }, null, true, true);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30512, 30527 }, null, UpgradeOptions.All);
                     // Gauntlets
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30510, 30534 }, null, true, true);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30510, 30534 }, null, UpgradeOptions.All);
                     // Boots
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30367, 30368, 30369 }, null, true, true);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30367, 30368, 30369 }, null, UpgradeOptions.All);
                     break;
                 case "jewelry":
                     // Necklaces
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30357, 30358, 30359 }, null, true, true);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30357, 30358, 30359 }, null, UpgradeOptions.All);
                     // Bracelets
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30352, 30353, 30354, 30355, 30356, 30366 }, null, true, true);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30352, 30353, 30354, 30355, 30356, 30366 }, null, UpgradeOptions.All);
                     // Rings
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30360, 30361, 30362, 30363, 30364, 30365 }, null, true, true);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30360, 30361, 30362, 30363, 30364, 30365 }, null, UpgradeOptions.All);
                     break;
                 case "heavy":
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30310, 30314, 30315, 30320, 30324, 30328, 30329, 30333, 30338, 30342, 30343 }, null, true, true);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30310, 30314, 30315, 30320, 30324, 30328, 30329, 30333, 30338, 30342, 30343 }, null, UpgradeOptions.All);
                     break;
                 case "2h":
-                    AddWeeniesToInventory(session.Player, new List<uint> { 42662, 42663, 42664, 42665, 42666 }, null, true, true);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 42662, 42663, 42664, 42665, 42666 }, null, UpgradeOptions.All);
                     break;
                 case "wand":
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30374, 30375, 30376, 30377, 30378, 43848 }, null, true, true);
+                    AddWeeniesToInventory(session.Player, new List<uint> {30374, 30375, 30376, 30377, 30378, 43848}, null, UpgradeOptions.All);
                     break;
                 case "shield":
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30370, 30371, 30372, 30373 }, null, true, true);
+                    AddWeeniesToInventory(session.Player, new List<uint> {30370, 30371, 30372, 30373}, null, UpgradeOptions.All);
                     break;
                 case "mag":
                     // Gelidite
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30511, 30514, 30515, 30517, 30519, 30522, 30524, 30526, 30529 }, null, true, true);
+                    AddWeeniesToInventory(session.Player, new List<uint> {30511, 30514, 30515, 30517, 30519, 30522, 30524, 30526, 30529}, null, UpgradeOptions.All);
 
                     // braceletrareelementalharmony
-                    var loot = WorldObjectFactory.CreateNewWorldObject(30354);
-                    if (loot != null) // weenie doesn't exist
-                    {
-                        // Make sure the item is full of mana
-                        if (loot.ItemCurMana.HasValue)
-                            loot.ItemCurMana = loot.ItemMaxMana;
-
-                        UpgradeItemSpells(loot);
-                        loot.Name = "Upgraded " + loot.Name;
-
-                        loot.Bonded = BondedStatus.Bonded;
-
-                        // Add extra spells
-                        loot.Biota.GetOrAddKnownSpell(6085, loot.BiotaDatabaseLock, out _); // "Legendary Slashing Ward"
-                        loot.Biota.GetOrAddKnownSpell(6084, loot.BiotaDatabaseLock, out _); // "Legendary Piercing Ward"
-                        loot.Biota.GetOrAddKnownSpell(6081, loot.BiotaDatabaseLock, out _); // "Legendary Bludgeoning Ward"
-
-                        session.Player.TryCreateInInventoryWithNetworking(loot);
-                    }
+                    // Add:
+                    // "Legendary Slashing Ward"
+                    // "Legendary Piercing Ward"
+                    // "Legendary Bludgeoning Ward"
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30354 }, null, UpgradeOptions.All, null, new List<int> { 6085, 6084, 6081 });
 
                     // necklaceraregoldensnake
-                    loot = WorldObjectFactory.CreateNewWorldObject(30357);
-                    if (loot != null) // weenie doesn't exist
-                    {
-                        // Make sure the item is full of mana
-                        if (loot.ItemCurMana.HasValue)
-                            loot.ItemCurMana = loot.ItemMaxMana;
+                    // Add:
+                    // "Incantation of Creature Enchantment Mastery Self"
+                    // "Legendary Creature Enchantment Aptitude"
+                    // "Incantation of Life Magic Mastery Self"
+                    // "Legendary Life Magic Aptitude"
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30357 }, null, UpgradeOptions.All, null, new List<int> { 4530, 6046, 4582, 6060 });
 
-                        UpgradeItemSpells(loot);
-                        loot.Name = "Upgraded " + loot.Name;
-
-                        loot.Bonded = BondedStatus.Bonded;
-
-                        // Add extra spells
-                        loot.Biota.GetOrAddKnownSpell(4530, loot.BiotaDatabaseLock, out _); // "Incantation of Creature Enchantment Mastery Self"
-                        loot.Biota.GetOrAddKnownSpell(6046, loot.BiotaDatabaseLock, out _); // "Legendary Creature Enchantment Aptitude"
-                        loot.Biota.GetOrAddKnownSpell(4582, loot.BiotaDatabaseLock, out _); // "Incantation of Life Magic Mastery Self"
-                        loot.Biota.GetOrAddKnownSpell(6060, loot.BiotaDatabaseLock, out _); // "Legendary Life Magic Aptitude"
-
-                        session.Player.TryCreateInInventoryWithNetworking(loot);
-                    }
+                    // Infinite mana stone
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30254 }, null, UpgradeOptions.All);
 
                     break;
             }
         }
 
-        private static void AddWeeniesToInventory(Player player, IEnumerable<uint> weenieIds, ushort? stackSize = null, bool upgradeSpells = false, bool bondItem = false)
+        [Flags]
+        enum UpgradeOptions
+        {
+            None                = 0x0000,
+            Spells              = 0x0001,
+            Bonded              = 0x0002,
+            DoubleMaxMana       = 0x0004,
+            HalveManaRate       = 0x0008,
+
+            All                 = 0xFFFF,
+        }
+
+        private static void AddWeeniesToInventory(Player player, IEnumerable<uint> weenieIds, ushort? stackSize = null, UpgradeOptions upgradeOptions = UpgradeOptions.None, IEnumerable<int> spellsToRemove = null, IEnumerable<int> spellsToAdd = null)
         {
             foreach (uint weenieId in weenieIds)
             {
@@ -123,18 +109,42 @@ namespace ACE.Server.Command.Handlers
                 if (stackSize > 1)
                     loot.SetStackSize(stackSize);
 
+
+                if (upgradeOptions.HasFlag(UpgradeOptions.Spells))
+                    UpgradeItemSpells(loot);
+
+
+                if (upgradeOptions.HasFlag(UpgradeOptions.Bonded))
+                    loot.Bonded = BondedStatus.Bonded;
+
+
+                if (upgradeOptions.HasFlag(UpgradeOptions.DoubleMaxMana) && loot.ItemMaxMana.HasValue)
+                    loot.ItemMaxMana = loot.ItemMaxMana * 2;
+
+                if (upgradeOptions.HasFlag(UpgradeOptions.HalveManaRate) && loot.ManaRate.HasValue)
+                    loot.ManaRate = loot.ManaRate / 2;
+
+
+                if (spellsToRemove != null)
+                {
+                    foreach (var spell in spellsToRemove)
+                        loot.Biota.TryRemoveKnownSpell(spell, loot.BiotaDatabaseLock);
+                }
+
+                if (spellsToAdd != null)
+                {
+                    foreach (var spell in spellsToAdd)
+                        loot.Biota.GetOrAddKnownSpell(spell, loot.BiotaDatabaseLock, out _);
+                }
+
+
+                if (upgradeOptions != UpgradeOptions.None)
+                    loot.Name = "Upgraded " + loot.Name;
+
+
                 // Make sure the item is full of mana
                 if (loot.ItemCurMana.HasValue)
                     loot.ItemCurMana = loot.ItemMaxMana;
-
-                if (upgradeSpells)
-                {
-                    if (UpgradeItemSpells(loot))
-                        loot.Name = "Upgraded " + loot.Name;
-                }
-
-                if (bondItem)
-                    loot.Bonded = BondedStatus.Bonded;
 
                 player.TryCreateInInventoryWithNetworking(loot);
             }
@@ -238,20 +248,13 @@ namespace ACE.Server.Command.Handlers
 
         };
 
-        private static bool UpgradeItemSpells(WorldObject wo)
+        private static void UpgradeItemSpells(WorldObject wo)
         {
-            bool upgraded = false;
-
             foreach (var spellUpgrade in SpellUpgradeMap)
             {
                 if (wo.Biota.TryRemoveKnownSpell(spellUpgrade.Key, wo.BiotaDatabaseLock))
-                {
                     wo.Biota.GetOrAddKnownSpell(spellUpgrade.Value, wo.BiotaDatabaseLock, out _);
-                    upgraded = true;
-                }
             }
-
-            return upgraded;
         }
     }
 }
