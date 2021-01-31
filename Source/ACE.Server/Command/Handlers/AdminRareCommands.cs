@@ -57,6 +57,54 @@ namespace ACE.Server.Command.Handlers
                 case "shield":
                     AddWeeniesToInventory(session.Player, new List<uint> { 30370, 30371, 30372, 30373 }, null, true, true);
                     break;
+                case "mag":
+                    // Gelidite
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30511, 30514, 30515, 30517, 30519, 30522, 30524, 30526, 30529 }, null, true, true);
+
+                    // braceletrareelementalharmony
+                    var loot = WorldObjectFactory.CreateNewWorldObject(30354);
+                    if (loot != null) // weenie doesn't exist
+                    {
+                        // Make sure the item is full of mana
+                        if (loot.ItemCurMana.HasValue)
+                            loot.ItemCurMana = loot.ItemMaxMana;
+
+                        UpgradeItemSpells(loot);
+                        loot.Name = "Upgraded " + loot.Name;
+
+                        loot.Bonded = BondedStatus.Bonded;
+
+                        // Add extra spells
+                        loot.Biota.GetOrAddKnownSpell(6085, loot.BiotaDatabaseLock, out _); // "Legendary Slashing Ward"
+                        loot.Biota.GetOrAddKnownSpell(6084, loot.BiotaDatabaseLock, out _); // "Legendary Piercing Ward"
+                        loot.Biota.GetOrAddKnownSpell(6081, loot.BiotaDatabaseLock, out _); // "Legendary Bludgeoning Ward"
+
+                        session.Player.TryCreateInInventoryWithNetworking(loot);
+                    }
+
+                    // necklaceraregoldensnake
+                    loot = WorldObjectFactory.CreateNewWorldObject(30357);
+                    if (loot != null) // weenie doesn't exist
+                    {
+                        // Make sure the item is full of mana
+                        if (loot.ItemCurMana.HasValue)
+                            loot.ItemCurMana = loot.ItemMaxMana;
+
+                        UpgradeItemSpells(loot);
+                        loot.Name = "Upgraded " + loot.Name;
+
+                        loot.Bonded = BondedStatus.Bonded;
+
+                        // Add extra spells
+                        loot.Biota.GetOrAddKnownSpell(4530, loot.BiotaDatabaseLock, out _); // "Incantation of Creature Enchantment Mastery Self"
+                        loot.Biota.GetOrAddKnownSpell(6046, loot.BiotaDatabaseLock, out _); // "Legendary Creature Enchantment Aptitude"
+                        loot.Biota.GetOrAddKnownSpell(4582, loot.BiotaDatabaseLock, out _); // "Incantation of Life Magic Mastery Self"
+                        loot.Biota.GetOrAddKnownSpell(6060, loot.BiotaDatabaseLock, out _); // "Legendary Life Magic Aptitude"
+
+                        session.Player.TryCreateInInventoryWithNetworking(loot);
+                    }
+
+                    break;
             }
         }
 
@@ -82,7 +130,7 @@ namespace ACE.Server.Command.Handlers
                 if (upgradeSpells)
                 {
                     if (UpgradeItemSpells(loot))
-                        loot.Name = "Upgarded " + loot.Name;
+                        loot.Name = "Upgraded " + loot.Name;
                 }
 
                 if (bondItem)
@@ -96,13 +144,13 @@ namespace ACE.Server.Command.Handlers
         {
             { 4911, 6102 }, // "Epic Armor"
 
-            { 4678, 6085 }, // "Legendary Slashing Ward"
-            { 4677, 6084 }, // "Legendary Piercing Ward"
-            { 4674, 6081 }, // "Legendary Bludgeoning Ward"
-            { 4675, 6082 }, // "Legendary Flame Ward"
-            { 4676, 6083 }, // "Legendary Frost Ward"
-            { 4673, 6080 }, // "Legendary Acid Ward"
-            { 4679, 6079 }, // "Legendary Storm Ward"
+            { 4678, 6085 }, // "Epic Slashing Ward"
+            { 4677, 6084 }, // "Epic Piercing Ward"
+            { 4674, 6081 }, // "Epic Bludgeoning Ward"
+            { 4675, 6082 }, // "Epic Flame Ward"
+            { 4676, 6083 }, // "Epic Frost Ward"
+            { 4673, 6080 }, // "Epic Acid Ward"
+            { 4679, 6079 }, // "Epic Storm Ward"
 
 
             { 3965, 6107 }, // "Epic Strength"
