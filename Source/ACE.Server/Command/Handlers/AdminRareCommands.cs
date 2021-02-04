@@ -22,30 +22,30 @@ namespace ACE.Server.Command.Handlers
             {
                 case "armor":
                     // Gelidite
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30511, 30514, 30515, 30517, 30519, 30522, 30524, 30526, 30529 }, null, UpgradeOptions.All);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30511, 30514, 30515, 30517, 30519, 30522, 30524, 30526, 30529 }, null, UpgradeOptions.Spells | UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded);
                     // Leikotha's Tears
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30513, 30516, 30518, 30520, 30521, 30523, 30525, 30528 }, null, UpgradeOptions.All);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30513, 30516, 30518, 30520, 30521, 30523, 30525, 30528 }, null, UpgradeOptions.Spells | UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded);
                     // Dusk
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30532, 30530 }, null, UpgradeOptions.All);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30532, 30530 }, null, UpgradeOptions.Spells | UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded);
                     // Patriarch's Twilight
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30533, 30531 }, null, UpgradeOptions.All);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30533, 30531 }, null, UpgradeOptions.Spells | UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded);
                     // Helm
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30512, 30527 }, null, UpgradeOptions.All);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30512, 30527 }, null, UpgradeOptions.Spells | UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded);
                     // Gauntlets
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30510, 30534 }, null, UpgradeOptions.All);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30510, 30534 }, null, UpgradeOptions.Spells | UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded);
                     // Boots
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30367, 30368, 30369 }, null, UpgradeOptions.All);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30367, 30368, 30369 }, null, UpgradeOptions.Spells | UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded);
                     break;
                 case "jewelry":
                     // Necklaces
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30357, 30358, 30359 }, null, UpgradeOptions.All);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30357, 30358, 30359 }, null, UpgradeOptions.Spells | UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded);
                     // Bracelets
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30352, 30353, 30354, 30355, 30356, 30366 }, null, UpgradeOptions.All);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30352, 30353, 30354, 30355, 30356, 30366 }, null, UpgradeOptions.Spells | UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded);
                     // Rings
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30360, 30361, 30362, 30363, 30364, 30365 }, null, UpgradeOptions.All);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30360, 30361, 30362, 30363, 30364, 30365 }, null, UpgradeOptions.Spells | UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded);
                     break;
                 case "heavy":
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30310, 30314, 30315, 30320, 30324, 30328, 30329, 30333, 30338, 30342, 30343 }, null, UpgradeOptions.All);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30310, 30314, 30315, 30320, 30324, 30328, 30329, 30333, 30338, 30342, 30343 }, null, UpgradeOptions.Spells | UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded);
                     break;
                 case "2h":
                     // Add
@@ -60,7 +60,22 @@ namespace ACE.Server.Command.Handlers
                     // 5032,"Incantation of Two Handed Combat Mastery Self"
                     // 6073,"Legendary Two Handed Combat Aptitude"
                     // 2966,"Aura of Murderous Thirst"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 42662, 42663, 42664, 42665, 42666 }, null, UpgradeOptions.All, new List<int> { int.MaxValue }, new List<int> { 4395, 4400, 4405, 4417, 6089, 6091, 6094, 6100, 5032, 6073, 2966 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 42662, 42663, 42664, 42665, 42666 }, null, UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded, new List<int> { int.MaxValue }, new List<int> { 4395, 4400, 4405, 4417, 6089, 6091, 6094, 6100, 5032, 6073, 2966 });
+                    break;
+                case "2hop":
+                    // Add
+                    // 4395,"Aura of Incantation of Blood Drinker Self"
+                    // 4400,"Aura of Incantation of Defender Self"
+                    // 4405,"Aura of Incantation of Heart Seeker Self"
+                    // 4417,"Aura of Incantation of Swift Killer Self"
+                    // 6089,"Legendary Blood Thirst"
+                    // 6091,"Legendary Defender"
+                    // 6094,"Legendary Heart Thirst"
+                    // 6100,"Legendary Swift Hunter"
+                    // 5032,"Incantation of Two Handed Combat Mastery Self"
+                    // 6073,"Legendary Two Handed Combat Aptitude"
+                    // 2966,"Aura of Murderous Thirst"
+                    AddWeeniesToInventory(session.Player, new List<uint> { 42662, 42663, 42664, 42665, 42666 }, null, UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.AddAllPerksToWeapons | UpgradeOptions.Bonded, new List<int> { int.MaxValue }, new List<int> { 4395, 4400, 4405, 4417, 6089, 6091, 6094, 6100, 5032, 6073, 2966 });
                     break;
                 case "wand":
                     // 5182,"Aura of Incantation of Spirit Drinker"
@@ -73,10 +88,10 @@ namespace ACE.Server.Command.Handlers
                     // 4638,"Incantation of War Magic Mastery Self"
                     // 6074,"Legendary Void Magic Aptitude"
                     // 5418,"Incantation of Void Magic Mastery Self"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30374, 30375, 30376, 30377, 30378, 43848 }, null, UpgradeOptions.All, new List<int> { int.MaxValue }, new List<int> { 5182, 4418, 4400, 6098, 6087, 6091, 6075, 4638, 6074, 5418 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30374, 30375, 30376, 30377, 30378, 43848 }, null, UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded, new List<int> { int.MaxValue }, new List<int> { 5182, 4418, 4400, 6098, 6087, 6091, 6075, 4638, 6074, 5418 });
                     break;
                 case "shield":
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30370, 30371, 30372, 30373 }, null, UpgradeOptions.All);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30370, 30371, 30372, 30373 }, null, UpgradeOptions.Spells | UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded);
                     break;
                 case "mag":
                     // 6095,"Legendary Impenetrability"
@@ -91,46 +106,46 @@ namespace ACE.Server.Command.Handlers
                     // Gelidite
                     // 4602,"Incantation of Mana Conversion Mastery Self"
                     // 4305,"Incantation of Focus Self"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30511 }, null, UpgradeOptions.All, null, new List<int> { 4602, 4305, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30511 }, null, UpgradeOptions.Spells | UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded, null, new List<int> { 4602, 4305, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
                     // Gelidite
                     // 4498,"Incantation of Rejuvenation Self"
                     // 4560,"Incantation of Invulnerability Self"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30514 }, null, UpgradeOptions.All, null, new List<int> { 4498 , 4560, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30514 }, null, UpgradeOptions.Spells | UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded, null, new List<int> { 4498 , 4560, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
                     // Gelidite
                     // 4329,"Incantation of Willpower Self"
                     // 4494,"Incantation of Mana Renewal Self"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30515 }, null, UpgradeOptions.All, null, new List<int> { 4329 , 4494, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30515 }, null, UpgradeOptions.Spells | UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded, null, new List<int> { 4329 , 4494, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
                     // Gelidite
                     // 4596,"Incantation of Magic Resistance Self"
                     // 4090,"Scarab's Shell"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30517 }, null, UpgradeOptions.All, null, new List<int> { 4596 , 4090, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30517 }, null, UpgradeOptions.Spells | UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded, null, new List<int> { 4596 , 4090, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
                     // Gelidite
                     // 4299,"Incantation of Endurance Self"
                     // 4558,"Incantation of Impregnability Self"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30519 }, null, UpgradeOptions.All, null, new List<int> { 4299 , 4558, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30519 }, null, UpgradeOptions.Spells | UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded, null, new List<int> { 4299 , 4558, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
                     // Gelidite
                     // 4510,"Incantation of Arcane Enlightenment Self"
                     // 4496,"Incantation of Regeneration Self"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30522 }, null, UpgradeOptions.All, null, new List<int> { 4510 , 4496, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30522 }, null, UpgradeOptions.Spells | UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded, null, new List<int> { 4510 , 4496, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
                     // Gelidite
                     // 4548,"Incantation of Fealty Self"
                     // 4325,"Incantation of Strength Self"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30524 }, null, UpgradeOptions.All, null, new List<int> { 4548, 4325, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30524 }, null, UpgradeOptions.Spells | UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded, null, new List<int> { 4548, 4325, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
                     // Gelidite
                     // 4556,"Incantation of Healing Mastery Self"
                     // 4297,"Incantation of Coordination Self"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30526 }, null, UpgradeOptions.All, null, new List<int> { 4556 , 4297, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30526 }, null, UpgradeOptions.Spells | UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded, null, new List<int> { 4556 , 4297, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
                     // Gelidite
                     // 4616,"Incantation of Sprint Self"
                     // 4319,"Incantation of Quickness Self"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30529 }, null, UpgradeOptions.All, null, new List<int> { 4616 , 4319, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30529 }, null, UpgradeOptions.Spells | UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded, null, new List<int> { 4616 , 4319, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
 
                     // ace39978_gladiatorialtunic = 39978,
                     // 6068,"Legendary Salvaging Aptitude"
                     // 4499,"Incantation of Arcanum Salvaging Self"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 39978 }, null, UpgradeOptions.All, new List<int> { int.MaxValue }, new List<int> { 6068, 4499, 6095 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 39978 }, null, UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded, new List<int> { int.MaxValue }, new List<int> { 6068, 4499, 6095 });
                     // ace39977_gladiatorialleggings = 39977,
-                    AddWeeniesToInventory(session.Player, new List<uint> { 39977 }, null, UpgradeOptions.All, new List<int> { int.MaxValue }, new List<int> { 6095 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 39977 }, null, UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded, new List<int> { int.MaxValue }, new List<int> { 6095 });
 
                     // necklaceraregoldensnake
                     // Add:
@@ -138,7 +153,7 @@ namespace ACE.Server.Command.Handlers
                     // "Legendary Creature Enchantment Aptitude"
                     // "Incantation of Life Magic Mastery Self"
                     // "Legendary Life Magic Aptitude"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30357 }, null, UpgradeOptions.All, null, new List<int> { 4530, 6046, 4582, 6060 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30357 }, null, UpgradeOptions.Spells | UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded, null, new List<int> { 4530, 6046, 4582, 6060 });
 
                     // braceletrareelementalharmony
                     // Add:
@@ -152,7 +167,7 @@ namespace ACE.Server.Command.Handlers
                     // 4468,"Incantation of Fire Protection Self"
                     // 4470,"Incantation of Lightning Protection Self"
                     // 4472,"Incantation of Piercing Protection Self"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30354 }, null, UpgradeOptions.All, null, new List<int> { 6085, 6084, 6081, 4460, 4462, 4464, 4466, 4468, 4470, 4472 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30354 }, null, UpgradeOptions.Spells | UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded, null, new List<int> { 6085, 6084, 6081, 4460, 4462, 4464, 4466, 4468, 4470, 4472 });
 
                     // braceletraredreamseerbangle
                     // 2666,"Essence Glutton"
@@ -161,7 +176,7 @@ namespace ACE.Server.Command.Handlers
                     // 2010,"Warrior's Ultimate Vigor"
                     // 4070,"Empyrean Mana Absorbtion"
                     // 2014,"Wizard's Ultimate Intellect"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30353 }, null, UpgradeOptions.All, new List<int> { int.MaxValue }, new List<int> { 2666, 2006, 4071, 2010, 4070, 2014 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30353 }, null, UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded, new List<int> { int.MaxValue }, new List<int> { 2666, 2006, 4071, 2010, 4070, 2014 });
 
                     // ringrareweeping = 30364,
                     // 6329,"Gauntlet Critical Damage Boost II"
@@ -170,16 +185,16 @@ namespace ACE.Server.Command.Handlers
                     // 6335,"Gauntlet Critical Damage Reduction II"
                     // 6337,"Gauntlet Healing Boost II"
                     // 6340,"Gauntlet Vitality III"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30364 }, null, UpgradeOptions.All, new List<int> { int.MaxValue }, new List<int> { 6329, 6331, 6333, 6335, 6337, 6340 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30364 }, null, UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded, new List<int> { int.MaxValue }, new List<int> { 6329, 6331, 6333, 6335, 6337, 6340 });
 
                     // Infinite mana stone
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30254 }, null, UpgradeOptions.All);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30254 }, null, UpgradeOptions.Bonded);
 
                     // Medicated Kits
                     // healingkitrarevolatilehealth = 30250,
                     // healingkitrarevolatilemana = 30251,
                     // healingkitrarevolatilestamina = 30252,
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30250, 30251, 30252 }, null, UpgradeOptions.All);
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30250, 30251, 30252 }, null, UpgradeOptions.MakeKitsUnlimitedUse | UpgradeOptions.Bonded);
 
                     break;
             }
@@ -189,12 +204,17 @@ namespace ACE.Server.Command.Handlers
         enum UpgradeOptions
         {
             None                    = 0x0000,
+
             Spells                  = 0x0001,
-            Bonded                  = 0x0002,
+
             DoubleMaxMana           = 0x0004,
             HalveManaRate           = 0x0008,
 
             MakeKitsUnlimitedUse    = 0x0010,
+
+            AddAllPerksToWeapons    = 0x0020,
+
+            Bonded                  = 0x0040,
 
             All                     = 0xFFFF,
         }
@@ -242,9 +262,6 @@ namespace ACE.Server.Command.Handlers
                 }
 
 
-                if (upgradeOptions.HasFlag(UpgradeOptions.Bonded))
-                    loot.Bonded = BondedStatus.Bonded;
-
 
                 if (upgradeOptions.HasFlag(UpgradeOptions.DoubleMaxMana) && loot.ItemMaxMana.HasValue)
                     loot.ItemMaxMana = loot.ItemMaxMana * 2;
@@ -259,6 +276,18 @@ namespace ACE.Server.Command.Handlers
                     loot.MaxStructure = null;
                     loot.UnlimitedUse = true;
                 }
+
+
+                if (upgradeOptions.HasFlag(UpgradeOptions.AddAllPerksToWeapons) && loot.ItemType == ItemType.MeleeWeapon)
+                {
+                    AddImbuedEffect(loot, ImbuedEffectType.CriticalStrike);
+                    AddImbuedEffect(loot, ImbuedEffectType.CripplingBlow);
+                    AddImbuedEffect(loot, ImbuedEffectType.ArmorRending);
+                }
+
+
+                if (upgradeOptions.HasFlag(UpgradeOptions.Bonded))
+                    loot.Bonded = BondedStatus.Bonded;
 
 
                 if (upgradeOptions != UpgradeOptions.None)
@@ -377,6 +406,23 @@ namespace ACE.Server.Command.Handlers
             {
                 if (wo.Biota.TryRemoveKnownSpell(spellUpgrade.Key, wo.BiotaDatabaseLock))
                     wo.Biota.GetOrAddKnownSpell(spellUpgrade.Value, wo.BiotaDatabaseLock, out _);
+            }
+        }
+
+        private static void AddImbuedEffect(WorldObject wo, ImbuedEffectType imbuedEffectType)
+        {
+            if (!wo.HasImbuedEffect(imbuedEffectType))
+            {
+                if (!wo.GetProperty(ACE.Entity.Enum.Properties.PropertyInt.ImbuedEffect).HasValue)
+                    wo.SetProperty(ACE.Entity.Enum.Properties.PropertyInt.ImbuedEffect, (int)imbuedEffectType);
+                else if (!wo.GetProperty(ACE.Entity.Enum.Properties.PropertyInt.ImbuedEffect2).HasValue)
+                    wo.SetProperty(ACE.Entity.Enum.Properties.PropertyInt.ImbuedEffect2, (int)imbuedEffectType);
+                else if (!wo.GetProperty(ACE.Entity.Enum.Properties.PropertyInt.ImbuedEffect3).HasValue)
+                    wo.SetProperty(ACE.Entity.Enum.Properties.PropertyInt.ImbuedEffect3, (int)imbuedEffectType);
+                else if (!wo.GetProperty(ACE.Entity.Enum.Properties.PropertyInt.ImbuedEffect4).HasValue)
+                    wo.SetProperty(ACE.Entity.Enum.Properties.PropertyInt.ImbuedEffect4, (int)imbuedEffectType);
+                else if (!wo.GetProperty(ACE.Entity.Enum.Properties.PropertyInt.ImbuedEffect5).HasValue)
+                    wo.SetProperty(ACE.Entity.Enum.Properties.PropertyInt.ImbuedEffect5, (int)imbuedEffectType);
             }
         }
     }
