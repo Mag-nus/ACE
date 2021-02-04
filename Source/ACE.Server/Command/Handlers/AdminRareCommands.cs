@@ -79,42 +79,58 @@ namespace ACE.Server.Command.Handlers
                     AddWeeniesToInventory(session.Player, new List<uint> { 30370, 30371, 30372, 30373 }, null, UpgradeOptions.All);
                     break;
                 case "mag":
+                    // 6095,"Legendary Impenetrability"
+                    // 4391,"Incantation of Acid Bane"
+                    // 4393,"Incantation of Blade Bane"
+                    // 4397,"Incantation of Bludgeon Bane"
+                    // 4401,"Incantation of Flame Bane"
+                    // 4403,"Incantation of Frost Bane"
+                    // 4409,"Incantation of Lightning Bane"
+                    // 4412,"Incantation of Piercing Bane"
+
                     // Gelidite
                     // 4602,"Incantation of Mana Conversion Mastery Self"
                     // 4305,"Incantation of Focus Self"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30511 }, null, UpgradeOptions.All, null, new List<int> { 4602, 4305 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30511 }, null, UpgradeOptions.All, null, new List<int> { 4602, 4305, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
                     // Gelidite
                     // 4498,"Incantation of Rejuvenation Self"
                     // 4560,"Incantation of Invulnerability Self"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30514 }, null, UpgradeOptions.All, null, new List<int> { 4498 , 4560 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30514 }, null, UpgradeOptions.All, null, new List<int> { 4498 , 4560, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
                     // Gelidite
                     // 4329,"Incantation of Willpower Self"
                     // 4494,"Incantation of Mana Renewal Self"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30515 }, null, UpgradeOptions.All, null, new List<int> { 4329 , 4494 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30515 }, null, UpgradeOptions.All, null, new List<int> { 4329 , 4494, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
                     // Gelidite
                     // 4596,"Incantation of Magic Resistance Self"
                     // 4090,"Scarab's Shell"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30517 }, null, UpgradeOptions.All, null, new List<int> { 4596 , 4090 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30517 }, null, UpgradeOptions.All, null, new List<int> { 4596 , 4090, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
                     // Gelidite
                     // 4299,"Incantation of Endurance Self"
                     // 4558,"Incantation of Impregnability Self"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30519 }, null, UpgradeOptions.All, null, new List<int> { 4299 , 4558 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30519 }, null, UpgradeOptions.All, null, new List<int> { 4299 , 4558, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
                     // Gelidite
                     // 4510,"Incantation of Arcane Enlightenment Self"
                     // 4496,"Incantation of Regeneration Self"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30522 }, null, UpgradeOptions.All, null, new List<int> { 4510 , 4496 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30522 }, null, UpgradeOptions.All, null, new List<int> { 4510 , 4496, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
                     // Gelidite
                     // 4548,"Incantation of Fealty Self"
                     // 4325,"Incantation of Strength Self"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30524 }, null, UpgradeOptions.All, null, new List<int> { 4548, 4325 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30524 }, null, UpgradeOptions.All, null, new List<int> { 4548, 4325, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
                     // Gelidite
                     // 4556,"Incantation of Healing Mastery Self"
                     // 4297,"Incantation of Coordination Self"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30526 }, null, UpgradeOptions.All, null, new List<int> { 4556 , 4297 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30526 }, null, UpgradeOptions.All, null, new List<int> { 4556 , 4297, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
                     // Gelidite
                     // 4616,"Incantation of Sprint Self"
                     // 4319,"Incantation of Quickness Self"
-                    AddWeeniesToInventory(session.Player, new List<uint> { 30529 }, null, UpgradeOptions.All, null, new List<int> { 4616 , 4319 });
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30529 }, null, UpgradeOptions.All, null, new List<int> { 4616 , 4319, 6095, 4391, 4393, 4397, 4401, 4403, 4409, 4412 });
+
+                    // ace39978_gladiatorialtunic = 39978,
+                    // 6068,"Legendary Salvaging Aptitude"
+                    // 4499,"Incantation of Arcanum Salvaging Self"
+                    AddWeeniesToInventory(session.Player, new List<uint> { 39978 }, null, UpgradeOptions.All, new List<int> { int.MaxValue }, new List<int> { 6068, 4499, 6095 });
+                    // ace39977_gladiatorialleggings = 39977,
+                    AddWeeniesToInventory(session.Player, new List<uint> { 39977 }, null, UpgradeOptions.All, new List<int> { int.MaxValue }, new List<int> { 6095 });
 
                     // necklaceraregoldensnake
                     // Add:
