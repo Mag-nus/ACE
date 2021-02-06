@@ -352,7 +352,6 @@ namespace ACE.Server.Managers
                 NetworkManager.InboundMessageQueue.RunActions();
                 ServerPerformanceMonitor.RegisterEventEnd(ServerPerformanceMonitor.MonitorType.NetworkManager_InboundClientMessageQueueRun);
 
-                //log.Debug("actionQueue.RunActions");
                 // This will consist of PlayerEnterWorld actions, as well as other game world actions that require thread safety
                 ServerPerformanceMonitor.RestartEvent(ServerPerformanceMonitor.MonitorType.actionQueue_RunActions);
                 actionQueue.RunActions();
