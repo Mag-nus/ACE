@@ -909,6 +909,9 @@ namespace ACE.Server.WorldObjects
 
             var material = RecipeManager.GetMaterialName(MaterialType ?? 0);
 
+            if (name.Contains(material))
+                name = name.Replace(material, "");
+
             return $"{material} {name}";
         }
 
@@ -1999,6 +2002,12 @@ namespace ACE.Server.WorldObjects
         {
             get => (CreatureType?)GetProperty(PropertyInt.FriendType);
             set { if (!value.HasValue) RemoveProperty(PropertyInt.FriendType); else SetProperty(PropertyInt.FriendType, (int)value.Value); }
+        }
+
+        public CreatureType? FoeType
+        {
+            get => (CreatureType?)GetProperty(PropertyInt.FoeType);
+            set { if (!value.HasValue) RemoveProperty(PropertyInt.FoeType); else SetProperty(PropertyInt.FoeType, (int)value.Value); }
         }
 
         public string LongDesc

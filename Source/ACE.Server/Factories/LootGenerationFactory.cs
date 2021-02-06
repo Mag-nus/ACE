@@ -19,7 +19,6 @@ using ACE.Server.Managers;
 using ACE.Server.WorldObjects;
 
 using WeenieClassName = ACE.Server.Factories.Enum.WeenieClassName;
-using System.Drawing.Drawing2D;
 
 namespace ACE.Server.Factories
 {
@@ -854,9 +853,10 @@ namespace ACE.Server.Factories
 
         // new methods
 
-        public static TreasureRoll RollWcid(TreasureDeath treasureDeath, TreasureItemCategory category)
+        public static TreasureRoll RollWcid(TreasureDeath treasureDeath, TreasureItemCategory category, TreasureItemType_Orig treasureItemType = TreasureItemType_Orig.Undef)
         {
-            var treasureItemType = RollItemType(treasureDeath, category);
+            if (treasureItemType == TreasureItemType_Orig.Undef)
+                treasureItemType = RollItemType(treasureDeath, category);
 
             if (treasureItemType == TreasureItemType_Orig.Undef)
             {
@@ -998,9 +998,9 @@ namespace ACE.Server.Factories
             return TreasureItemType_Orig.Undef;
         }
 
-        public static WorldObject CreateRandomLootObjects_New(TreasureDeath treasureDeath, TreasureItemCategory category)
+        public static WorldObject CreateRandomLootObjects_New(TreasureDeath treasureDeath, TreasureItemCategory category, TreasureItemType_Orig treasureItemType = TreasureItemType_Orig.Undef)
         {
-            var treasureRoll = RollWcid(treasureDeath, category);
+            var treasureRoll = RollWcid(treasureDeath, category, treasureItemType);
 
             if (treasureRoll == null) return null;
 
