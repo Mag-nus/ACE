@@ -1,4 +1,6 @@
+using System;
 using System.IO;
+
 using ACE.Entity.Enum;
 
 namespace ACE.DatLoader.FileTypes
@@ -10,13 +12,13 @@ namespace ACE.DatLoader.FileTypes
     [DatFileType(DatFileType.Surface)]
     public class Surface : FileType
     {
-        public SurfaceType Type { get; private set; }
-        public uint OrigTextureId { get; private set; }
-        public uint OrigPaletteId { get; private set; }
-        public uint ColorValue { get; private set; }
-        public float Translucency { get; private set; }
-        public float Luminosity { get; private set; }
-        public float Diffuse { get; private set; }
+        public SurfaceType Type { get; set; }
+        public uint OrigTextureId { get; set; }
+        public uint OrigPaletteId { get; set; }
+        public uint ColorValue { get; set; }
+        public float Translucency { get; set; }
+        public float Luminosity { get; set; }
+        public float Diffuse { get; set; }
 
         public override void Unpack(BinaryReader reader)
         {
@@ -37,6 +39,27 @@ namespace ACE.DatLoader.FileTypes
             Translucency    = reader.ReadSingle();
             Luminosity      = reader.ReadSingle();
             Diffuse         = reader.ReadSingle();
+        }
+
+        public override void Pack(BinaryWriter writer)
+        {
+            writer.Write((UInt32)Type);
+
+            if (Type.HasFlag(SurfaceType.Base1Image) || Type.HasFlag(SurfaceType.Base1ClipMap))
+            {
+                // image or clipmap
+                writer.Write((UInt32)OrigTextureId);
+                writer.Write((UInt32)OrigPaletteId);
+            }
+            else
+            {
+                // solid color
+                writer.Write(ColorValue);
+            }
+
+            writer.Write((Single)Translucency);
+            writer.Write((Single)Luminosity);
+            writer.Write((Single)Diffuse);
         }
     }
 }
