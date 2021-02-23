@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+using System;
 using System.IO;
 using System.Linq;
 
@@ -16,12 +16,23 @@ namespace ACE.DatLoader.FileTypes
 
         public override void Unpack(BinaryReader reader)
         {
-            int objectId   = reader.ReadInt32();
-            int headerSize = reader.ReadInt32();
-            int dataSize   = reader.ReadInt32();
+            Id              = reader.ReadUInt32();
+
+            var headerSize  = reader.ReadInt32();
+            var dataSize    = reader.ReadInt32();
 
             Header = reader.ReadBytes(headerSize);
             Data   = reader.ReadBytes(dataSize);
+        }
+
+        public override void Pack(BinaryWriter writer)
+        {
+            writer.Write((UInt32)Id);
+
+            writer.Write((Int32)Header.Length);
+            writer.Write((Int32)Data.Length);
+            writer.Write(Header);
+            writer.Write(Data);
         }
 
         /// <summary>

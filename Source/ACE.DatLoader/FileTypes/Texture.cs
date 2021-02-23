@@ -21,7 +21,7 @@ namespace ACE.DatLoader.FileTypes
         public int Width { get; set; }
         public int Height { get; set; }
         public SurfacePixelFormat Format { get; set; }
-        public int Length { get; set; }
+        public int Length => SourceData.Length;
         public byte[] SourceData { get; set; }
         public uint? DefaultPaletteId { get; set; }
 
@@ -31,14 +31,15 @@ namespace ACE.DatLoader.FileTypes
 
         public override void Unpack(BinaryReader reader)
         {
-            Id = reader.ReadUInt32();
-            Unknown = reader.ReadInt32();
-            Width = reader.ReadInt32();
-            Height = reader.ReadInt32();
-            Format = (SurfacePixelFormat)reader.ReadUInt32();
-            Length = reader.ReadInt32();
+            Id      = reader.ReadUInt32();
 
-            SourceData = reader.ReadBytes(Length);
+            Unknown = reader.ReadInt32();
+            Width   = reader.ReadInt32();
+            Height  = reader.ReadInt32();
+            Format  = (SurfacePixelFormat)reader.ReadUInt32();
+
+            var length  = reader.ReadInt32();
+            SourceData = reader.ReadBytes(length);
 
             switch (Format)
             {
@@ -52,12 +53,33 @@ namespace ACE.DatLoader.FileTypes
             }
         }
 
+        public override void Pack(BinaryWriter writer)
+        {
+            writer.Write((UInt32)Id);
+
+            writer.Write((Int32)Unknown);
+            writer.Write((Int32)Width);
+            writer.Write((Int32)Height);
+            writer.Write((Int32)Format);
+
+            writer.Write((Int32)SourceData.Length);
+            writer.Write(SourceData);
+
+            switch (Format)
+            {
+                case SurfacePixelFormat.PFID_INDEX16:
+                case SurfacePixelFormat.PFID_P8:
+                    writer.Write((UInt32)DefaultPaletteId);
+                    break;
+            }
+        }
+
         /// <summary>
         /// Exports RenderSurface to a image file
         /// </summary>
         public void ExportTexture(string directory)
         {
-            if (Length == 0) return;
+            if (SourceData.Length == 0) return;
 
             switch (Format)
             {
@@ -123,7 +145,7 @@ namespace ACE.DatLoader.FileTypes
         private List<int> GetImageColorArray()
         {
             List<int> colors = new List<int>();
-            if (Length == 0) return colors;
+            if (SourceData.Length == 0) return colors;
 
             switch (Format)
             {
