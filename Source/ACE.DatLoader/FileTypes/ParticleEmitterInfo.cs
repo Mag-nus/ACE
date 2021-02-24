@@ -12,16 +12,17 @@ namespace ACE.DatLoader.FileTypes
     [DatFileType(DatFileType.ParticleEmitter)]
     public class ParticleEmitterInfo : FileType
     {
+        public uint Unknown { get; private set; }
         public EmitterType EmitterType { get; private set; }
         public ParticleType ParticleType { get; private set; }
         public uint GfxObjId { get; private set; }
         public uint HwGfxObjId { get; private set; }
         public double Birthrate { get; private set; }
-        public int MaxParticles { get; private set; }
-        public int InitialParticles { get; private set; }
-        public int TotalParticles { get; private set; }
-        public double TotalSeconds { get; private set; }
-        public double Lifespan { get; private set; }
+        public int MaxParticles { get; set; }
+        public int InitialParticles { get; set; }
+        public int TotalParticles { get; set; }
+        public double TotalSeconds { get; set; }
+        public double Lifespan { get; set; }
         public double LifespanRand { get; private set; }
         public Vector3 OffsetDir { get; private set; }
         public float MinOffset { get; private set; }
@@ -47,7 +48,7 @@ namespace ACE.DatLoader.FileTypes
         {
             Id = reader.ReadUInt32();
 
-            /*uint unknown = */reader.ReadUInt32();
+            Unknown = reader.ReadUInt32();
 
             EmitterType  =  (EmitterType)reader.ReadInt32();
             ParticleType = (ParticleType)reader.ReadInt32();
@@ -55,10 +56,10 @@ namespace ACE.DatLoader.FileTypes
             GfxObjId   = reader.ReadUInt32();
             HwGfxObjId = reader.ReadUInt32();
 
-            Birthrate   = reader.ReadDouble();
+            Birthrate = reader.ReadDouble();
 
-            MaxParticles  = reader.ReadInt32();
-            InitialParticles = reader.ReadInt32();
+            MaxParticles        = reader.ReadInt32();
+            InitialParticles    = reader.ReadInt32();
 
             TotalParticles = reader.ReadInt32();
 
@@ -71,17 +72,17 @@ namespace ACE.DatLoader.FileTypes
             MinOffset = reader.ReadSingle();
             MaxOffset = reader.ReadSingle(); 
 
-            A = reader.ReadVector3();
-            MinA = reader.ReadSingle();
-            MaxA = reader.ReadSingle();
+            A       = reader.ReadVector3();
+            MinA    = reader.ReadSingle();
+            MaxA    = reader.ReadSingle();
 
-            B = reader.ReadVector3();
-            MinB = reader.ReadSingle();
-            MaxB = reader.ReadSingle();
+            B       = reader.ReadVector3();
+            MinB    = reader.ReadSingle();
+            MaxB    = reader.ReadSingle();
 
-            C = reader.ReadVector3();
-            MinC = reader.ReadSingle();
-            MaxC = reader.ReadSingle();
+            C       = reader.ReadVector3();
+            MinC    = reader.ReadSingle();
+            MaxC    = reader.ReadSingle();
 
             StartScale = reader.ReadSingle();
             FinalScale = reader.ReadSingle();
@@ -92,6 +93,57 @@ namespace ACE.DatLoader.FileTypes
             TransRand  = reader.ReadSingle();
 
             IsParentLocal = reader.ReadInt32();
+        }
+
+        public override void Pack(BinaryWriter writer)
+        {
+            writer.Write((UInt32)Id);
+
+            writer.Write((UInt32)Unknown);
+
+            writer.Write((Int32)EmitterType);
+            writer.Write((Int32)ParticleType);
+
+            writer.Write((UInt32)GfxObjId);
+            writer.Write((UInt32)HwGfxObjId);
+
+            writer.Write((Double)Birthrate);
+
+            writer.Write((Int32)MaxParticles);
+            writer.Write((Int32)InitialParticles);
+
+            writer.Write((Int32)TotalParticles);
+
+            writer.Write((Double)TotalSeconds);
+
+            writer.Write((Double)Lifespan);
+            writer.Write((Double)LifespanRand);
+
+            writer.Write(OffsetDir);
+            writer.Write((Single)MinOffset);
+            writer.Write((Single)MaxOffset);
+
+            writer.Write(A);
+            writer.Write((Single)MinA);
+            writer.Write((Single)MaxA);
+
+            writer.Write(B);
+            writer.Write((Single)MinB);
+            writer.Write((Single)MaxB);
+
+            writer.Write(C);
+            writer.Write((Single)MinC);
+            writer.Write((Single)MaxC);
+
+            writer.Write((Single)StartScale);
+            writer.Write((Single)FinalScale);
+            writer.Write((Single)ScaleRand);
+
+            writer.Write((Single)StartTrans);
+            writer.Write((Single)FinalTrans);
+            writer.Write((Single)TransRand);
+
+            writer.Write((Int32)IsParentLocal);
         }
 
         public override string ToString()

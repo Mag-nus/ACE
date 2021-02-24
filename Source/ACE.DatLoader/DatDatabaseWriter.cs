@@ -65,11 +65,13 @@ namespace ACE.DatLoader
 
             // Rebuild our Root Directory
 
+            // Clear the current root
             for (int i = 0; i < datDatabase.RootDirectory.DatDirectoryHeader.Branches.Length; i++)
                 datDatabase.RootDirectory.DatDirectoryHeader.Branches[i] = 0xCDCDCDCD;
             datDatabase.RootDirectory.DatDirectoryHeader.Entries = new DatFile[0];
             datDatabase.RootDirectory.Directories.Clear();
 
+            // Build a new sorted directory
             var sortedFiles = datDatabase.AllFiles.Values.OrderBy(r => r.ObjectId).ToList();
 
             foreach (var sortedFile in sortedFiles)
@@ -77,26 +79,6 @@ namespace ACE.DatLoader
                 if (!AddFileToDirectory(datDatabase.RootDirectory, datDatabase.Header.BlockSize, sortedFile, 2))
                     throw new Exception();
             }
-
-            // Remove a file and branch in the middle of the root - TESTING
-            /*datDatabase.RootDirectory.Directories.RemoveAt(10);
-            datDatabase.RootDirectory.Directories.RemoveAt(10);
-            datDatabase.RootDirectory.Directories.RemoveAt(10);
-            datDatabase.RootDirectory.Directories.RemoveAt(10);
-            datDatabase.RootDirectory.Directories.RemoveAt(10);
-            datDatabase.RootDirectory.Directories.RemoveAt(10);
-            datDatabase.RootDirectory.Directories.RemoveAt(10);
-            datDatabase.RootDirectory.Directories.RemoveAt(10);
-            var entries = new List<DatFile>(datDatabase.RootDirectory.DatDirectoryHeader.Entries);
-            entries.RemoveAt(10);
-            entries.RemoveAt(10);
-            entries.RemoveAt(10);
-            entries.RemoveAt(10);
-            entries.RemoveAt(10);
-            entries.RemoveAt(10);
-            entries.RemoveAt(10);
-            entries.RemoveAt(10);
-            datDatabase.RootDirectory.DatDirectoryHeader.Entries = entries.ToArray();*/
 
             // Write our Root Directory
             datDatabase.RootDirectory.Write(fileStream);
