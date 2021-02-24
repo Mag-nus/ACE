@@ -78,8 +78,27 @@ namespace ACE.DatLoader
                     throw new Exception();
             }
 
-            // Write our Root Directory
+            // Remove a file and branch in the middle of the root - TESTING
+            /*datDatabase.RootDirectory.Directories.RemoveAt(10);
+            datDatabase.RootDirectory.Directories.RemoveAt(10);
+            datDatabase.RootDirectory.Directories.RemoveAt(10);
+            datDatabase.RootDirectory.Directories.RemoveAt(10);
+            datDatabase.RootDirectory.Directories.RemoveAt(10);
+            datDatabase.RootDirectory.Directories.RemoveAt(10);
+            datDatabase.RootDirectory.Directories.RemoveAt(10);
+            datDatabase.RootDirectory.Directories.RemoveAt(10);
+            var entries = new List<DatFile>(datDatabase.RootDirectory.DatDirectoryHeader.Entries);
+            entries.RemoveAt(10);
+            entries.RemoveAt(10);
+            entries.RemoveAt(10);
+            entries.RemoveAt(10);
+            entries.RemoveAt(10);
+            entries.RemoveAt(10);
+            entries.RemoveAt(10);
+            entries.RemoveAt(10);
+            datDatabase.RootDirectory.DatDirectoryHeader.Entries = entries.ToArray();*/
 
+            // Write our Root Directory
             datDatabase.RootDirectory.Write(fileStream);
 
             // Write our Root Directory again, this time it will have the correct Branches tables
@@ -102,6 +121,7 @@ namespace ACE.DatLoader
 
 
             // Write the header at 0x100, no clue what this is
+            // the 64 bytes @ 0x100 is part of the iteration tracking
             fileStream.Seek(0x100, SeekOrigin.Begin);
             if (datDatabase is PortalDatDatabase)
                 fileStream.Write(new byte[] { 0x00, 0x50, 0x4C, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0xFF, 0xFF, 0x00, 0x2C, 0xCE, 0x0F, 0x0C, 0x00, 0x00, 0x00, 0x39, 0x4E, 0x7B, 0x55, 0x01, 0x00, 0x00, 0x00, 0x00, 0x64, 0x38, 0x37, 0x00, 0x00, 0x00, 0x00, 0x2B, 0x00, 0x00, 0x00, 0x00, 0x1C, 0x38, 0x37, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }, 0, 0x40);
@@ -121,9 +141,6 @@ namespace ACE.DatLoader
                 if (datDirectory.Directories.Count == 0)
                 {
                     lastDirectory = new DatDirectory(0, blockSize);
-
-                    for (int i = 1; i < lastDirectory.DatDirectoryHeader.Branches.Length; i++)
-                        lastDirectory.DatDirectoryHeader.Branches[i] = 0xCDCDCDCD;
 
                     datDirectory.Directories.Add(lastDirectory);
                 }
@@ -154,7 +171,10 @@ namespace ACE.DatLoader
             if (datDirectoryHeader.Entries == null)
                 datDirectoryHeader.Entries = new DatFile[0];
 
-            if (datDirectoryHeader.Entries.Length >= 0x3D)
+            // Values of 0x2B - 0x30 will work.
+            // Values lower run out of dictionary room.
+            // Values higher and the client won't load the dat
+            if (datDirectoryHeader.Entries.Length >= 0x2D)
                 return false;
 
             var entries = new List<DatFile>(datDirectoryHeader.Entries);

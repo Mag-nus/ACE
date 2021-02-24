@@ -76,9 +76,6 @@ namespace ACE.DatLoader
         {
             foreach (var entry in datDirectory.DatDirectoryHeader.Entries)
             {
-                if (entry.ObjectId == 0xFFFF0001)
-                    ;
-
                 if (entry.ObjectId < min)
                     min = entry.ObjectId;
 
