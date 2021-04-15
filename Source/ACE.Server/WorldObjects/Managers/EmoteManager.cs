@@ -462,7 +462,7 @@ namespace ACE.Server.WorldObjects.Managers
 
                 case EmoteType.InqEvent:
 
-                    var started = EventManager.IsEventStarted(emote.Message);
+                    var started = EventManager.IsEventStarted(emote.Message, WorldObject, targetObject);
                     ExecuteEmoteSet(started ? EmoteCategory.EventSuccess : EmoteCategory.EventFailure, emote.Message, targetObject, true);
                     break;
 
@@ -857,6 +857,10 @@ namespace ACE.Server.WorldObjects.Managers
                     if (Debug)
                         Console.Write($".{(MotionCommand)emote.Motion}");
 
+                    // If the landblock is dormant, there are no players in range
+                    if (WorldObject.CurrentLandblock?.IsDormant ?? false)
+                        break;
+
                     // are there players within emote range?
                     if (!WorldObject.PlayersInRange(ClientMaxAnimRange))
                         break;
@@ -948,6 +952,14 @@ namespace ACE.Server.WorldObjects.Managers
 
                     if (creature != null)
                     {
+                        // If the landblock is dormant, there are no players in range
+                        if (WorldObject.CurrentLandblock?.IsDormant ?? false)
+                            break;
+
+                        // are there players within emote range?
+                        if (!WorldObject.PlayersInRange(ClientMaxAnimRange))
+                            break;
+
                         var newPos = new Position(creature.Home);
                         newPos.Pos += new Vector3(emote.OriginX ?? 0, emote.OriginY ?? 0, emote.OriginZ ?? 0);      // uses relative position
 
@@ -1242,12 +1254,12 @@ namespace ACE.Server.WorldObjects.Managers
 
                 case EmoteType.StartEvent:
 
-                    EventManager.StartEvent(emote.Message);
+                    EventManager.StartEvent(emote.Message, WorldObject, targetObject);
                     break;
 
                 case EmoteType.StopEvent:
 
-                    EventManager.StopEvent(emote.Message);
+                    EventManager.StopEvent(emote.Message, WorldObject, targetObject);
                     break;
 
                 case EmoteType.TakeItems:
