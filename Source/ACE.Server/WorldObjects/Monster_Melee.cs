@@ -58,6 +58,8 @@ namespace ACE.Server.WorldObjects
             if (CurrentMotionState.Stance == MotionStance.NonCombat)
                 DoAttackStance();
 
+            var weapon = GetEquippedWeapon();
+
             // select combat maneuver
             var motionCommand = GetCombatManeuver();
             if (motionCommand == null)
@@ -71,7 +73,7 @@ namespace ACE.Server.WorldObjects
             var actionChain = new ActionChain();
 
             // handle self-procs
-            TryProcEquippedItems(this, true);
+            TryProcEquippedItems(this, true, weapon);
 
             var prevTime = 0.0f;
             bool targetProc = false;
@@ -92,7 +94,6 @@ namespace ACE.Server.WorldObjects
                         return;
                     }
 
-                    var weapon = GetEquippedWeapon();
                     var damageEvent = DamageEvent.CalculateDamage(this, target, weapon, motionCommand, attackFrames[0].attackHook);
 
                     //var damage = CalculateDamage(ref damageType, maneuver, bodyPart, ref critical, ref shieldMod);
@@ -109,6 +110,10 @@ namespace ACE.Server.WorldObjects
                                 var shieldSkill = targetPlayer.GetCreatureSkill(Skill.Shield);
                                 Proficiency.OnSuccessUse(targetPlayer, shieldSkill, shieldSkill.Current); // ?
                             }
+
+                            // handle Dirty Fighting
+                            if (GetCreatureSkill(Skill.DirtyFighting).AdvancementClass >= SkillAdvancementClass.Trained)
+                                FightDirty(targetPlayer);
                         }
                         else if (combatPet != null || targetPet != null || Faction1Bits != null || target.Faction1Bits != null || PotentialFoe(target))
                         {
@@ -116,12 +121,16 @@ namespace ACE.Server.WorldObjects
                             //Console.WriteLine($"{target.Name} taking {Math.Round(damage)} {damageType} damage from {Name}");
                             target.TakeDamage(this, damageEvent.DamageType, damageEvent.Damage);
                             EmitSplatter(target, damageEvent.Damage);
+
+                            // handle Dirty Fighting
+                            if (GetCreatureSkill(Skill.DirtyFighting).AdvancementClass >= SkillAdvancementClass.Trained)
+                                FightDirty(target);
                         }
 
                         // handle target procs
                         if (!targetProc)
                         {
-                            TryProcEquippedItems(target, false);
+                            TryProcEquippedItems(target, false, weapon);
                             targetProc = true;
                         }
                     }

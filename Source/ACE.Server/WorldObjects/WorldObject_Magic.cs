@@ -336,7 +336,7 @@ namespace ACE.Server.WorldObjects
 
                     if (player != null)
                     {
-                        if (spell.BaseRangeConstant > 0)
+                        if (player != spellTarget)
                         {
                             string msg;
                             if (spell.IsBeneficial)
@@ -359,7 +359,7 @@ namespace ACE.Server.WorldObjects
                         }
                     }
 
-                    if (targetPlayer != null && spell.BaseRangeConstant > 0)
+                    if (targetPlayer != null && player != targetPlayer)
                     {
                         string msg;
                         if (spell.IsBeneficial)
@@ -2180,6 +2180,22 @@ namespace ACE.Server.WorldObjects
                 if (player != null && enchantmentStatus.Message != null)
                     player.Session.Network.EnqueueSend(enchantmentStatus.Message);
             }
+        }
+
+        public float ItemManaRateAccumulator { get; set; }
+
+        public bool ItemManaDepletionMessage { get; set; }
+
+        public void OnSpellsActivated()
+        {
+            IsAffecting = true;
+            ItemManaRateAccumulator = 0;
+            ItemManaDepletionMessage = false;
+        }
+
+        public void OnSpellsDeactivated()
+        {
+            IsAffecting = false;
         }
     }
 }
