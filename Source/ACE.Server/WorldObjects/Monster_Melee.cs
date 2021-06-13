@@ -73,7 +73,7 @@ namespace ACE.Server.WorldObjects
             var actionChain = new ActionChain();
 
             // handle self-procs
-            TryProcEquippedItems(this, true, weapon);
+            TryProcEquippedItems(this, this, true, weapon);
 
             var prevTime = 0.0f;
             bool targetProc = false;
@@ -113,24 +113,25 @@ namespace ACE.Server.WorldObjects
 
                             // handle Dirty Fighting
                             if (GetCreatureSkill(Skill.DirtyFighting).AdvancementClass >= SkillAdvancementClass.Trained)
-                                FightDirty(targetPlayer);
+                                FightDirty(targetPlayer, damageEvent.Weapon);
                         }
                         else if (combatPet != null || targetPet != null || Faction1Bits != null || target.Faction1Bits != null || PotentialFoe(target))
                         {
                             // combat pet inflicting or receiving damage
                             //Console.WriteLine($"{target.Name} taking {Math.Round(damage)} {damageType} damage from {Name}");
                             target.TakeDamage(this, damageEvent.DamageType, damageEvent.Damage);
+
                             EmitSplatter(target, damageEvent.Damage);
 
                             // handle Dirty Fighting
                             if (GetCreatureSkill(Skill.DirtyFighting).AdvancementClass >= SkillAdvancementClass.Trained)
-                                FightDirty(target);
+                                FightDirty(target, damageEvent.Weapon);
                         }
 
                         // handle target procs
                         if (!targetProc)
                         {
-                            TryProcEquippedItems(target, false, weapon);
+                            TryProcEquippedItems(this, target, false, weapon);
                             targetProc = true;
                         }
                     }
