@@ -831,12 +831,12 @@ namespace ACE.Server.WorldObjects
             }
 
             // consume mana
-            WorldObject caster = this;
+            var caster = GetEquippedWand();  // TODO: persist this from the beginning, since this is done with delay
+
             if (!isWeaponSpell)
                 UpdateVitalDelta(Mana, -(int)manaUsed);
             else
             {
-                caster = GetEquippedWand();     // TODO: persist this from the beginning, since this is done with delay
                 if (caster != null)
                     caster.ItemCurMana -= (int)manaUsed;
                 else
@@ -883,7 +883,7 @@ namespace ACE.Server.WorldObjects
 
                     // handle self procs
                     if (spell.IsHarmful && target != this)
-                        TryProcEquippedItems(this, true);
+                        TryProcEquippedItems(this, this, true, caster);
 
                     break;
 
@@ -894,13 +894,13 @@ namespace ACE.Server.WorldObjects
                         switch (spell.School)
                         {
                             case MagicSchool.WarMagic:
-                                WarMagic(target, spell, caster);
+                                WarMagic(target, spell, caster, isWeaponSpell);
                                 break;
                             case MagicSchool.VoidMagic:
-                                VoidMagic(target, spell, caster);
+                                VoidMagic(target, spell, caster, isWeaponSpell);
                                 break;
                             case MagicSchool.LifeMagic:
-                                LifeMagic(spell, out uint damage, out var enchantmentStatus, target, caster);
+                                LifeMagic(spell, out uint damage, out var enchantmentStatus, target, caster, caster, isWeaponSpell);
                                 break;
                         }
                     }
@@ -1063,9 +1063,7 @@ namespace ACE.Server.WorldObjects
             LastSuccessCast_School = spell.School;
             LastSuccessCast_Time = Time.GetUnixTime();
 
-            WorldObject caster = this;
-            if (isWeaponSpell)
-                caster = GetEquippedWand();
+            var caster = GetEquippedWand();
 
             // verify after windup, still consumes mana
             if (spell.MetaSpellType == SpellType.Dispel && !VerifyDispelPKStatus(this, target))
@@ -1074,10 +1072,10 @@ namespace ACE.Server.WorldObjects
             switch (spell.School)
             {
                 case MagicSchool.WarMagic:
-                    WarMagic(target, spell, caster);
+                    WarMagic(target, spell, caster, isWeaponSpell);
                     break;
                 case MagicSchool.VoidMagic:
-                    VoidMagic(target, spell, caster);
+                    VoidMagic(target, spell, caster, isWeaponSpell);
                     break;
 
                 case MagicSchool.CreatureEnchantment:
@@ -1106,7 +1104,7 @@ namespace ACE.Server.WorldObjects
 
                         // handle target procs
                         if (targetCreature != null && targetCreature != this)
-                            TryProcEquippedItems(targetCreature, false);
+                            TryProcEquippedItems(this, targetCreature, false, caster);
 
                         if (targetPlayer != null)
                             UpdatePKTimers(this, targetPlayer);
@@ -1133,7 +1131,7 @@ namespace ACE.Server.WorldObjects
                         }
                     }
 
-                    targetDeath = LifeMagic(spell, out uint damage, out enchantmentStatus, target, caster);
+                    targetDeath = LifeMagic(spell, out uint damage, out enchantmentStatus, target, null, caster, isWeaponSpell);
 
                     if (spell.MetaSpellType != SpellType.LifeProjectile)
                     {
@@ -1147,7 +1145,7 @@ namespace ACE.Server.WorldObjects
 
                             // handle target procs
                             if (targetCreature != null && targetCreature != this)
-                                TryProcEquippedItems(targetCreature, false);
+                                TryProcEquippedItems(this, targetCreature, false, caster);
 
                             if (targetPlayer != null)
                                 UpdatePKTimers(this, targetPlayer);
