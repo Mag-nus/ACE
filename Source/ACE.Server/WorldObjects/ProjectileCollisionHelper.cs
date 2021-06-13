@@ -68,7 +68,7 @@ namespace ACE.Server.WorldObjects
 
                             // handle Dirty Fighting
                             if (sourceCreature.GetCreatureSkill(Skill.DirtyFighting).AdvancementClass >= SkillAdvancementClass.Trained)
-                                sourceCreature.FightDirty(targetPlayer);
+                                sourceCreature.FightDirty(targetPlayer, damageEvent.Weapon);
                         }
                         else
                             targetPlayer.OnEvade(sourceCreature, CombatType.Missile);
@@ -84,7 +84,7 @@ namespace ACE.Server.WorldObjects
 
                             // handle Dirty Fighting
                             if (sourceCreature.GetCreatureSkill(Skill.DirtyFighting).AdvancementClass >= SkillAdvancementClass.Trained)
-                                sourceCreature.FightDirty(targetCreature);
+                                sourceCreature.FightDirty(targetCreature, damageEvent.Weapon);
                         }
 
                         if (!(targetCreature is CombatPet))
@@ -103,13 +103,14 @@ namespace ACE.Server.WorldObjects
                     if (LandblockManager.CurrentlyTickingLandblockGroupsMultiThreaded)
                     {
                         // Ok... if we got here, we're likely in the parallel landblock physics processing.
-                        if (sourceCreature.CurrentLandblock == null || targetCreature.CurrentLandblock == null || sourceCreature.CurrentLandblock.CurrentLandblockGroup != targetCreature.CurrentLandblock.CurrentLandblockGroup)
+                        if (worldObject.CurrentLandblock == null || sourceCreature.CurrentLandblock == null || targetCreature.CurrentLandblock == null || worldObject.CurrentLandblock.CurrentLandblockGroup != sourceCreature.CurrentLandblock.CurrentLandblockGroup || sourceCreature.CurrentLandblock.CurrentLandblockGroup != targetCreature.CurrentLandblock.CurrentLandblockGroup)
                             threadSafe = false;
                     }
 
                     if (threadSafe)
                         // This can result in spell projectiles being added to either sourceCreature or targetCreature landblock.
-                        sourceCreature.TryProcEquippedItems(targetCreature, false);
+                        // worldObject is hitting targetCreature, so they should almost always be in the same landblock
+                        worldObject.TryProcEquippedItems(sourceCreature, targetCreature, false, worldObject.ProjectileLauncher);
                     else
                     {
                         // sourceCreature and creatureTarget are now in different landblock groups.
