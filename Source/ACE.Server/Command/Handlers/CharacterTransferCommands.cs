@@ -413,15 +413,15 @@ namespace ACE.Server.Command.Handlers
 
                 // We don't import all the enchantments. Instead, we just add str/arcane buffs to help activate equipment
                 player.EnchantmentManager.DispelAllEnchantments();
-                player.EnchantmentManager.Add(new Spell(4325), player); // Strength Self 8
-                player.EnchantmentManager.Add(new Spell(3738), player); // Prodigal Strength
-                player.EnchantmentManager.Add(new Spell(4305), player); // Focus Self 8
-                player.EnchantmentManager.Add(new Spell(3705), player); // Prodigal Focus
-                player.EnchantmentManager.Add(new Spell(2348), player); // Brilliance
-                player.EnchantmentManager.Add(new Spell(4510), player); // Incantation of Arcane Enlightenment Self
-                player.EnchantmentManager.Add(new Spell(3682), player); // Prodigal Arcane Enlightenment
-                player.EnchantmentManager.Add(new Spell(4548), player); // Incantation of Fealty Self
-                player.EnchantmentManager.Add(new Spell(3701), player); // Prodigal Fealty
+                player.EnchantmentManager.Add(new Spell(4325), player, null); // Strength Self 8
+                player.EnchantmentManager.Add(new Spell(3738), player, null); // Prodigal Strength
+                player.EnchantmentManager.Add(new Spell(4305), player, null); // Focus Self 8
+                player.EnchantmentManager.Add(new Spell(3705), player, null); // Prodigal Focus
+                player.EnchantmentManager.Add(new Spell(2348), player, null); // Brilliance
+                player.EnchantmentManager.Add(new Spell(4510), player, null); // Incantation of Arcane Enlightenment Self
+                player.EnchantmentManager.Add(new Spell(3682), player, null); // Prodigal Arcane Enlightenment
+                player.EnchantmentManager.Add(new Spell(4548), player, null); // Incantation of Fealty Self
+                player.EnchantmentManager.Add(new Spell(3701), player, null); // Prodigal Fealty
 
 
                 session.Network.EnqueueSend(new GameMessageSystemChat("Pulling retail possessions...", ChatMessageType.Broadcast));
