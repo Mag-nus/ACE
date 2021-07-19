@@ -182,6 +182,8 @@ namespace ACE.Server.WorldObjects
 
             MagicState = new MagicState(this);
 
+            FoodState = new FoodState(this);
+
             RecordCast = new RecordCast(this);
 
             AttackQueue = new AttackQueue(this);
@@ -872,7 +874,7 @@ namespace ACE.Server.WorldObjects
         public void HandleActionJump(JumpPack jump)
         {
             StartJump = new ACE.Entity.Position(Location);
-            Console.WriteLine($"JumpPack: Velocity: {jump.Velocity}, Extent: {jump.Extent}");
+            //Console.WriteLine($"JumpPack: Velocity: {jump.Velocity}, Extent: {jump.Extent}");
 
             var strength = Strength.Current;
             var capacity = EncumbranceSystem.EncumbranceCapacity((int)strength, AugmentationIncreasedCarryingCapacity);
