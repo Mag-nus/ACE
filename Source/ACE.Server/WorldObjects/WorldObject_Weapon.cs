@@ -452,7 +452,7 @@ namespace ACE.Server.WorldObjects
 
         public bool HasImbuedEffect(ImbuedEffectType type)
         {
-            return (GetImbuedEffects() & type) != 0;
+            return ImbuedEffect.HasFlag(type);
         }
 
         public static ImbuedEffectType GetRendDamageType(DamageType damageType)
@@ -936,10 +936,12 @@ namespace ACE.Server.WorldObjects
                 return;
             }
 
+            var itemCaster = this is Creature ? null : this;
+
             if (spell.NonComponentTargetType == ItemType.None)
-                attacker.TryCastSpell(spell, null, this, fromProc: true);
+                attacker.TryCastSpell(spell, null, itemCaster, itemCaster, true, true);
             else
-                attacker.TryCastSpell(spell, target, this, fromProc: true);
+                attacker.TryCastSpell(spell, target, itemCaster, itemCaster, true, true);
         }
 
         private bool? isMasterable;
