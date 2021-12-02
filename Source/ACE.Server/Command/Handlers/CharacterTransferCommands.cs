@@ -64,7 +64,10 @@ namespace ACE.Server.Command.Handlers
             var config = Common.ConfigManager.Config.MySql.Shard;
 
             var optionsBuilder = new DbContextOptionsBuilder<ShardDbContext>();
-            optionsBuilder.UseMySql($"server={config.Host};port={config.Port};user={config.Username};password={config.Password};database={server.Database}");
+
+            var connectionString = $"server={config.Host};port={config.Port};user={config.Username};password={config.Password};database={server.Database}";
+
+            optionsBuilder.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString));
 
             var context = new ShardDbContext(optionsBuilder.Options);
 
