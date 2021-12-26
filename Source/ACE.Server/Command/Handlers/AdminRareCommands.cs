@@ -61,6 +61,15 @@ namespace ACE.Server.Command.Handlers
                     // 6073,"Legendary Two Handed Combat Aptitude"
                     // 2966,"Aura of Murderous Thirst"
                     AddWeeniesToInventory(session.Player, new List<uint> { 42662, 42663, 42664, 42665, 42666 }, null, UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded, new List<int> { int.MaxValue }, new List<int> { 4395, 4400, 4405, 4417, 6089, 6091, 6094, 6100, 5032, 6073, 2966 });
+
+                    // 40652, Great BloodScorch
+                    // 41890, Ultimate Singularity Greatsword (Upgraded)
+                    // 46118, Enhanced Shivering Atlan Two Handed Sword
+                    // 46394, Shadowfire Isparian Two Handed Sword
+                    // 46830, Purified Mouryou Nodachi
+                    // 51968, Rynthid Tentacle Greatspear
+                    // 53315, Oak Stormwood Greatsword
+                    AddWeeniesToInventory(session.Player, new List<uint> { 40652, 41890, 46118, 46394, 46830, 51968, 53315 }, null, UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded, new List<int> { int.MaxValue }, new List<int> { 4395, 4400, 4405, 4417, 6089, 6091, 6094, 6100, 5032, 6073, 2966 });
                     break;
                 case "2hop":
                     // Add
@@ -76,6 +85,15 @@ namespace ACE.Server.Command.Handlers
                     // 6073,"Legendary Two Handed Combat Aptitude"
                     // 2966,"Aura of Murderous Thirst"
                     AddWeeniesToInventory(session.Player, new List<uint> { 42662, 42663, 42664, 42665, 42666 }, null, UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.AddAllPerksToWeapons | UpgradeOptions.Bonded, new List<int> { int.MaxValue }, new List<int> { 4395, 4400, 4405, 4417, 6089, 6091, 6094, 6100, 5032, 6073, 2966 });
+
+                    // 40652, Great BloodScorch
+                    // 41890, Ultimate Singularity Greatsword (Upgraded)
+                    // 46118, Enhanced Shivering Atlan Two Handed Sword
+                    // 46394, Shadowfire Isparian Two Handed Sword
+                    // 46830, Purified Mouryou Nodachi
+                    // 51968, Rynthid Tentacle Greatspear
+                    // 53315, Oak Stormwood Greatsword
+                    AddWeeniesToInventory(session.Player, new List<uint> { 40652, 41890, 46118, 46394, 46830, 51968, 53315 }, null, UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.AddAllPerksToWeapons | UpgradeOptions.Bonded, new List<int> { int.MaxValue }, new List<int> { 4395, 4400, 4405, 4417, 6089, 6091, 6094, 6100, 5032, 6073, 2966 });
                     break;
                 case "wand":
                     // 5182,"Aura of Incantation of Spirit Drinker"
@@ -422,19 +440,7 @@ namespace ACE.Server.Command.Handlers
 
         private static void AddImbuedEffect(WorldObject wo, ImbuedEffectType imbuedEffectType)
         {
-            if (!wo.HasImbuedEffect(imbuedEffectType))
-            {
-                if (!wo.GetProperty(ACE.Entity.Enum.Properties.PropertyInt.ImbuedEffect).HasValue)
-                    wo.SetProperty(ACE.Entity.Enum.Properties.PropertyInt.ImbuedEffect, (int)imbuedEffectType);
-                else if (!wo.GetProperty(ACE.Entity.Enum.Properties.PropertyInt.ImbuedEffect2).HasValue)
-                    wo.SetProperty(ACE.Entity.Enum.Properties.PropertyInt.ImbuedEffect2, (int)imbuedEffectType);
-                else if (!wo.GetProperty(ACE.Entity.Enum.Properties.PropertyInt.ImbuedEffect3).HasValue)
-                    wo.SetProperty(ACE.Entity.Enum.Properties.PropertyInt.ImbuedEffect3, (int)imbuedEffectType);
-                else if (!wo.GetProperty(ACE.Entity.Enum.Properties.PropertyInt.ImbuedEffect4).HasValue)
-                    wo.SetProperty(ACE.Entity.Enum.Properties.PropertyInt.ImbuedEffect4, (int)imbuedEffectType);
-                else if (!wo.GetProperty(ACE.Entity.Enum.Properties.PropertyInt.ImbuedEffect5).HasValue)
-                    wo.SetProperty(ACE.Entity.Enum.Properties.PropertyInt.ImbuedEffect5, (int)imbuedEffectType);
-            }
+            wo.ImbuedEffect = wo.ImbuedEffect | imbuedEffectType;
         }
     }
 }
