@@ -145,7 +145,11 @@ namespace ACE.Server.Command.Handlers
                     // 4499,"Incantation of Arcanum Salvaging Self"
                     AddWeeniesToInventory(session.Player, new List<uint> { 39978 }, null, UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded, new List<int> { int.MaxValue }, new List<int> { 6068, 4499, 6095 });
                     // ace39977_gladiatorialleggings = 39977,
-                    AddWeeniesToInventory(session.Player, new List<uint> { 39977 }, null, UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded, new List<int> { int.MaxValue }, new List<int> { 6095 });
+                    // 6071,"Legendary Sprint"
+                    // 4616,"Incantation of Sprint Self"
+                    // 6058,"Legendary Jumping Prowess"
+                    // 4572,"Incantation of Jumping Mastery Self"
+                    AddWeeniesToInventory(session.Player, new List<uint> { 39977 }, null, UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded, new List<int> { int.MaxValue }, new List<int> { 6071, 4616, 6058, 4572, 6095 });
 
                     // necklaceraregoldensnake
                     // Add:
@@ -186,6 +190,13 @@ namespace ACE.Server.Command.Handlers
                     // 6337,"Gauntlet Healing Boost II"
                     // 6340,"Gauntlet Vitality III"
                     AddWeeniesToInventory(session.Player, new List<uint> { 30364 }, null, UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded, new List<int> { int.MaxValue }, new List<int> { 6329, 6331, 6333, 6335, 6337, 6340 });
+
+                    // ringrareweeping = 30364,
+                    // 4853, "Master Negator's Magic Resistance"
+                    // 4861, "Master Guardian's Invulnerability"
+                    // 4865, "Master Wayfarer's Impregnability"
+                    // 4906, "Apprentice Challenger's Rejuvenation"
+                    AddWeeniesToInventory(session.Player, new List<uint> { 30364 }, null, UpgradeOptions.DoubleMaxMana | UpgradeOptions.HalveManaRate | UpgradeOptions.Bonded, new List<int> { int.MaxValue }, new List<int> { 4853, 4861, 4865, 4906 });
 
                     // Infinite mana stone
                     AddWeeniesToInventory(session.Player, new List<uint> { 30254 }, null, UpgradeOptions.Bonded);
