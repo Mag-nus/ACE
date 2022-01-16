@@ -326,6 +326,8 @@ namespace ACE.Server.Managers
                 lightWeenieTracker.WeenieType = weenie.WeenieType;
             }
 
+            //lightWeenieTracker.StackTrace = Environment.StackTrace;
+
             DynamicGUIDDebugger[alloc] = lightWeenieTracker;
 
             return new ObjectGuid(alloc);
@@ -378,6 +380,8 @@ namespace ACE.Server.Managers
 
             public uint WeenieClassId { get; set; }
             public WeenieType WeenieType { get; set; }
+
+            //public string StackTrace { get; set; }
         }
 
         public static readonly ConcurrentDictionary<uint, LightWeenieTracker> DynamicGUIDDebugger = new ConcurrentDictionary<uint, LightWeenieTracker>();
@@ -449,6 +453,14 @@ namespace ACE.Server.Managers
             }
 
             message += "\n";
+
+
+            /*message += "GUIDs: ";
+
+            foreach (var entry in DynamicGUIDDebugger)
+                message += $"0x{entry.Key:X8} ";
+
+            message += "\n";*/
 
 
             return message;
