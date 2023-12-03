@@ -1,17 +1,12 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
-using System.Threading.Tasks;
-
-using Microsoft.EntityFrameworkCore;
 
 using log4net;
 
 using ACE.Database;
-using ACE.Database.Entity;
 using ACE.Database.Models.Shard;
 using ACE.Entity;
 using ACE.Entity.Enum;
@@ -23,8 +18,6 @@ using ACE.Server.Network;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
 
-using Biota = ACE.Database.Models.Shard.Biota;
-
 namespace ACE.Server.Command.Handlers
 {
     public static class CharacterTransferCommands
@@ -32,165 +25,6 @@ namespace ACE.Server.Command.Handlers
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         private static ClothingBaseLookup clothingBaseLookup;
-
-        private class Server
-        {
-            public readonly string Database;
-            public readonly List<string> Names = new List<string>();
-
-            public Server(string database, params string[] names)
-            {
-                Database = database;
-                foreach (var name in names)
-                    Names.Add(name);
-            }
-        }
-
-        private static readonly Collection<Server> Servers = new Collection<Server>
-        {
-            new Server("ace_shard_retail_dt", "Darktide",       "dt"),
-            new Server("ace_shard_retail_ff", "Frostfell",      "ff"),
-            new Server("ace_shard_retail_hg", "Harvestgain",    "hg"),
-            new Server("ace_shard_retail_lc", "Leafcull",       "lc"),
-            new Server("ace_shard_retail_mt", "Morningthaw",    "mt"),
-            new Server("ace_shard_retail_sc", "Solclaim",       "sc"),
-            new Server("ace_shard_retail_td", "Thistledown",    "td"),
-            new Server("ace_shard_retail_vt", "Verdantine",     "vt"),
-            new Server("ace_shard_retail_we", "WintersEbb",     "we"),
-        };
-
-        private static ShardDbContext GetShardDbContext(Server server)
-        {
-            var config = Common.ConfigManager.Config.MySql.Shard;
-
-            var optionsBuilder = new DbContextOptionsBuilder<ShardDbContext>();
-
-            var connectionString = $"server={config.Host};port={config.Port};user={config.Username};password={config.Password};database={server.Database}";
-
-            optionsBuilder.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString));
-
-            var context = new ShardDbContext(optionsBuilder.Options);
-
-            context.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
-
-            return context;
-        }
-
-        private static Character GetCharacter(Server server, uint id)
-        {
-            using (var context = GetShardDbContext(server))
-            {
-                var result = context.Character
-                    .Include(r => r.CharacterPropertiesContractRegistry)
-                    .Include(r => r.CharacterPropertiesFillCompBook)
-                    .Include(r => r.CharacterPropertiesFriendList)
-                    .Include(r => r.CharacterPropertiesQuestRegistry)
-                    .Include(r => r.CharacterPropertiesShortcutBar)
-                    .Include(r => r.CharacterPropertiesSpellBar)
-                    .Include(r => r.CharacterPropertiesTitleBook)
-                    .FirstOrDefault(r => r.Id == id && !r.IsDeleted);
-
-                return result;
-            }
-        }
-
-        private static Biota GetBiota(Server server, uint id)
-        {
-            using (var context = GetShardDbContext(server))
-            {
-                var shardDatabase = new ShardDatabase();
-
-                return shardDatabase.GetBiota(context, id);
-            }
-        }
-
-        private static Biota GetBiota(Server server, string name)
-        {
-            using (var context = GetShardDbContext(server))
-            {
-                var result = context.BiotaPropertiesString.FirstOrDefault(r => r.Type == (ushort)PropertyString.Name && r.Value == name);
-
-                if (result == null)
-                    return null;
-
-                var shardDatabase = new ShardDatabase();
-
-                return shardDatabase.GetBiota(context, result.ObjectId);
-            }
-        }
-
-        private static PossessedBiotas GetPossessedBiotasInParallel(Server severName, uint id)
-        {
-            var inventory = GetInventoryInParallel(severName, id, true);
-
-            var wieldedItems = GetWieldedItemsInParallel(severName, id);
-
-            return new PossessedBiotas(inventory, wieldedItems);
-        }
-
-        private static List<Biota> GetInventoryInParallel(Server server, uint parentId, bool includedNestedItems)
-        {
-            using (var context = GetShardDbContext(server))
-            {
-                var inventory = new ConcurrentBag<Biota>();
-
-                var results = context.BiotaPropertiesIID
-                    .Where(r => r.Type == (ushort)PropertyInstanceId.Container && r.Value == parentId)
-                    .ToList();
-
-                Parallel.ForEach(results, result =>
-                {
-                    using (var context2 = GetShardDbContext(server))
-                    {
-                        var shardDatabase = new ShardDatabase();
-
-                        var biota = shardDatabase.GetBiota(context2, result.ObjectId);
-
-                        if (biota != null)
-                        {
-                            inventory.Add(biota);
-
-                            if (includedNestedItems && biota.WeenieType == (int)WeenieType.Container)
-                            {
-                                var subItems = GetInventoryInParallel(server, biota.Id, false);
-
-                                foreach (var subItem in subItems)
-                                    inventory.Add(subItem);
-                            }
-                        }
-                    }
-                });
-
-                return inventory.ToList();
-            }
-        }
-
-        private static List<Biota> GetWieldedItemsInParallel(Server server, uint parentId)
-        {
-            using (var context = GetShardDbContext(server))
-            {
-                var wieldedItems = new ConcurrentBag<Biota>();
-
-                var results = context.BiotaPropertiesIID
-                    .Where(r => r.Type == (ushort)PropertyInstanceId.Wielder && r.Value == parentId)
-                    .ToList();
-
-                Parallel.ForEach(results, result =>
-                {
-                    using (var context2 = GetShardDbContext(server))
-                    {
-                        var shardDatabase = new ShardDatabase();
-
-                        var biota = shardDatabase.GetBiota(context2, result.ObjectId);
-
-                        if (biota != null)
-                            wieldedItems.Add(biota);
-                    }
-                });
-
-                return wieldedItems.ToList();
-            }
-        }
 
 
         // restoreretailcharacter
@@ -210,7 +44,7 @@ namespace ACE.Server.Command.Handlers
             }
 
             var serverName = parameters[0];
-            var server = Servers.FirstOrDefault(r => r.Names.Contains(serverName, StringComparer.OrdinalIgnoreCase));
+            var server = RetailShardManager.Servers.FirstOrDefault(r => r.Names.Contains(serverName, StringComparer.OrdinalIgnoreCase));
             if (server == null)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat("[server name] not found", ChatMessageType.Broadcast));
@@ -236,7 +70,7 @@ namespace ACE.Server.Command.Handlers
 
                 log.Info($"Account {session.AccountId}:{session.Account}, Player 0x{session.Player.Guid}:{session.Player.Name} requested restore of {serverName}:{retailName}");
 
-                var retailBiota = GetBiota(server, retailName);
+                var retailBiota = RetailShardManager.GetBiota(server, retailName);
 
                 if (retailBiota == null)
                 {
@@ -431,7 +265,7 @@ namespace ACE.Server.Command.Handlers
 
                 var possessedBiotas = new Collection<(ACE.Entity.Models.Biota biota, ReaderWriterLockSlim rwLock)>();
 
-                var possessions = GetPossessedBiotasInParallel(server, retailBiota.Id);
+                var possessions = RetailShardManager.GetPossessedBiotasInParallel(server, retailBiota.Id);
 
                 session.Network.EnqueueSend(new GameMessageSystemChat("Converting retail possessions...", ChatMessageType.Broadcast));
 
@@ -508,7 +342,7 @@ namespace ACE.Server.Command.Handlers
 
                 session.Network.EnqueueSend(new GameMessageSystemChat("Pulling retail character...", ChatMessageType.Broadcast));
 
-                var retailCharacter = GetCharacter(server, retailBiota.Id);
+                var retailCharacter = RetailShardManager.GetCharacter(server, retailBiota.Id);
 
                 if (retailCharacter != null)
                 {
