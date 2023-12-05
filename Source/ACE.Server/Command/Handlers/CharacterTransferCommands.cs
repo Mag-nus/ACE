@@ -12,7 +12,6 @@ using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
-using ACE.Server.Factories;
 using ACE.Server.Managers;
 using ACE.Server.Network;
 using ACE.Server.Network.GameMessages.Messages;
@@ -24,19 +23,11 @@ namespace ACE.Server.Command.Handlers
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
-        private static ClothingBaseLookup clothingBaseLookup;
-
 
         // restoreretailcharacter
         [CommandHandler("restoreretailcharacter", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 3, "Restores a pcapped retail character into your characters list", "[server name] [retail character name] [new character name]")]
         public static void HandleRestoreRetailCharacter(Session session, params string[] parameters)
         {
-            if (clothingBaseLookup == null)
-            {
-                session.Network.EnqueueSend(new GameMessageSystemChat("Initializing ClothingBaseLookup...", ChatMessageType.Broadcast));
-                clothingBaseLookup = new ClothingBaseLookup();
-            }
-
             if (session.Characters.Count >= (uint)PropertyManager.GetLong("max_chars_per_account").Item)
             {
                 session.Network.EnqueueSend(new GameMessageSystemChat($"You have no more free character slots.", ChatMessageType.Broadcast));
@@ -280,7 +271,7 @@ namespace ACE.Server.Command.Handlers
                 // Main pack and side slot items
                 foreach (var possession in sortedInventory.Where(r => r.BiotaPropertiesIID.FirstOrDefault(p => p.Type == (ushort)PropertyInstanceId.Container && p.Value == retailBiota.Id) != null))
                 {
-                    var wo = ImportWorldObject(possession);
+                    var wo = RetailShardManager.CreateCurrentShardSafeWorldObjectFromRetailServerBiota(possession);
 
                     if (wo == null)
                         continue;
@@ -295,7 +286,7 @@ namespace ACE.Server.Command.Handlers
                 // Side pack items
                 foreach (var possession in sortedInventory.Where(r => r.BiotaPropertiesIID.FirstOrDefault(p => p.Type == (ushort)PropertyInstanceId.Container && p.Value == retailBiota.Id) == null))
                 {
-                    var wo = ImportWorldObject(possession);
+                    var wo = RetailShardManager.CreateCurrentShardSafeWorldObjectFromRetailServerBiota(possession);
 
                     if (wo == null)
                         continue;
@@ -319,7 +310,7 @@ namespace ACE.Server.Command.Handlers
 
                 foreach (var possession in possessions.WieldedItems)
                 {
-                    var wo = ImportWorldObject(possession);
+                    var wo = RetailShardManager.CreateCurrentShardSafeWorldObjectFromRetailServerBiota(possession);
 
                     if (wo == null)
                         continue;
@@ -417,284 +408,6 @@ namespace ACE.Server.Command.Handlers
                     session.LogOffPlayer();
                 });
             });
-        }
-
-        private static WorldObject ImportWorldObject(Biota biota)
-        {
-            bool altWeenieUsed = false;
-
-            var weenie = DatabaseManager.World.GetCachedWeenie(biota.WeenieClassId);
-
-            if (weenie == null)
-            {
-                string altWeenieClassName = null;
-
-                // Not all retail WCIDs are defined yet. Here we replace them with similar counterparts
-
-                // Only use WeenieType for the most basic items. The export process guestimates the WeenieType, so we shouldn't trust it fully during the import process
-                if (altWeenieClassName == null)
-                {
-                    if (biota.WeenieType == 21)         altWeenieClassName = "backpack";    // Container
-                    else if (biota.WeenieType == 35)    altWeenieClassName = "wand";        // Caster
-                    else if (biota.WeenieType == 38)    altWeenieClassName = "gem";         // Gem
-                }
-
-                if (altWeenieClassName == null)
-                {
-                    var validLocations = biota.GetProperty(PropertyInt.ValidLocations);
-
-                    if (validLocations == (int)EquipMask.NeckWear)              altWeenieClassName = "necklace";
-                    else if (validLocations == (int)EquipMask.TrinketOne)       altWeenieClassName = "ace41513-pathwardentrinket";
-                    //else if (validLocations == (int)EquipMask.Cloak)            altWeenieClassName = "shirt"; // todo this is no good
-                    else if (validLocations == (int)EquipMask.WristWear)        altWeenieClassName = "bracelet";
-                    else if (validLocations == (int)EquipMask.FingerWear)       altWeenieClassName = "ring";
-
-                    else if (validLocations == (int)EquipMask.HeadWear)         altWeenieClassName = "helmet";
-                    else if (validLocations == (int)EquipMask.HandWear)         altWeenieClassName = "glovescloth";
-                    else if (validLocations == (int)EquipMask.AbdomenArmor)     altWeenieClassName = "girthleather";
-                    else if (validLocations == (int)EquipMask.FootWear)         altWeenieClassName = "shoes";
-
-                    else if (validLocations == (int)EquipMask.Shield)           altWeenieClassName = "shieldround";
-                    else if (validLocations == (int)EquipMask.MeleeWeapon)      altWeenieClassName = "swordlong";
-                    else if (validLocations == (int)EquipMask.MissileWeapon)    altWeenieClassName = "bowlong";
-                    else if (validLocations == (int)EquipMask.MissileAmmo)      altWeenieClassName = "arrow";
-                }
-
-                if (altWeenieClassName == null)
-                {
-                    // https://asheron.fandom.com/wiki/Currency
-                    var name = biota.GetProperty(PropertyString.Name);
-
-                    if (name == "Ancient Mhoire Coin")          altWeenieClassName = "coinstack";
-                    else if (name == "A'nekshay Token")         altWeenieClassName = "coinstack";
-                    else if (name == "Colosseum Coin")          altWeenieClassName = "coinstack";
-                    else if (name == "Dark Tusker Paw")         altWeenieClassName = "coinstack";
-                    else if (name == "Hero Token")              altWeenieClassName = "coinstack";
-                    else if (name == "Ornate Gear Marker")      altWeenieClassName = "coinstack";
-                    else if (name == "Pitted Slag")             altWeenieClassName = "coinstack";
-                    else if (name == "Small Olthoi Venom Sac")  altWeenieClassName = "coinstack";
-                    else if (name == "Spectral Ingot")          altWeenieClassName = "coinstack";
-                    else if (name == "Stipend")                 altWeenieClassName = "coinstack";
-                    else if (name == "Writ of Apology")         altWeenieClassName = "coinstack";
-                }
-
-                if (altWeenieClassName == null)
-                    return CreateIOU(biota);
-
-                weenie = DatabaseManager.World.GetCachedWeenie(altWeenieClassName);
-
-                if (weenie == null)
-                    return CreateIOU(biota);
-
-                altWeenieUsed = true;
-            }
-
-            if (weenie.WeenieType == 0)
-                return CreateIOU(biota);
-
-            var wo = WorldObjectFactory.CreateNewWorldObject(weenie);
-
-            // Determine what the retail properties are, these properties are server only and weren't pcapped
-            // PropertyInt.PaletteTemplate
-            // PropertyInt.UiEffects
-            // PropertyInt.TargetType
-
-            // PropertyDataId.Setup
-            // PropertyDataId.PaletteBase
-            // PropertyDataId.ClothingBase
-            // PropertyDataId.Icon
-
-            if (altWeenieUsed)
-            {
-                wo.RemoveProperty(PropertyInt.PaletteTemplate);
-                wo.RemoveProperty(PropertyFloat.Shade);
-                wo.RemoveProperty(PropertyFloat.Shade2);
-                wo.RemoveProperty(PropertyFloat.Shade3);
-                wo.RemoveProperty(PropertyFloat.Shade4);
-                //wo.RemoveProperty(PropertyInt.TsysMutationData);
-                //wo.RemoveProperty(PropertyDataId.ClothingBase);
-            }
-
-            foreach (var property in biota.BiotaPropertiesInt)
-                wo.SetProperty((PropertyInt)property.Type, property.Value);
-            foreach (var property in biota.BiotaPropertiesInt64)
-                wo.SetProperty((PropertyInt64)property.Type, property.Value);
-            foreach (var property in biota.BiotaPropertiesBool)
-                wo.SetProperty((PropertyBool)property.Type, property.Value);
-            foreach (var property in biota.BiotaPropertiesFloat)
-            {
-                // Some float properties were sent over the wire as 1, instead of the actual server value
-                if ((PropertyFloat)property.Type == PropertyFloat.CriticalFrequency && property.Value == 1)
-                    continue;
-
-                wo.SetProperty((PropertyFloat)property.Type, property.Value);
-            }
-            foreach (var property in biota.BiotaPropertiesString)
-                wo.SetProperty((PropertyString)property.Type, property.Value);
-            foreach (var property in biota.BiotaPropertiesDID)
-                wo.SetProperty((PropertyDataId)property.Type, property.Value);
-            foreach (var property in biota.BiotaPropertiesIID)
-                wo.SetProperty((PropertyInstanceId)property.Type, property.Value);
-
-            if (wo.Biota.PropertiesSpellBook == null)
-                wo.Biota.PropertiesSpellBook = new Dictionary<int, float>();
-            foreach (var property in biota.BiotaPropertiesSpellBook)
-                wo.Biota.PropertiesSpellBook[property.Spell] = property.Probability;
-
-            // Remove the enchantments effects from the item. We will not re-add any enchantments to the item
-            foreach (var enchantment in biota.BiotaPropertiesEnchantmentRegistry)
-            {
-                var spell = DatabaseManager.World.GetCachedSpell((uint)enchantment.SpellId);
-
-                if (!spell.StatModType.HasValue || !spell.StatModKey.HasValue || !spell.StatModVal.HasValue)
-                {
-                    log.Debug($"CharacterTransfer: Unable to subtract spell {spell.Id} from item 0x{wo.Guid}:{wo.Name}. Missing Values in database spell.");
-                    continue;
-                }
-
-                bool isSingleStat = ((spell.StatModType.Value & (int)EnchantmentTypeFlags.SingleStat) != 0);
-                bool isAdditive = ((spell.StatModType.Value & (int)EnchantmentTypeFlags.Additive) != 0);
-
-                if ((spell.StatModType.Value & (int)EnchantmentTypeFlags.Int) != 0)
-                {
-                    if (isSingleStat)
-                    {
-                        var value = wo.GetProperty((PropertyInt)spell.StatModKey) ?? 0;
-
-                        if (isAdditive)
-                            value -= (int)(spell.StatModVal ?? 0);
-                        else
-                        {
-                            log.Debug($"CharacterTransfer: Unable to subtract spell {spell.Id} from item 0x{wo.Guid}:{wo.Name}. StatModType 0x{spell.StatModType:X8} not implemented.");
-                            continue;
-                        }
-
-                        wo.SetProperty((PropertyInt)spell.StatModKey, value);
-                    }
-                    else
-                    {
-                        log.Debug($"CharacterTransfer: Unable to subtract spell {spell.Id} from item 0x{wo.Guid}:{wo.Name}. StatModType 0x{spell.StatModType:X8} not implemented.");
-                    }
-                }
-                else if ((spell.StatModType.Value & (int)EnchantmentTypeFlags.Float) != 0)
-                {
-                    if (isSingleStat)
-                    {
-                        var value = wo.GetProperty((PropertyFloat)spell.StatModKey) ?? 0;
-
-                        if (isAdditive)
-                            value -= (int)(spell.StatModVal ?? 0);
-                        else
-                        {
-                            log.Debug($"CharacterTransfer: Unable to subtract spell {spell.Id} from item 0x{wo.Guid}:{wo.Name}. StatModType 0x{spell.StatModType:X8} not implemented.");
-                            continue;
-                        }
-
-                        wo.SetProperty((PropertyFloat)spell.StatModKey, value);
-                    }
-                    else
-                    {
-                        log.Debug($"CharacterTransfer: Unable to subtract spell {spell.Id} from item 0x{wo.Guid}:{wo.Name}. StatModType 0x{spell.StatModType:X8} not implemented.");
-                    }
-                }
-                else
-                {
-                    log.Debug($"CharacterTransfer: Unable to subtract spell {spell.Id} from item 0x{wo.Guid}:{wo.Name}. StatModType 0x{spell.StatModType:X8} not implemented.");
-                }
-            }
-
-            // Try to determine the correct ClothingBase and PaletteTemplate from PCap data using OptimShi's ClothingBaseLookup
-            if (wo.ClothingBase != null && wo.PaletteTemplate != null)
-            {
-                var validLocations = biota.GetProperty(PropertyInt.ValidLocations) ?? 0;
-
-                if (((EquipMask)validLocations & EquipMask.Clothing) != 0 || ((EquipMask)validLocations & EquipMask.Armor) != 0 || wo is Container)
-                {
-                    var results = clothingBaseLookup.DoSearch(biota);
-
-                    if (results.Count > 0)
-                    {
-                        //var origClothingBase = wo.ClothingBase;
-                        //var origPaletteTemplate = wo.PaletteTemplate;
-                        wo.ClothingBase = results[0].ClothingBase;
-                        wo.PaletteTemplate = results[0].PaletteTemplate;
-
-                        var shade = clothingBaseLookup.GetShade(biota, wo.ClothingBase ?? 0, wo.PaletteTemplate ?? 0);
-
-                        if (shade != null)
-                        {
-                            wo.Shade = shade;
-                            wo.RemoveProperty(PropertyFloat.Shade2);
-                            wo.RemoveProperty(PropertyFloat.Shade3);
-                            wo.RemoveProperty(PropertyFloat.Shade4);
-                        }
-
-                        //log.Debug($"{wo.Name} changed ClothingBase from {origClothingBase:X8} to {wo.ClothingBase:X8}, PaletteTemplate from {origPaletteTemplate:X8} to {wo.PaletteTemplate:X8}");
-                    }
-                    //else
-                        //log.Debug($"{wo.Name} returned no results from DoSearch()");
-                }
-            }
-
-            // we don't import enchantments
-
-            if (altWeenieUsed)
-                wo.SetProperty(PropertyDataId.IconUnderlay, 0x109A); // black/white pixelated
-
-            // Clean location properties
-            wo.Placement = Placement.Resting;
-            wo.ParentLocation = null;
-            wo.Location = null;
-
-            // Clean up container properties
-            wo.OwnerId = null;
-            wo.ContainerId = null;
-            wo.InventoryOrder = null;
-
-            // Clean wielded properties
-            wo.RemoveProperty(PropertyInt.CurrentWieldedLocation);
-            wo.RemoveProperty(PropertyInstanceId.Wielder);
-            wo.Wielder = null;
-
-            wo.IsAffecting = false;
-
-            // Fixes
-            if (wo is ManaStone)
-            {
-                if (wo.UiEffects == UiEffects.Magical && (wo.ItemCurMana == null || wo.ItemCurMana == 0))
-                {
-                    wo.ItemCurMana = 10000;
-                    wo.Use = "Use on a magic item to give the stone's stored Mana to that item.";
-                }
-                if (wo.UiEffects != UiEffects.Magical && wo.ItemCurMana > 0)
-                    wo.UiEffects = UiEffects.Magical;
-                if (wo.UiEffects != UiEffects.Magical && wo.ItemCurMana == null)
-                {
-                    wo.ItemCurMana = 0;
-                    wo.Use = "Use on a magic item to destroy that item and drain its Mana.";
-                }
-            }
-
-            // Convenience
-            if (wo.ItemCurMana != null && wo.ItemMaxMana != null)
-                wo.ItemCurMana = wo.ItemMaxMana;
-
-            return wo;
-        }
-
-        private static WorldObject CreateIOU(Biota biota)
-        {
-            var iou = (Book)WorldObjectFactory.CreateNewWorldObject("parchment");
-
-            iou.SetProperties("IOU", "An IOU for a missing database object.", $"Sorry about that chief... but I couldn't import your {biota.Id:X8}:{biota.GetProperty(PropertyString.Name)}", "ACEmulator", "prewritten");
-            iou.AddPage(uint.MaxValue, "ACEmulator", "prewritten", false, $"{biota.WeenieClassId}\n\nSorry but the database does not have a weenie for weenieClassId #{biota.WeenieClassId} so in lieu of that here is an IOU for that item.", out _);
-            iou.Bonded = BondedStatus.Bonded;
-            iou.Attuned = AttunedStatus.Attuned;
-            iou.SetProperty(PropertyBool.IsSellable, false);
-            iou.Value = 0;
-            iou.EncumbranceVal = 0;
-
-            return iou;
         }
     }
 }

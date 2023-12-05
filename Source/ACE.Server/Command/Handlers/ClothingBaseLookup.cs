@@ -335,7 +335,9 @@ namespace ACE.Server.Command.Handlers
         public double? GetShade(Biota biota, uint clothingBase, int paletteTemplate)
         {
             ClothingTable clothing = DatManager.PortalDat.ReadFromDat<ClothingTable>(clothingBase);
-            var subPal = clothing.ClothingSubPalEffects[(uint)paletteTemplate];
+
+            if (!clothing.ClothingSubPalEffects.TryGetValue((uint)paletteTemplate, out var subPal))
+                return null;
 
             // get all the paletteIds from the palettes
             List<uint> palIds = new List<uint>();
