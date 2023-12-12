@@ -356,6 +356,9 @@ namespace ACE.Server.Command.Handlers
                     maxPalSet = palSet;
             }
 
+            if (maxPalSet == null)
+                return null;
+
             for (var i = 0; i < palIds.Count; i++)
             {
                 if (maxPalSet.PaletteList.Contains(palIds[i]))
