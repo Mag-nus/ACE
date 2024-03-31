@@ -560,7 +560,10 @@ namespace ACE.Server.Entity
 
             Spawned.Remove(woi.Guid.Full);
 
-            NextAvailable = DateTime.UtcNow.AddSeconds(Delay);
+            if (eventType == RegenerationType.Destruction && woi.WeenieType == WeenieType.Creature) // Load Test
+                NextAvailable = DateTime.UtcNow.AddSeconds(1);
+            else
+                NextAvailable = DateTime.UtcNow.AddSeconds(Delay);
         }
 
         public void Reset()
