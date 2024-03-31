@@ -167,7 +167,7 @@ namespace ACE.Server.WorldObjects
 
             if (CombatTable == null)
             {
-                log.Error($"{Name} ({Guid}).GetCombatManeuver() - CombatTable is null");
+                //log.Error($"{Name} ({Guid}).GetCombatManeuver() - CombatTable is null"); // Load Test
                 return null;
             }
 
@@ -182,7 +182,7 @@ namespace ACE.Server.WorldObjects
 
             if (!CombatTable.Stances.TryGetValue(CurrentMotionState.Stance, out var stanceManeuvers))
             {
-                log.Error($"{Name} ({Guid}).GetCombatManeuver() - couldn't find stance {CurrentMotionState.Stance} in CMT {CombatTableDID:X8}");
+                //log.Error($"{Name} ({Guid}).GetCombatManeuver() - couldn't find stance {CurrentMotionState.Stance} in CMT {CombatTableDID:X8}"); // Load Test
                 return null;
             }
 
@@ -190,7 +190,7 @@ namespace ACE.Server.WorldObjects
             motionTable.Links.TryGetValue(stanceKey, out var motions);
             if (motions == null)
             {
-                log.Error($"{Name} ({Guid}).GetCombatManeuver() - couldn't find stance {CurrentMotionState.Stance} in MotionTable {MotionTableId:X8}");
+                //log.Error($"{Name} ({Guid}).GetCombatManeuver() - couldn't find stance {CurrentMotionState.Stance} in MotionTable {MotionTableId:X8}"); // Load Test
                 return null;
             }
 
@@ -241,7 +241,7 @@ namespace ACE.Server.WorldObjects
 
                     if (!attackTypes.Table.TryGetValue(AttackType, out maneuvers) || maneuvers.Count == 0)
                     {
-                        log.Error($"{Name} ({Guid}).GetCombatManeuver() - couldn't find attack type Kick or Punch for attack height {AttackHeight} and stance {CurrentMotionState.Stance} in CMT {CombatTableDID:X8}");
+                        //log.Error($"{Name} ({Guid}).GetCombatManeuver() - couldn't find attack type Kick or Punch for attack height {AttackHeight} and stance {CurrentMotionState.Stance} in CMT {CombatTableDID:X8}"); // Load Test
                         return null;
                     }
                 }
@@ -251,15 +251,15 @@ namespace ACE.Server.WorldObjects
 
                     if (!attackTypes.Table.TryGetValue(reduced, out maneuvers) || maneuvers.Count == 0)
                     {
-                        log.Error($"{Name} ({Guid}).GetCombatManeuver() - couldn't find attack type {reduced} for attack height {AttackHeight} and stance {CurrentMotionState.Stance} in CMT {CombatTableDID:X8}");
+                        //log.Error($"{Name} ({Guid}).GetCombatManeuver() - couldn't find attack type {reduced} for attack height {AttackHeight} and stance {CurrentMotionState.Stance} in CMT {CombatTableDID:X8}"); // Load Test
                         return null;
                     }
                     //else
-                        //log.Info($"{Name} ({Guid}).GetCombatManeuver() - successfully reduced attack type {AttackType} to {reduced} for attack height {AttackHeight} and stance {CurrentMotionState.Stance} in CMT {CombatTableDID:X8}");
+                        //log.Info($"{Name} ({Guid}).GetCombatManeuver() - successfully reduced attack type {AttackType} to {reduced} for attack height {AttackHeight} and stance {CurrentMotionState.Stance} in CMT {CombatTableDID:X8}"); // Load Test
                 }
                 else
                 {
-                    log.Error($"{Name} ({Guid}).GetCombatManeuver() - couldn't find attack type {AttackType} for attack height {AttackHeight} and stance {CurrentMotionState.Stance} in CMT {CombatTableDID:X8}");
+                    //log.Error($"{Name} ({Guid}).GetCombatManeuver() - couldn't find attack type {AttackType} for attack height {AttackHeight} and stance {CurrentMotionState.Stance} in CMT {CombatTableDID:X8}"); // Load Test
                     return null;
                 }
             }
@@ -290,7 +290,7 @@ namespace ACE.Server.WorldObjects
 
                     if (motions.ContainsKey((uint)singleStrike))
                     {
-                        //log.Info($"{Name} ({Guid}).GetCombatManeuver() - successfully reduced {motionCommand} to {singleStrike}");
+                        //log.Info($"{Name} ({Guid}).GetCombatManeuver() - successfully reduced {motionCommand} to {singleStrike}"); // Load Test
                         return singleStrike;
                     }
                 }
@@ -304,7 +304,7 @@ namespace ACE.Server.WorldObjects
                         return firstCommand;
                     }
                 }
-                log.Error($"{Name} ({Guid}).GetCombatManeuver() - couldn't find {motionCommand} in MotionTable {MotionTableId:X8}");
+                //log.Error($"{Name} ({Guid}).GetCombatManeuver() - couldn't find {motionCommand} in MotionTable {MotionTableId:X8}"); // Load Test
                 return null;
             }
 
