@@ -61,6 +61,9 @@ namespace ACE.Server.Physics.Common
 
         public bool PotentialFoe(PhysicsObj obj)
         {
+            if (obj.WeenieObj.WorldObject is Creature) // Load Test
+                return true;
+
             return FoeType != null && FoeType == obj.WeenieObj.WorldObject?.CreatureType ||
                 obj.WeenieObj.FoeType != null && obj.WeenieObj.FoeType == WorldObject?.CreatureType;
         }
