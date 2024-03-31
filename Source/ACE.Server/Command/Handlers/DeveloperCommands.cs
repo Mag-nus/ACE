@@ -2163,6 +2163,39 @@ namespace ACE.Server.Command.Handlers
         }
 
         /// <summary>
+        /// Teleports directly to a dungeon by name or landblock
+        /// </summary>
+        [CommandHandler("loadtest", AccessLevel.Developer, CommandHandlerFlag.None, 0, "Loads a bunch of landblocks for load testing")]
+        public static void HandleLoadTest(Session session, params string[] parameters)
+        {
+            using (var ctx = new WorldDbContext())
+            {
+                var query = from weenie in ctx.Weenie
+                            join wstr in ctx.WeeniePropertiesString on weenie.ClassId equals wstr.ObjectId
+                            join wpos in ctx.WeeniePropertiesPosition on weenie.ClassId equals wpos.ObjectId
+                            where weenie.Type == (int)WeenieType.Portal && wstr.Type == (int)PropertyString.Name && wpos.PositionType == (int)PositionType.Destination
+                            select new
+                            {
+                                Weenie = weenie,
+                                Name = wstr,
+                                Dest = wpos
+                            };
+
+                var results = query.ToList();
+
+                foreach (var result in results)
+                {
+                    if ((result.Dest.ObjCellId >> 24) == 0x00)
+                    {
+                        var landblockId = new LandblockId(result.Dest.ObjCellId);
+
+                        LandblockManager.GetLandblock(landblockId, false, true);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
         /// Shows the dungeon name for the current landblock
         /// </summary>
         [CommandHandler("dungeonname", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, "Shows the dungeon name for the current landblock")]
