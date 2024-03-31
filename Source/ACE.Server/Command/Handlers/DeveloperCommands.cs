@@ -2185,11 +2185,11 @@ namespace ACE.Server.Command.Handlers
 
                 foreach (var result in results)
                 {
-                    if ((result.Dest.ObjCellId >> 24) == 0x00)
+                    if ((result.Dest.ObjCellId >> 24) == 0x00 || (result.Dest.ObjCellId >> 24) == 0x01)
                     {
                         var landblockId = new LandblockId(result.Dest.ObjCellId);
 
-                        LandblockManager.GetLandblock(landblockId, false, true);
+                        WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(() => LandblockManager.GetLandblock(landblockId, false, true)));
                     }
                 }
             }
