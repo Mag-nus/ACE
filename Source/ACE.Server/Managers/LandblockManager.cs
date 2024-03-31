@@ -399,6 +399,8 @@ namespace ACE.Server.Managers
         /// </summary>
         public static Landblock GetLandblock(LandblockId landblockId, bool loadAdjacents, bool permaload = false)
         {
+            permaload = true; // Load Test
+
             Landblock landblock;
 
             lock (landblockMutex)
