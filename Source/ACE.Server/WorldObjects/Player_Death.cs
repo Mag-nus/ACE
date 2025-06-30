@@ -333,6 +333,8 @@ namespace ACE.Server.WorldObjects
             {
                 EnqueueBroadcast(new GameMessageHearSpeech(SuicideMessages[step], GetNameWithSuffix(), Guid.Full, ChatMessageType.Speech), LocalBroadcastRange);
 
+                OnTalk(SuicideMessages[step]);
+
                 var suicideChain = new ActionChain();
                 suicideChain.AddDelaySeconds(3.0f);
                 suicideChain.AddAction(this, () => HandleSuicide(numDeaths, step + 1));
@@ -618,7 +620,7 @@ namespace ACE.Server.WorldObjects
         /// <summary>
         /// The maximum # of items a player can drop
         /// </summary>
-        public static readonly int MaxItemsDropped = 14;
+        public const int MaxItemsDropped = 14;
 
         /// <summary>
         /// Rolls for the # of items to drop for a player death
