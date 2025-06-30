@@ -490,7 +490,7 @@ namespace ACE.Server.Factories
             var profile = new Database.Models.World.TreasureDeath
             {
                 Tier = 7,
-                LootQualityMod = 0
+                LootQualityMod = 1
             };
 
             // create 12 heavy weapons. this isn't the most efficient method, but should suffice for unreferenced test method
@@ -549,16 +549,20 @@ namespace ACE.Server.Factories
             var profile = new Database.Models.World.TreasureDeath
             {
                 Tier = 7,
-                LootQualityMod = 0
+                LootQualityMod = 1
             };
 
-            for (int i = 0; i < 12; i++)
+            // create 12 two handed weapons. this isn't the most efficient method, but should suffice for unreferenced test method
+            var created = 0;
+            while (created < 12)
             {
-                var item = LootGenerationFactory.CreateMeleeWeapon(profile, true, MeleeWeaponSkill.TwoHandedCombat);
+                var item = LootGenerationFactory.CreateMeleeWeapon(profile, true);
+                if (item.WeaponSkill != Skill.TwoHandedCombat)
+                    continue;
                 AddRend(item);
                 player.TryAddToInventory(item);
+                created++;
             }
-
             return player;
         }
 
@@ -605,7 +609,7 @@ namespace ACE.Server.Factories
             var profile = new Database.Models.World.TreasureDeath
             {
                 Tier = 7,
-                LootQualityMod = 0
+                LootQualityMod = 1
             };
 
             for (int i = 0; i < 12; i++)
@@ -659,7 +663,7 @@ namespace ACE.Server.Factories
             var profile = new Database.Models.World.TreasureDeath
             {
                 Tier = 7,
-                LootQualityMod = 0
+                LootQualityMod = 1
             };
 
             // create 12 war elemental wands. this isn't the most efficient method, but should suffice for unreferenced test method
