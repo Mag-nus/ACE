@@ -961,6 +961,48 @@ namespace ACE.Server.Command.Handlers
             }
         }
 
+        // teletoolthoi
+        private static List<Position> olthoiPositions;
+        [CommandHandler("teletoolthoi", AccessLevel.Sentinel, CommandHandlerFlag.RequiresWorld, 0, "Teleport yourself to a random olthoi")]
+        public static void HandleTeleToOlthoi(Session session, params string[] parameters)
+        {
+            if (olthoiPositions == null)
+            {
+                var weenies = DatabaseManager.World.GetAllWeenies();
+
+                var olthoiWeenies = new List<Database.Models.World.Weenie>();
+
+                foreach (var weenie in weenies)
+                {
+                    var itemType = weenie.WeeniePropertiesInt.FirstOrDefault(r => r.Type == 1)?.Value;
+                    var creatureType = weenie.WeeniePropertiesInt.FirstOrDefault(r => r.Type == 2)?.Value;
+
+                    if (itemType == (int)ItemType.Creature && creatureType == (int)CreatureType.Olthoi)
+                        olthoiWeenies.Add(weenie);
+                }
+
+                var positions = new List<Position>();
+
+                foreach (var olthoiWeenie in olthoiWeenies)
+                {
+                    var landblockInstances = DatabaseManager.World.GetLandblockInstancesByWcid(olthoiWeenie.ClassId);
+
+                    foreach (var landblockInstance in landblockInstances)
+                    {
+                        var position = new Position(landblockInstance.ObjCellId, landblockInstance.OriginX, landblockInstance.OriginY, landblockInstance.OriginZ, landblockInstance.AnglesX, landblockInstance.AnglesY, landblockInstance.AnglesZ, landblockInstance.AnglesW);
+
+                        positions.Add(position);
+                    }
+                }
+
+                olthoiPositions = positions;
+            }
+
+            var randomPosition = olthoiPositions[Random.Shared.Next(olthoiPositions.Count)];
+
+            session.Player.Teleport(randomPosition);
+        }
+
         // time
         [CommandHandler("time", AccessLevel.Envoy, CommandHandlerFlag.None, 0,
             "Displays the server's current game time.")]
