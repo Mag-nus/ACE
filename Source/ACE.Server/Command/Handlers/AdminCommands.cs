@@ -218,6 +218,9 @@ namespace ACE.Server.Command.Handlers
                     if (account.AccessLevel > (int)AccessLevel.Player)
                         message += $"Account '{account.AccountName}' has been granted AccessLevel.{((AccessLevel)account.AccessLevel).ToString()} rights.\n";
                     message += $"Account created on {account.CreateTime.ToLocalTime().ToCommonString()} by IP: {(account.CreateIP != null ? new IPAddress(account.CreateIP).ToString() : "N/A")} \n";
+                    var accountAge = DateTime.UtcNow - account.CreateTime;
+                    if (accountAge.TotalDays < 15)
+                        message += $"Account was created less than 15 days ago.\n";
                     message += $"Account last logged on at {(account.LastLoginTime.HasValue ? account.LastLoginTime.Value.ToLocalTime().ToCommonString() : "N/A")} by IP: {(account.LastLoginIP != null ? new IPAddress(account.LastLoginIP).ToString() : "N/A")}\n";
                     message += $"Account total times logged on {account.TotalTimesLoggedIn}\n";
                     var characters = DatabaseManager.Shard.BaseDatabase.GetCharacters(account.AccountId, true);
@@ -2573,7 +2576,7 @@ namespace ACE.Server.Command.Handlers
             {
                 var objectId = new ObjectGuid((uint)session.Player.CurrentAppraisalTarget);
                 var wo = session.Player.CurrentLandblock?.GetObject(objectId);
-                if (wo is Lock @lock)
+                if (wo is ACE.Server.WorldObjects.Lock @lock)
                 {
                     var opening = openIt ? $" Opening {wo.WeenieType}." : "";
                     string lockCode = LockHelper.GetLockCode(wo);
