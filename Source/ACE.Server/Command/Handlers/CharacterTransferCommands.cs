@@ -71,14 +71,17 @@ namespace ACE.Server.Command.Handlers
 
 
                 var human = DatabaseManager.World.GetCachedWeenie("human");
+
                 // Removes the generic knife and buckler, hidden Javelin, 30 stack of arrows, and 5 stack of coins that are given to all characters
                 // Starter Gear from the JSON file are added to the character later in the CharacterCreateEx() process
+                var tempCreateList = human.PropertiesCreateList;
                 human.PropertiesCreateList = null;
 
                 var guid = GuidManager.NewPlayerGuid();
 
                 var player = new Player(human, guid, session.AccountId);
 
+                human.PropertiesCreateList = tempCreateList;
 
                 // Try to restore the character apperance information
                 foreach (var entry in retailBiota.BiotaPropertiesPalette)
@@ -151,6 +154,15 @@ namespace ACE.Server.Command.Handlers
                 foreach (var property in retailBiota.BiotaPropertiesBool)
                 {
                     if (property.Type == (int)PropertyBool.Attackable)
+                        continue;
+                    // Filter out privilege states
+                    if (property.Type == (int)PropertyBool.IsAdmin)
+                        continue;
+                    if (property.Type == (int)PropertyBool.IsArch)
+                        continue;
+                    if (property.Type == (int)PropertyBool.IsSentinel)
+                        continue;
+                    if (property.Type == (int)PropertyBool.IsAdvocate)
                         continue;
                     player.SetProperty((PropertyBool)property.Type, property.Value);
                 }
