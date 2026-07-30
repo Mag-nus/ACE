@@ -1,0 +1,195 @@
+================================================================================
+ACE.Common - PERFORMANCE REPORT
+================================================================================
+Scope   : Source/ACE.Common  (39 files, ~2,800 lines)
+          Cryptography/, Extensions/, Performance/, ThreadSafeRandom, Time,
+          DerethDateTime, ConfigManager
+Date    : 2026-07-25
+Companion document: bugs-common.txt
+
+UNPROFILED. Static analysis with call-site frequency established by grepping
+ACE.Server. Blast radius is repo-wide for every item below.
+
+ALSO FILED AS A CORRECTNESS DEFECT (full detail in bugs-common.txt C.1)
+  DerethDateTime.SetDateTimeFromTicks loops ~626,000 times per construction and
+  is called per Day/Night generator per heartbeat ON THE LANDBLOCK TICK THREAD.
+  That is simultaneously the largest performance defect in this project and a
+  correctness-adjacent bug, and it is documented there as C.1.
+================================================================================
+
+
+SECTION A - CLOCK-READ STORMS
+================================================================================
+
+K.1  Time.GetUnixTime() called once per LANDBLOCK rather than once per tick
+     ACE.Common/Time.cs:9-19, called from
+     ACE.Server/Managers/LandblockManager.cs:387, 412, 424
+
+     The call sits INSIDE `foreach (var landblock in landblockGroup)`.
+     GetUnixTime is DateTime.UtcNow plus a TimeSpan subtract plus a
+     TotalSeconds divide. The world loop sleeps 1ms
+     (Managers/WorldManager.cs:392), so this runs across hundreds of active
+     landblocks at up to ~1000 loop iterations per second.
+
+     FIX: hoist `var now = Time.GetUnixTime();` above each loop.
+
+     BONUS CORRECTNESS WIN: landblocks within a single tick currently observe
+     DIFFERENT "now" values, which contradicts the codebase's own treatment of
+     Timers.PortalYearTicks as a stable per-frame value.
+
+K.2  Up to 8 UtcNow reads per session per Update()
+     ACE.Server/Network/NetworkSession.cs:187, 203, 208, 211, 215, 218, 228, 244
+
+     Update() is driven from NetworkManager.cs:359 (Parallel.ForEach over the
+     full sessionMap) every world tick. At 100 sessions and ~1000 ticks/sec
+     that is roughly 800,000 clock reads per second. DateTime.UtcNow is
+     approximately 20-30ns - it is leap-second aware, not a free rdtsc.
+
+     FIX: one `var now = DateTime.UtcNow;` at the top of Update(). The semantic
+     change is sub-millisecond.
+
+     The same pattern appears at ACE.Server/Entity/Landblock.cs:516, 518, 619,
+     622, 625, 628 - 4 UtcNow reads per landblock per tick purely for the 5m
+     and 1h history-clear checks.
+
+
+SECTION B - INSTRUMENTATION
+================================================================================
+
+K.3  Instrumentation pays its cost even when disabled
+     ACE.Server/Managers/ServerPerformanceMonitor.cs:245-252
+
+     AddToCumulativeEvent guards on IsRunning INSIDE THE CALLEE - but the
+     argument `stopwatch.Elapsed.TotalSeconds` is evaluated at the CALL SITE
+     first.
+
+     Landblock.Tick does this 8 times (Entity/Landblock.cs:438, 453, 473, 493,
+     515, 558, 591, 596), each preceded by a stopwatch.Restart(), so roughly 16
+     unconditional QueryPerformanceCounter calls per landblock per tick - plus
+     Monitor5m/Monitor1h Restart/Pause/Resume/RegisterEventEnd. Each RateMonitor
+     wraps its own Stopwatch, and ServerPerformanceMonitor keeps THREE
+     RateMonitors per event type, so RegisterEventEnd (lines 223-231) is 3
+     stops plus 3 Elapsed reads.
+
+     FIX: expose a cheap IsRunningCumulative check at the call site, or pass
+     the Stopwatch and read Elapsed inside the guard.
+
+     See perf-managers.txt P.1-P.4 for the same cluster from the Managers side,
+     including the finding that Config.js on this checkout has the monitor
+     AUTO-STARTED.
+
+
+SECTION C - HOT PRIMITIVES
+================================================================================
+
+K.4  ThreadSafeRandom pays ThreadLocal<T> indirection on every roll
+     ACE.Common/ThreadSafeRandom.cs:10
+
+     All four methods do `random.Value`, which is a slot-array lookup with a
+     generation and linked-slot check - roughly 5-10ns, versus about 1ns for a
+     plain [ThreadStatic] field read.
+
+     There are 210 call sites in ACE.Server, 90 in Factories/ alone. A single
+     loot roll hits it dozens of times (Factories/LootGenerationFactory.cs:48-79
+     plus per-item rolls), and combat and enchantment paths call it per swing.
+
+     FIX: Random.Shared (.NET 6+) is thread-safe, lock-free, and removes both
+     the ThreadLocal lookup and the per-thread Random allocation.
+
+     *** BLAST RADIUS WARNING: this CHANGES THE RNG STREAM. *** The file's own
+     comment at line 6 refers to unit tests - check them before switching.
+     Also note the inclusive-bounds contract documented in bugs-common.txt I.2;
+     Random.Shared.Next is EXCLUSIVE, so the wrapper's semantics must be
+     preserved exactly or every one of those 210 call sites shifts by one.
+
+K.5  Hash32.Calculate is scalar and trivially vectorisable
+     ACE.Common/Cryptography/Hash32.cs:8-22, 24-38
+
+     It is a plain sum of little-endian uints - the ideal SIMD shape. It runs
+     per packet AND per fragment, in both directions:
+       outbound: Network/ServerPacket.cs:58 (body), once per fragment via
+                 Network/ServerPacketFragment.cs:26, and its header at
+                 PacketFragmentHeader.cs:64
+       inbound:  Network/PacketHeader.cs:64, PacketHeaderOptional.cs:133, and
+                 ClientPacketFragment.cs:31 (two calls per fragment)
+
+     Two secondary defects in the Span overload: the loop condition
+     `i < length && i + 4 <= length` (line 12) is redundant, and `data.Slice(i)`
+     (line 13) constructs a new bounds-checked Span every iteration.
+
+     FIX: MemoryMarshal.Cast<byte, uint>(data) for the body, accumulate with
+     Vector<uint>, horizontal-add the lanes at the end. Expect 4-8x on the
+     dominant loop. It is BIT-EXACT, because unsigned wraparound addition is
+     associative.
+
+     Blast radius is contained: the checksum value is unchanged, and
+     correctness is directly covered by whether clients can connect at all.
+
+K.6  ISAAC.Next is cheap; CryptoSystem.Search is the one to watch
+     ACE.Common/Cryptography/ISAAC.cs:31-48 and CryptoSystem.cs
+
+     ISAAC.Next is an array index plus a decrement, amortising one 256-round
+     IsaacScramble over 256 calls - genuinely negligible at one call per
+     outbound encrypted packet (NetworkSession.cs:745). The `if (isReleased)`
+     branch predicts perfectly.
+
+     The real cost is CryptoSystem.Search, called from Network/ClientPacket.cs:143
+     on EVERY encrypted inbound packet. On a miss it loops up to
+     MaximumEffortLevel (256) doing a HashSet<uint>.Add plus ConsumeKey (itself
+     a second HashSet operation) per iteration - up to roughly 512 hash
+     operations for ONE out-of-order or spoofed packet.
+
+     That is an amplification worth rate-limiting. The common in-order case
+     exits at the first `CurrentKey == x` compare, so instrument before
+     optimising.
+
+     See bugs-common.txt C.3, which describes how this same loop can saturate
+     permanently and silently hang a session, and perf-network.txt P.12.
+
+
+SECTION D - LOOKS EXPENSIVE BUT IS COLD
+================================================================================
+Recorded so a later pass does not spend effort here. Several of these look like
+obvious wins and are not worth touching.
+
+D.1  ConfigManager.Config is a plain auto-property the JIT inlines to a static
+     field load. Of 86 ACE.Server references, NONE are per-tick, and
+     NetworkManager.cs:35, 38 already cache into statics. NOT a finding.
+D.2  StringExtensions.StartsWithVowel genuinely allocates a whole lowercased
+     string to read one character (line 13) - but its only reference
+     (WorldObjects/Creature_Combat.cs:989) is COMMENTED OUT.
+D.3  EnumHelper.GetFlags (line 14) boxes every enum value through reflection
+     plus LINQ, but has ZERO callers.
+D.4  DoubleExtensions.FormatChance formats with "F99" - a 100+ character string
+     - but is only reached from NetworkStatistics and a Debug.WriteLine.
+D.5  Pluralize, Shuffle and Product are each called from one or two non-hot
+     sites.
+D.6  RollingAmountOverHitsTracker.LargestAmount iterates the full ring buffer,
+     but is admin-command only.
+D.7  BinaryReaderExtensions is login-path only; TimeSpanExtensions is
+     chat-formatting only. (BinaryReaderExtensions does have CORRECTNESS bugs -
+     see bugs-common.txt C.10 - just not performance ones.)
+
+
+SECTION E - SUGGESTED PRIORITY
+================================================================================
+  1. bugs-common.txt C.1 (DerethDateTime) FIRST. It is the largest single cost
+     in this project by a wide margin, it grows every year, and it sits on the
+     landblock tick thread. It is filed as a bug rather than here only because
+     it is an outright algorithmic defect.
+  2. K.1  Hoist GetUnixTime out of the landblock loop. One line, and it fixes a
+          timestamp-consistency smell at the same time.
+  3. K.2  Single UtcNow snapshot in NetworkSession.Update. One line, removes
+          hundreds of thousands of clock reads per second.
+  4. K.3  Guard the instrumentation at the call sites. Coordinate with
+          perf-managers.txt P.1-P.4 - it is the same cluster.
+  5. K.5  Vectorise Hash32. Contained blast radius, bit-exact, and it sits on
+          every packet in both directions.
+  6. K.6  Instrument CryptoSystem.Search before doing anything to it.
+  7. K.4  ThreadSafeRandom LAST despite being cheap to write - the RNG stream
+          change and the inclusive-bounds contract make it the riskiest item
+          here, and the win is the smallest.
+
+================================================================================
+END OF REPORT
+================================================================================

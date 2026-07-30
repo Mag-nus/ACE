@@ -1,0 +1,381 @@
+================================================================================
+ACE.Server/Network - BUG REPORT
+================================================================================
+Scope   : Source/ACE.Server/Network  (426 files, ~18,650 lines)
+          UDP transport, reliability layer, Handlers/, GameMessages/,
+          GameAction/, GameEvent/, Structure/, Sequence/, Motion/
+Date    : 2026-07-25
+Companion document: perf-network.txt
+
+VERIFICATION
+  TRACED BUT NOT RE-VERIFIED : all findings below. Spot-check before fixing.
+  (The findings in the "previously reported" list WERE read directly.)
+
+SECTION 0 - FINDINGS FROM THE INITIAL SWEEP (folded in; all VERIFIED DIRECTLY)
+================================================================================
+
+N.0a [HIGH] A single malformed packet can crash the entire server
+     ConnectionListener.cs:122
+
+     The async UDP receive callback OnDataReceive catches ONLY SocketException.
+     Everything downstream of NetworkManager.ProcessPacket(...) at line 118 runs
+     unguarded on that thread - including synchronous calls such as
+     AuthenticationHandler.HandleLoginRequest.
+
+     There is no safety net anywhere else. The application's only global handler
+     is AppDomain.CurrentDomain.UnhandledException (Program.cs:50, body at
+     349-352), which just calls log.Error - it cannot prevent process
+     termination. A repo-wide grep found NO TaskScheduler.UnobservedTaskException
+     handler at all.
+
+     FAILURE: any unhandled exception thrown while processing inbound UDP - a
+     bad payload, a DB hiccup, or N.0b below - terminates the whole game server
+     for every connected player. Because the input is unauthenticated remote
+     data, this is a genuine remote denial-of-service vector.
+
+     FIX: wrap the ProcessPacket call in a try/catch that logs and drops the
+     packet. See also the same defect at the two other tick boundaries -
+     bugs-managers.txt M.0a and bugs-entity-server.txt E.0d.
+
+N.0b [MEDIUM] FindOrCreateSession throws if two sessions share an endpoint
+     NetworkManager.cs:270
+
+         session = sessionMap.SingleOrDefault(s => s != null && endPoint.Equals(s.EndPointC2S));
+
+     Nothing guarantees exactly one match at all times - for example a quick
+     reconnect from the same IP:port before a stale or timed-out session has
+     been reaped. SingleOrDefault throws InvalidOperationException on a second
+     match; FirstOrDefault does not. Combined with N.0a this alone can crash
+     the server. It reads as an accidental Single-vs-First mix-up.
+
+     FIX: FirstOrDefault.
+
+N.0c [MEDIUM] TailSize miscalculated for exact multiples of 448 bytes
+     MessageFragment.cs:38
+
+         public int TailSize => PacketFragmentHeader.HeaderSize
+                              + (DataLength % PacketFragment.MaxFragmentDataSize);
+
+     When a multi-fragment message's DataLength is an exact multiple of
+     MaxFragmentDataSize (448), the modulo is 0, so this reports 16 bytes
+     instead of the true 464 (16-byte header plus a full 448-byte chunk).
+
+     NetworkSession.SendBundle (NetworkSession.cs:874) uses TailSize to decide
+     whether the tail fragment fits in the packet's remaining space. With this
+     bug it always believes there is room, so it packs a full 464-byte fragment
+     into a packet budgeted for 16 bytes, silently exceeding
+     ServerPacket.MaxPacketSize (464).
+
+     Triggered by any outbound message whose payload lands on a 448-byte
+     boundary. Note the standing TODO at ServerPacket.cs:10 ("I don't know why
+     this value is 464") sits on the very constant this overflows.
+
+N.0d [MEDIUM, SECURITY] Anti-speedhack check is fully bypassable by the client
+     NetworkSession.cs:600-605
+
+         if (lastClientTime == 0)
+         {
+             lastClientTime = clientTime;
+             lastServerTime = serverTime;
+             return;
+         }
+
+     clientTime is the client-supplied EchoRequestClientTime from the packet's
+     optional header - fully attacker-controlled. 0.0f is used as the "no
+     baseline yet" sentinel, but it is also a value the client can simply
+     always send. A modified client reporting clientTime = 0 on every echo
+     causes the server to re-arm its baseline every time instead of ever
+     measuring drift, permanently bypassing the speedhack-disconnect logic at
+     lines 610-637.
+
+N.0e [LOW] Wrong argument to Stream.Read corrupts LoginRequest parsing
+     PacketHeaderOptional.cs:75
+
+         var i = reader.BaseStream.Read(loginBytes, (int)position, (int)length);
+
+     The second argument to Stream.Read is the DESTINATION BUFFER OFFSET, not a
+     stream position. loginBytes is exactly `length` bytes, so this only works
+     when position == 0. A client sending LoginRequest together with
+     AckSequence makes position == 4, and the read throws ArgumentException -
+     caught by ClientPacket.Unpack's handler, so it manifests as silently
+     rejected logins rather than a crash.
+
+     FIX: Read(loginBytes, 0, (int)length).
+
+N.0f [WITHDRAWN] A suspected handshake-window race was later RESOLVED
+     The initial sweep flagged the reorder-check-then-mutate sequence in
+     NetworkSession.ProcessPacket, and MessageBuffer.TryGetMessage's unlocked
+     Sort, as a possible TOCTOU. A later pass traced it and found it is NOT a
+     race: ConnectionListener keeps a single outstanding BeginReceiveFrom on
+     one shared buffer, so fragment processing is serial per session. Recorded
+     here so it is not re-raised. See Section D item I.3 below.
+
+THREAT NOTE: unlike most subsystems, this one processes UNAUTHENTICATED remote
+input. Several findings below are reachable before login. Combined with the
+missing exception isolation at ConnectionListener.cs:122, any unhandled throw
+here terminates the process.
+================================================================================
+
+
+SECTION A - HIGH SEVERITY
+================================================================================
+
+N.1  Client-controlled count used directly as an array length
+     GameAction/Actions/GameActionSetCharacterOptions.cs:66
+
+         var tab1Spells = new uint[numTab1Spells];
+
+     numTab1Spells is an unvalidated uint read from the client.
+
+     FAILURE: an in-world player sends GameAction 0x1A1 with the tab1 count
+     field set to 0x40000000. The server attempts a 4 GB allocation before
+     reading a single spell. Repeat for process-wide OOM or GC thrash. The
+     array is never read afterwards - it is dead code.
+
+     FIX: delete the allocation entirely (just skip numTab1Spells * 4 bytes)
+     and bound the count against the remaining stream length.
+
+N.2  Fragment reassembly buffers grow without bound - remote memory exhaustion
+     NetworkSession.cs:513-517, :541
+
+     partialFragments and outOfOrderFragments have no cap, no timeout and no
+     eviction; they are cleared only in ReleaseResources() on disconnect.
+
+     FAILURE: a client sends fragments with Header.Count = 2, Index = 0 and a
+     fresh Header.Sequence each time - or single fragments with sequences far
+     above lastReceivedFragmentSequence. Each creates a MessageBuffer or
+     ClientMessage retained forever. One socket at line rate exhausts server
+     memory.
+
+     Note the asymmetry: PACKET-level reordering has a guard
+     (DoRequestForRetransmission -> AbnormalSequenceReceived), but
+     FRAGMENT-level reordering has none.
+
+     FIX: cap entries per session, evict by age, and reject fragment sequences
+     more than N ahead of the current one.
+
+N.3  Turbine chat length encoding is wrong in two ways
+     GameMessages/Messages/GameMessageTurbineChat.cs:98, :104
+
+     (a) Line 98 uses message.Length where senderName.Length is intended -
+         a copy-paste error.
+     (b) Both lines write `(ushort)(0x80 | (len << 8))`, which serialises
+         little-endian as `0x80, len & 0xFF` - the high bits are lost. The
+         matching reader (TurbineChatHandler.cs:48-53) expects high-byte-first.
+
+     FAILURE: a player sends a 300-character turbine chat message. The writer
+     emits length 0x2C (44); every recipient's client reads 44 characters and
+     then misparses the remainder of the chat blob, so speakerGuid and chatType
+     are garbage. It works by accident only for lengths 128-255.
+
+     FIX: `Write((byte)(0x80 | (len >> 8))); Write((byte)(len & 0xFF));` and
+     use senderName.Length on line 98.
+
+
+SECTION B - MEDIUM SEVERITY
+================================================================================
+
+N.4  Unvalidated character slot index; the null check is dead code
+     Handlers/CharacterHandler.cs:297, 304
+
+     `session.Characters[(int)characterSlot]` indexes with an unvalidated
+     client uint, and the `character == null` check on line 298 can never fire -
+     a List<T> indexer throws rather than returning null.
+
+     FAILURE: a CharacterDelete with a matching account string and
+     characterSlot = 99 (or 0xFFFFFFFF, which casts to a negative int) throws
+     ArgumentOutOfRangeException. It is swallowed by InboundMessageManager, so
+     the client receives no CharacterError and hangs on the delete dialog.
+
+     FIX: `if (characterSlot >= session.Characters.Count) { SendCharacterError(Delete); return; }`
+
+N.5  SessionState is validated at enqueue time but not at execution time
+     Managers/InboundMessageManager.cs:94
+
+     The state check happens when the handler is queued. The re-check inside
+     the queued delegate (line 100) covers session.Player == null but never
+     re-validates State.
+
+     FAILURE: a packet carrying CharacterDelete followed by
+     CharacterEnterWorld - both pass the AuthConnected check at enqueue, then
+     both run on the world thread. The delete handler executes after State has
+     already become WorldConnected, marking for deletion the very character the
+     player is entering the world with.
+
+     FIX: re-check `messageHandlerInfo.Attribute.State == session.State` inside
+     the delegate.
+
+N.6  Unguarded ParentLink dereference in appraisal
+     Structure/AppraiseInfo.cs:236, :251
+
+     wo.ParentLink.HouseOwnerName and wo.ParentLink.HouseOwner are dereferenced
+     with no null guard, even though the adjacent wo.HouseOwner.HasValue IS
+     guarded.
+
+     FAILURE: appraising a Hook or Storage object not linked to a loaded House -
+     admin-spawned via /ci, or a house landblock mid-load - throws NRE inside
+     GameEventIdentifyObjectResponse, so the appraisal silently never arrives.
+
+     FIX: `if (wo.ParentLink?.HouseOwner != null)`
+
+N.7  GetCachedWeenie result dereferenced without a null check
+     Structure/AppraiseInfo.cs:228
+
+     `DatabaseManager.World.GetCachedWeenie(wo.WeenieClassId).GetValue()` -
+     GetCachedWeenie can return null, as acknowledged at
+     CharacterHandler.cs:109-117.
+
+     FAILURE: appraising any Container whose weenie row was removed from the
+     world DB throws NRE and the appraisal is lost.
+
+     FIX: null-check and fall back to the existing PropertyInt.Value.
+
+N.8  Contract tracker dereferences a null contract
+     Structure/ContractTracker.cs:218, 245, 168
+
+     Contract returns null when ContractId is absent from
+     DatManager.PortalDat.ContractTable, then Contract.QuestflagFinished and
+     Contract.Version are dereferenced unguarded.
+
+     FAILURE: a character row in CharacterPropertiesContractRegistry with a
+     stale contract id - after a DAT downgrade, or an admin insert - throws NRE
+     while building the contract tracker ON LOGIN, and again at serialisation
+     time in Write. The character cannot log in.
+
+     FIX: `if (Contract == null) return;` in Init, and skip such trackers when
+     writing.
+
+N.9  Self-echo emitted once per squelching member
+     GameAction/Actions/GameActionChatChannel.cs:102-106
+
+     The else branch sits INSIDE the foreach, so the sender's own echo is
+     emitted once per self-or-squelching member.
+
+     FAILURE: in a 5-person fellowship where 2 members have squelched the
+     sender, the sender receives 3 copies of their own message - and the
+     duplicate count leaks exactly how many people have squelched them, which
+     is an information disclosure as well as a display bug.
+
+     FIX: move the self-echo EnqueueSend outside the loop.
+
+N.10 += on a dictionary indexer guarded by the wrong condition
+     Structure/AppraiseInfo.cs:123, 125
+
+     `PropertiesFloat[PropertyFloat.WeaponMagicDefense] += 1;` is guarded only
+     by the WorldObject property (wo.WeaponMagicDefense.HasValue), not by
+     dictionary membership. Line 129 correctly uses plain assignment, and lines
+     400/412 correctly guard with ContainsKey - so the correct pattern is
+     in-file.
+
+     FAILURE: any object whose WeaponMagicDefense is set but which is filtered
+     out of AssessmentProperties.PropertiesDouble throws KeyNotFoundException,
+     losing the whole appraisal.
+
+     FIX: wrap with `if (PropertiesFloat.ContainsKey(...))`.
+
+N.11 Loop bound uses inequality against a signed client-supplied value
+     Structure/CMostlyConsecutiveIntSet.cs:35-49
+
+     The loop condition is `iterations != newObj.Iterations` (inequality, not
+     >=), Iterations is a signed client-supplied int, and Math.Abs(x) is
+     unguarded.
+
+     FAILURE: a DDD_InterrogationResponse with Iterations = -1 makes the
+     counter increment forever without ever equalling the target, so the loop
+     reads to EOF while appending every int to Ints. Sending x = int.MinValue
+     throws OverflowException from Math.Abs. Contained by the handler's catch,
+     but each malformed message does full-payload work, and the
+     CAllIterationList element count (CAllIterationList.cs:19) is likewise
+     unbounded.
+
+     FIX: use `iterations >= Iterations`, reject negative Iterations, and bound
+     the element and int counts.
+
+
+SECTION C - LOW SEVERITY
+================================================================================
+
+N.12 Range operator throws on an empty configured string
+     Handlers/DDDHandler.cs:120
+     `msg[..^1]` throws ArgumentOutOfRangeException on an empty string, and is
+     inconsistent with the `msg.TrimEnd('.')` used for the same purpose at
+     lines 168 and 225. An operator setting dat_newer_warning_msg to "" makes a
+     client with newer DATs hit an exception instead of a clean termination,
+     leaving the session in limbo until timeout.
+     FIX: use msg.TrimEnd('.') for consistency.
+
+N.13 Throwaway ReaderWriterLockSlim passed to SaveCharacter
+     Session.cs:203; Handlers/CharacterHandler.cs:318, 369
+     `SaveCharacter(character, new ReaderWriterLockSlim(), ...)` passes a
+     freshly constructed lock. It is never disposed, and - more importantly -
+     it provides no mutual exclusion with the character's real
+     CharacterDatabaseLock, so the async save can race a concurrent mutation of
+     the same Character entity.
+     FIX: pass the owning CharacterDatabaseLock.
+     NOTE: the same anti-pattern appears in ACE.Database - see bugs-database.txt
+     D.12. Worth fixing as one sweep.
+
+
+SECTION D - INVESTIGATED, NOT A BUG
+================================================================================
+Recorded so a later pass does not re-investigate.
+
+I.1  PacketHeader.HasFlag (PacketHeader.cs:70) is `(flags & Flags) != 0`, i.e.
+     "any", so the combined-flag test in Session.CheckState:101 behaves as
+     intended.
+I.2  SendBundle's `while (fragments.Count > 0 || writeOptionalHeaders)` - sizes
+     traced through the large/tail/small paths (MaxPacketSize 464,
+     MaxFragmentDataSize 448, header 16). Worst case wastes one header-only
+     packet, but it always terminates.
+I.3  MessageBuffer.AddFragment locks while TryGetMessage does not - but
+     ConnectionListener keeps a single outstanding BeginReceiveFrom on one
+     shared buffer, so fragment processing is serial per session. No race.
+     (This resolves the open question raised in Section 0 (N.0f).)
+I.4  SequenceManager.GetSequence key packing `(type << 16) | property` - all
+     property enums used are well under 0xFFFF; SetSequence is consistent with
+     GetSequence(type, 0).
+I.5  UShortSequence(1, 0x7FFF) for SequenceType.Motion resolves to the
+     (ushort, ushort) overload, not (bool, ushort). Correct.
+I.6  Channel.Help in GameActionChatChannel.cs:84 has no access-level check
+     unlike every sibling case, but PlayerManager.BroadcastToChannel requires
+     sender.ChannelsActive.HasFlag(channel), and GameActionAddChannel gates
+     that on ChannelsAllowed plus access level. Only the stray
+     "TellHelp Needs work." message reaches unprivileged senders.
+I.7  GameEventChannelIndex's three non-exclusive if blocks - IsAdmin/IsArch/
+     IsAdvocate are independent PropertyBools, so setting two would emit two
+     lists. A data-configuration error, not a reachable code path.
+I.8  AppraiseInfo.Write field order differs from IdentifyResponseFlags bit
+     order (Int64/DID hoisted, Armor/Weapon/Resist bitfields reordered). This
+     matches the retail client's documented read order.
+I.9  AcknowledgeSequence trusts a client-supplied ack to purge cachedPackets,
+     but a client can only harm its own retransmit cache.
+
+
+SECTION E - SUGGESTED PRIORITY
+================================================================================
+  1. N.1  Delete the 4 GB allocation. It is dead code, so the fix carries no
+          behavioural risk, and it is remotely triggerable by any logged-in
+          player.
+  2. N.2  Cap the fragment reassembly buffers. Remote memory exhaustion from a
+          single socket, with no guard at all today.
+  3. N.8  Contract tracker null check - a stale contract id makes a character
+          permanently unable to log in.
+  4. N.5  Re-validate SessionState at execution time - the delete-during-
+          enter-world window destroys player data.
+  5. N.3  Turbine chat length encoding - two bugs, both breaking any message
+          over 255 characters.
+  6. N.4, N.6, N.7, N.10 - the appraisal/character-handler null and bounds
+          cluster. All are "one bad object silently kills a client-visible
+          response".
+  7. N.11, N.9, N.12, N.13 as follow-up.
+
+NOTE: N.1, N.2 and N.11 are all the same class - unvalidated client-supplied
+counts used as allocation sizes or loop bounds. This is the same pattern that
+dominates bugs-datloader.txt, but here the input is REMOTE rather than
+operator-supplied, which raises the severity considerably. A sweep for
+`new T[clientValue]` and `for (i < clientValue)` across the Handlers/,
+GameAction/ and Structure/ directories would likely find more.
+
+================================================================================
+END OF REPORT
+================================================================================

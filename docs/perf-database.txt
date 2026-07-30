@@ -1,0 +1,264 @@
+================================================================================
+ACE.Database - PERFORMANCE REPORT
+================================================================================
+Scope   : Source/ACE.Database  (139 files, ~20,000 lines)
+Date    : 2026-07-25
+Companion document: bugs-database.txt
+
+UNPROFILED. Round-trip COUNTS below are exact (derived by reading the queries);
+timings are estimates.
+
+CALL-FREQUENCY MODEL
+  SerializedShardDatabase funnels ALL shard work onto ONE worker thread. That
+  makes it a global bottleneck: everything queued behind a slow operation
+  waits, including every other player's save.
+  Login path latency is directly user-visible.
+  WorldDatabaseWithEntityCache serves content from memory after first load.
+
+ALSO FILED AS CORRECTNESS DEFECTS (full detail in bugs-database.txt Section 0)
+  ShardDatabase.cs:622-643  GetCharacterList issues 8xN redundant queries -
+                            for each UNCACHED character it re-runs the entire
+                            account-filtered query through eight separate
+                            .Include(...).Load() calls, so three new characters
+                            costs 24 round trips instead of 8, on the login
+                            path. Filed as bugs-database.txt D.0d.
+  ShardDatabase.cs:611/707/866  Undisposed DbContext across GetCharacterList,
+                            GetCharacterStubByName, GetCharacterStubByGuid,
+                            SaveCharacter and RenameCharacter - connections
+                            return to the pool only on GC finalisation rather
+                            than promptly. Filed as bugs-database.txt D.0c.
+  Both are simultaneously performance and correctness problems; fix them once.
+================================================================================
+
+
+SECTION A - ROUND-TRIP AMPLIFICATION (the dominant cost)
+================================================================================
+
+Q.1  GetBiota issues up to 26 round-trips PER OBJECT
+     ShardDatabase.cs:225-262
+
+     One SELECT per populated child table, each a separate command. Called from
+     login (WorldManager.cs:104 -> GetPossessedBiotasInParallel), container
+     open (Container.cs:92), landblock load, and startup player load.
+
+     A player with 200 possessions costs roughly 200 x 26 = 5,200 ROUND-TRIPS,
+     all queued on the single serialized thread - so every other player's save
+     waits behind that one login. This is pure latency, not CPU.
+
+     FIX: for the multi-object paths, batch by parent set - one query per child
+     table with `WHERE object_Id IN (...)` (or a join against the IID query),
+     then group in memory. That turns 26N round-trips into 26.
+
+Q.2  A new tracked context is opened per object, and the NoTracking hint is
+     dead code
+     ShardDatabase.cs:264-268
+
+     GetInventoryInParallel:454, GetWieldedItemsInParallel:488,
+     GetStaticObjectsByLandblock:517, GetDynamicObjectsByLandblock:540,
+     GetBiotasByWcid:274 and GetBiotasByType:294 all set
+     QueryTrackingBehavior.NoTracking on a context they then NEVER USE for the
+     biota load - the nested GetBiota(id) builds its own default-tracking
+     context.
+
+     So the NoTracking lines have no effect and every child row is snapshotted
+     for change tracking. Add to that the cost of `new ShardDbContext()` per
+     item: OnConfiguring re-interpolates the connection string and rebuilds the
+     options every time (ShardDbContext.cs:98-116).
+
+     FIX: pass the caller's context down - the GetBiota(context, id) overload
+     already exists; cache DbContextOptions in a static; use AsNoTracking() on
+     the queries inside GetBiota for read-only paths.
+
+Q.3  Landblock loading fetches rows and then discards them
+     ShardDatabase.cs:506-563
+
+     GetStaticObjectsByLandblock:519 selects whole Biota rows and then calls
+     GetBiota(result.Id), RE-READING the same row - SELECT * twice per object.
+     GetDynamicObjectsByLandblock:546-557 loads a FULL 26-query biota and then
+     discards it if it turns out to be contained or wielded (lines 551, 555).
+
+     This is the dominant cost of a landblock coming online.
+
+     FIX: select only Id; pre-filter contained and wielded objects with one
+     BiotaPropertiesIID query over the candidate id set before loading any
+     biotas.
+
+Q.4  GetWeenie - 20 round-trips per cache miss
+     WorldDatabase.cs:55-115
+
+     Same fan-out shape as Q.1. Harmless when CacheAllWeenies ran at boot, but
+     if pre-caching is disabled this is 20 serialized round-trips on the FIRST
+     SPAWN OF EVERY WCID, on whatever thread requested it.
+
+     Also GetCachedWeenie(string) (WorldDatabaseWithEntityCache.cs:111-121)
+     allocates two ToLower() strings per call and never negatively caches a
+     missing class name.
+
+Q.5  Per-property-read DB queries on the login path
+     ShardDatabase.cs:658-666
+
+     OfflinePlayer.IsDeleted / IsPendingDeletion hit the database on every
+     property read. GetCharacterStubByGuid runs a query on an UNDISPOSED
+     ShardDbContext (a distinct site from the known 611/707/866 leaks), and
+     IsPendingDeletion evaluates it twice (once via IsDeleted).
+
+     CharacterHandler.cs:246, 306 reads both on the login path: 3 queries plus
+     3 leaked contexts and connections PER LOGIN, for data already present on
+     Character.
+
+     FIX: read from the already-loaded Character, as Player.cs:235-236 does.
+
+Q.6  N+1 plus caller-side full scans
+     ShardDatabase.cs:270-309
+
+     GetBiotasByWcid / GetBiotasByType return whole entities and then issue one
+     GetBiota (26 queries, new context) per row. HouseManager.cs:116, 223 calls
+     GetBiotasByType(SlumLord) - every house on the shard. House.cs:223 loads
+     EVERY biota of a wcid and then filters client-side on
+     BiotaPropertiesPosition.
+
+     Note the `// warning: this query is currently unindexed!` comment at line
+     291 is STALE - biota_type_idx exists (ShardDbContext.cs:132).
+
+
+SECTION B - CPU AND ALLOCATION
+================================================================================
+
+Q.7  SetProperty linear scan makes every biota save O(n^2)
+     Models/Shard/BiotaExtensions.cs:71-200, driven by
+     Adapter/BiotaUpdater.cs:19-94
+
+     UpdateDatabaseBiota calls SetProperty once per source property, and each
+     does FirstOrDefault over the target collection. A player with ~100
+     PropertiesInt gives 10,000 comparisons for that table alone, plus a
+     closure, display class and enumerator allocated PER PROPERTY - roughly 250
+     allocations per biota.
+
+     Runs on every periodic save and every logout, per player.
+
+     FIX: build one Dictionary<type, entity> per collection up front - the
+     pattern already used for the spellbook at BiotaUpdater.cs:141.
+
+Q.8  Emote reconciliation is O(n^3)
+     Adapter/BiotaUpdater.cs:331
+
+     `targetBiota.BiotaPropertiesEmote.FirstOrDefault(r => !emoteMap.Values.Contains(r))`
+     - Dictionary.ValueCollection.Contains is a LINEAR scan, inside a
+     FirstOrDefault, inside a foreach. Line 349 is O(n^2). The same O(n^2)
+     shape appears for CreateList (line 278) and Generator (line 427) via
+     HashSet-in-FirstOrDefault, and for enchantments (lines 657, 686).
+
+     Hits saving emote-bearing NPCs and vendors with large create lists.
+
+     FIX: invert to a HashSet of used targets and consume from a queue of
+     unused ones.
+
+Q.9  PopulateWeenieSpecificCaches is O(n^2) at startup
+     WorldDatabaseWithEntityCache.cs:150
+
+     `if (!weenies.Contains(weenie))` - a List.Contains inside a loop over the
+     whole weenie cache. The largest WeenieType bucket holds tens of thousands
+     of entries, so this is hundreds of millions of reference comparisons.
+     Startup only, but directly additive to boot time.
+
+     FIX: the source is weenieCache.Values, already unique by wcid - drop the
+     Contains guard, or use a HashSet.
+
+Q.10 GetAllWeenies loads the whole world DB into a TRACKED context
+     WorldDatabase.cs:120-171
+
+     17 .Load() calls with change tracking ON (required - the code relies on
+     tracking-based relationship fixup). Every entity gets an identity-map
+     entry plus an original-values snapshot, all of it is converted to
+     ACE.Entity.Models.Weenie, and then thrown away. Multi-GB transient
+     allocation and a large gen-2 spike at startup.
+
+     FIX: load and convert in wcid chunks so the tracked set stays bounded.
+
+Q.11 Serialized worker runs its work on the ThreadPool anyway
+     SerializedShardDatabase.cs:55-56
+
+         t.Start(); t.Wait();
+
+     This schedules the task on the default TaskScheduler and BLOCKS the
+     dedicated thread. Every queued DB operation costs two context switches and
+     burns a pool thread while the named thread sits blocked - and
+     SaveBiotasInParallel's inner Parallel.ForEach then competes with the pool
+     thread that is itself waiting.
+
+     FIX: `t.RunSynchronously();`
+
+Q.12 Metrics scraping contends with the DB thread
+     Program_Metrics.cs:142-147
+
+     Every Prometheus scrape calls GetAccountCount()
+     (AuthenticationDatabase.cs:47 - COUNT(*) plus a new context) and
+     GetBiotaCacheKeys(), which takes biotaCacheMutex - the SAME lock every
+     GetBiota and SaveBiota needs - and allocates a List<uint> of the entire
+     cache.
+
+
+SECTION C - INDEXING
+================================================================================
+Coverage is good; no material gaps on the hot paths.
+biota_properties_i_i_d.type_value_idx, type_cell_idx, character_account_idx,
+character_name_idx and instance_landblock_idx all serve the queries that use
+them.
+
+Two non-sargable spots, both cold:
+  - GetCachedHousePortalsByLandblock (WorldDatabaseWithEntityCache.cs:555) -
+    `p.ObjCellId >> 16` is a computed column.
+  - GetCachedEvent / GetCachedPointOfInterest (lines 494, 698) - Name.ToLower()
+    defeats the unique name index.
+One genuinely missing index, cold:
+  - IsCreatureNameInWorldDatabase (lines 266-274) joins
+    weenie_properties_string on (Type, Value) with no index on that pair - a
+    full scan of a ~500k-row table, but only on character creation with
+    creature_name_check enabled.
+
+
+SECTION D - LOOKS EXPENSIVE BUT IS COLD
+================================================================================
+D.1  SQLFormatters/* (~3,300 lines) - string building for developer SQL export
+     commands only; never on a game path. (Note it has CORRECTNESS bugs - see
+     bugs-database.txt D.5, D.8, D.9, D.10 - just not performance ones.)
+D.2  ShardDatabaseOfflineTools.cs (1,136 lines) and
+     OfflineTools/Shard/BiotaGuidConsolidator.cs - run from Program.cs:169-197
+     before the world starts, config-gated; the consolidator is commented out.
+D.3  GetSequenceGaps (ShardDatabase.cs:77-126) - alarming raw SQL with a
+     5-minute timeout, but GUID-range initialisation only.
+D.4  GetAllWeenieNames (WorldDatabase.cs:214-219) - whole-table load with a
+     client-side FirstOrDefault per row; admin commands only.
+D.5  QueryableExtensions.ToSql - reflection into EF internals; diagnostic only.
+D.6  ToRoman recursion and the name-availability retry loop
+     (ShardDatabase.cs:783-818) - starter-character creation only.
+D.7  AddStarterCharactersInParallel's per-name IsCharacterNameAvailable query -
+     account creation only.
+
+
+SECTION E - SUGGESTED PRIORITY
+================================================================================
+  1. Q.1  Batch the biota child-table loads. 5,200 round-trips per login,
+          serialized behind one thread, is the single worst number in this
+          document.
+  2. Q.11 `t.RunSynchronously()` - a one-line change that stops every DB
+          operation bouncing through the ThreadPool.
+  3. Q.7  Dictionary instead of FirstOrDefault in SetProperty. Every player
+          save is currently O(n^2); the correct pattern is already in the same
+          file.
+  4. Q.3  Stop double-reading and discarding biotas during landblock load.
+  5. Q.5  Read IsDeleted/IsPendingDeletion from the loaded Character - removes
+          3 queries and 3 leaked connections per login.
+  6. Q.8  The O(n^3) emote reconciliation.
+  7. Q.9, Q.10 - startup time.
+  8. Q.2, Q.4, Q.6, Q.12 as follow-up.
+
+CROSS-CUTTING NOTE: Q.1, Q.2, Q.3, Q.4 and Q.6 are all the same underlying
+problem - the data model is loaded one object at a time, one child table at a
+time, on a single serialized thread. Fixing the batching pattern once and
+applying it across those five call sites is far more valuable than any
+individual fix, and it directly reduces user-visible login latency.
+
+================================================================================
+END OF REPORT
+================================================================================

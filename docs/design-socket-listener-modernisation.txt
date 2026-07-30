@@ -1,0 +1,466 @@
+================================================================================
+DESIGN NOTE
+Modernising the UDP socket listener
+================================================================================
+Question asked : "Is there room for improvement in the socket listener? Perhaps
+                  using .NET's new pipelines stack?"
+Date           : 2026-07-27
+Primary file   : Source/ACE.Server/Network/ConnectionListener.cs (146 lines)
+Related        : Network/Managers/SocketManager.cs, Network/ClientPacket.cs,
+                 Network/NetworkSession.cs (send path)
+Target         : net10.0 (verified in ACE.Server.csproj:5)
+
+--------------------------------------------------------------------------------
+0. VERDICT ON PIPELINES - DO NOT USE IT HERE
+--------------------------------------------------------------------------------
+System.IO.Pipelines is the WRONG TOOL for this code, and it is worth being
+precise about why, because the instinct behind the question is correct.
+
+Pipelines exists to solve STREAM FRAMING:
+  - messages that span buffer boundaries
+  - partial reads that must be buffered until a complete message arrives
+  - backpressure on a continuous byte stream
+Those are TCP problems.
+
+ACE is UDP end to end (SocketType.Dgram, ConnectionListener.cs:45). A datagram
+is ALREADY FRAMED: one ReceiveFrom returns exactly one complete message with a
+known length. There is no partial-read problem and no boundary problem, so
+PipeReader/PipeWriter would add an abstraction layer, an extra copy, and a
+sequence-segment walk to solve a problem that does not exist here.
+
+Pipelines WOULD be appropriate if ACE ever adds a TCP control or admin channel.
+It is not appropriate for the game protocol.
+
+THE CODE IS STILL WORTH MODERNISING - just with a different set of APIs. The
+rest of this document is that plan.
+
+
+--------------------------------------------------------------------------------
+1. WHAT THE CURRENT IMPLEMENTATION DOES
+--------------------------------------------------------------------------------
+ConnectionListener uses the APM pattern (BeginReceiveFrom / EndReceiveFrom),
+which predates async/await. SocketManager creates TWO listeners per configured
+host - port and port+1 (SocketManager.cs:37-48).
+
+Per datagram, the current path allocates:
+
+    2 x IPEndPoint      Listen() line 77, OnDataReceive() line 97
+    1 x IAsyncResult    + a callback delegate, from the APM machinery
+    1 x ClientPacket
+    1 x MemoryStream    ClientPacket.cs:34
+    1 x BinaryReader    ClientPacket.cs:35
+    N x ClientPacketFragment + a byte[] per fragment
+    (+ 1 x byte[dataSize] when packet logging is enabled, ConnectionListener.cs:106)
+
+
+--------------------------------------------------------------------------------
+2. DEFECTS IN THE CURRENT IMPLEMENTATION
+--------------------------------------------------------------------------------
+These are not stylistic. Each is fixed as a side effect of the rewrite, which is
+most of the argument for doing it.
+
+D1. INBOUND PROCESSING IS SERIALISED PER PORT   [the structural problem]
+    ConnectionListener.cs:26 - a SINGLE shared buffer per listener:
+
+        private readonly byte[] buffer = new byte[ClientPacket.MaxPacketSize];
+
+    Because every receive reads into that one array, Listen() can only be
+    re-armed AFTER OnDataReceive has fully returned - i.e. after CRC
+    verification, the ISAAC keystream search, fragment reassembly and handler
+    dispatch. Inbound throughput is therefore single-threaded per port,
+    regardless of core count.
+
+    NO API CHANGE FIXES THIS. It needs multiple in-flight receives with
+    independent buffers. (Also filed as perf-network.txt P.11.)
+
+D2. THE RECEIVE CALLBACK CATCHES ONLY SocketException
+    ConnectionListener.cs:122. Everything downstream of
+    NetworkManager.ProcessPacket runs unguarded, and the only global handler
+    (Program.cs:50) just logs before the CLR terminates the process. Any
+    unhandled non-socket exception while parsing UNAUTHENTICATED REMOTE INPUT
+    kills the server for everyone.
+    Filed as bugs-network.txt N.0a - the highest-severity network finding.
+
+D3. Listen() RECURSES INTO ITSELF FROM ITS OWN CATCH   [VERIFIED]
+    ConnectionListener.cs:80-84:
+
+        catch (SocketException socketException)
+        {
+            log.DebugFormat(...);
+            Listen();          // <-- unbounded recursion
+        }
+
+    If BeginReceiveFrom throws repeatedly - a socket in a persistently bad
+    state - this recurses until StackOverflowException, which is UNCATCHABLE in
+    .NET and kills the process. An await loop removes the recursion entirely.
+
+D4. THE CompletedSynchronously DANCE EXISTS ONLY TO AVOID D3
+    ConnectionListener.cs:140-143:
+
+        if (result.CompletedSynchronously)
+            Task.Run(() => Listen());
+        else
+            Listen();
+
+    This is a hand-rolled stack-overflow guard for synchronous completion
+    chaining - a known APM hazard. An async/await loop makes it unnecessary,
+    and removes a Task.Run allocation on the synchronous-completion path.
+
+    *** CORROBORATION OF D3/D4 - FOUND 2026-07-27 ***
+    D3 is not a speculative finding. It was independently identified by ACE's
+    own maintainer four years ago, and the fix was never merged.
+
+      branch  : ConnectionListener-Update
+      commit  : 2883541b3e3be8adc7d5ad979b53c06e51b1869e
+      author  : Mag-nus
+      date    : 2022-12-20
+      subject : "Improve ConnectionListener.Listen() to avoid stack overflow"
+
+    From the commit message, verbatim:
+
+        "In rare cases, when Listen() continues to throw a SocketException and
+         call back on itself, and throw and call itself and throw... eventual
+         result is stack overflow."
+
+    That is exactly D3. The commit's fix is minimal - Listen() returns bool
+    instead of self-recursing, and callers drive it with `while (Listen());`:
+
+        -        private void Listen()
+        +        /// <summary>
+        +        /// Will return true if the function is to be refired
+        +        /// </summary>
+        +        private bool Listen()
+                 ...
+                 catch (SocketException socketException)
+                 {
+                     log.DebugFormat(...);
+        -            Listen();
+        +            return true;
+                 }
+
+    TWO IMPORTANT CONSEQUENCES:
+
+    (a) The SAME commit message also documents why the success path is NOT a
+        stack-overflow risk, which correctly narrows D3's scope:
+            "even currently, the stack is completely reset on a successful
+             Listen()/OnDataReceive(), as each OnDataReceive() is called as a
+             callback, and thus, not tacked onto the calling stack."
+        So D3 is a FAILURE-PATH defect only - it needs BeginReceiveFrom to
+        throw SocketException repeatedly. That makes it low-probability but
+        still unrecoverable, since StackOverflowException cannot be caught.
+
+    (b) Upstream shipped a DIFFERENT and NARROWER mitigation. The branch fix
+        above was abandoned; what landed instead is the CompletedSynchronously
+        /Task.Run guard now at lines 140-143. That guard addresses only the
+        SUCCESS path. THE FAILURE-PATH RECURSION AT LINE 83 IS STILL THERE,
+        on both master and combined (re-verified 2026-07-27).
+
+    PRACTICAL UPSHOT: if the full rewrite in section 4 is not wanted, cherry-
+    picking 2883541b is a ~10-line, maintainer-authored fix for D3 that can
+    ship on its own. It will need rebasing - the branch predates the
+    CompletedSynchronously guard, the two-listener SocketManager change, and
+    the per-listener host/port log arguments.
+
+D5. REDUNDANT DEBUG COPY
+    ConnectionListener.cs:106 allocates `new byte[dataSize]` purely to hex-dump,
+    although BuildPacketString already accepts (startPosition, bytesToOutput)
+    and is called that way at NetworkSession.cs:773.
+    Filed as perf-network.txt P.0e.
+
+D6. SIO_UDP_CONNRESET IS COMMENTED OUT
+    ConnectionListener.cs:48-54. On Windows a UDP socket receives spurious
+    ConnectionReset errors after an ICMP port-unreachable from a previous send.
+    The current code swallows the SYMPTOM in the catch at 127-129; the ioctl
+    disables the behaviour at source. Re-enable it (guarded by the existing
+    OSPlatform check).
+
+D7. THE SEND PATH IS SYNCHRONOUS
+    NetworkSession.cs:779 - Socket.SendTo on the calling thread, which during
+    NetworkManager.DoSessionWork is a world-loop Parallel.ForEach worker.
+    For UDP this normally just copies into the kernel buffer and returns, so it
+    is a syscall rather than a stall - but it is a syscall per packet on the
+    tick threads, and it CAN block if the socket send buffer fills.
+    Lower priority than the receive path; noted for completeness.
+
+
+--------------------------------------------------------------------------------
+3. THE MODERNISATION, IN VALUE ORDER
+--------------------------------------------------------------------------------
+M1. SocketAddress overloads (.NET 8+)   [largest allocation win]
+    Socket.ReceiveFromAsync(Memory<byte>, SocketFlags, SocketAddress,
+    CancellationToken) lets a single MUTABLE SocketAddress be reused across
+    receives, eliminating BOTH per-datagram IPEndPoint allocations.
+    An IPEndPoint is then materialised only when actually needed. Note that
+    NetworkManager.ProcessPacket routes primarily by packet.Header.Id and uses
+    the endpoint only for validation and for the login path - see section 5.
+
+M2. Multiple concurrent receives   [the structural fix for D1]
+    Post N independent receive loops, each with its own buffer, so unpacking
+    overlaps receiving. N of 2-4 per listener is a sensible starting point;
+    it is a tuning knob, not a correctness parameter.
+
+M3. ReceiveFromAsync returning ValueTask instead of APM
+    Removes the IAsyncResult and delegate allocation per operation. Modern
+    socket async is SocketAsyncEventArgs-backed internally and is allocation
+    free in the steady state. Also removes D3 and D4.
+
+M4. Pooled buffers
+    ArrayPool<byte>.Shared, or simply one pre-allocated buffer per receive loop
+    since N is small and fixed. The send path already uses ArrayPool
+    (NetworkSession.cs:756), so the pattern is in-tree.
+
+M5. Span-based packet parsing
+    Replace MemoryStream + BinaryReader in ClientPacket.Unpack with
+    ReadOnlySpan<byte> + BinaryPrimitives. Already the in-tree pattern:
+    PacketHeader.Pack uses stackalloc + BinaryPrimitives, and
+    PacketFragmentHeader.Unpack has a byte[]-offset overload.
+    This is a SEPARATE, LARGER change - do it after the listener rewrite lands.
+
+
+--------------------------------------------------------------------------------
+4. IMPLEMENTATION SKETCH
+--------------------------------------------------------------------------------
+Illustrative, not compile-tested. Preserves the existing public surface
+(Socket, ListenerEndpoint, Start, Shutdown) so SocketManager and
+NetworkSession need no changes.
+
+    using System;
+    using System.Buffers;
+    using System.Net;
+    using System.Net.Sockets;
+    using System.Runtime.InteropServices;
+    using System.Threading;
+    using System.Threading.Tasks;
+
+    public class ConnectionListener
+    {
+        private static readonly ILog log = ...;
+        private static readonly ILog packetLog = ...;
+
+        // Number of receives kept in flight. Fixes D1.
+        private const int ConcurrentReceives = 4;
+
+        public Socket Socket { get; private set; }
+        public IPEndPoint ListenerEndpoint { get; private set; }
+
+        private readonly IPAddress listeningHost;
+        private readonly uint listeningPort;
+        private readonly CancellationTokenSource shutdown = new();
+        private Task[] receiveLoops;
+
+        public ConnectionListener(IPAddress host, uint port)
+        {
+            listeningHost = host;
+            listeningPort = port;
+        }
+
+        public void Start()
+        {
+            try
+            {
+                ListenerEndpoint = new IPEndPoint(listeningHost, (int)listeningPort);
+                Socket = new Socket(AddressFamily.InterNetwork,
+                                    SocketType.Dgram, ProtocolType.Udp);
+                Socket.SetSocketOption(SocketOptionLevel.Socket,
+                                       SocketOptionName.ReuseAddress, true);
+
+                // D6: suppress spurious ConnectionReset on Windows.
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    const int SIO_UDP_CONNRESET = -1744830452;
+                    Socket.IOControl(SIO_UDP_CONNRESET, new byte[] { 0 }, null);
+                }
+
+                Socket.Bind(ListenerEndpoint);
+
+                // M2: N independent loops, each with its own buffer.
+                receiveLoops = new Task[ConcurrentReceives];
+                for (var i = 0; i < ConcurrentReceives; i++)
+                    receiveLoops[i] = Task.Run(() => ReceiveLoopAsync(shutdown.Token));
+            }
+            catch (Exception ex)
+            {
+                log.Fatal($"Network socket failed to start on " +
+                          $"{listeningHost}:{listeningPort}", ex);
+            }
+        }
+
+        private async Task ReceiveLoopAsync(CancellationToken ct)
+        {
+            // M4: one buffer per loop, never shared. Fixes D1.
+            var buffer = GC.AllocateUninitializedArray<byte>(
+                             ClientPacket.MaxPacketSize, pinned: true);
+
+            // M1: reused across every receive - no per-datagram allocation.
+            var receivedAddress = new SocketAddress(AddressFamily.InterNetwork);
+
+            // Reusable template; only used when an IPEndPoint is required.
+            var endPointTemplate = new IPEndPoint(IPAddress.Any, 0);
+
+            while (!ct.IsCancellationRequested)
+            {
+                int dataSize;
+
+                try
+                {
+                    // M3: no IAsyncResult, no delegate, no recursion (D3/D4).
+                    dataSize = await Socket.ReceiveFromAsync(
+                        buffer, SocketFlags.None, receivedAddress, ct)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;                      // clean shutdown
+                }
+                catch (ObjectDisposedException)
+                {
+                    return;                      // socket closed under us
+                }
+                catch (SocketException se) when (
+                    se.SocketErrorCode is SocketError.MessageSize
+                                       or SocketError.NetworkReset
+                                       or SocketError.ConnectionReset)
+                {
+                    // Expected/benign - keep listening (matches current
+                    // behaviour at ConnectionListener.cs:127-129).
+                    continue;
+                }
+                catch (SocketException se)
+                {
+                    log.Error($"ReceiveFromAsync failed on " +
+                              $"{listeningHost}:{listeningPort}: " +
+                              $"{se.SocketErrorCode}", se);
+                    continue;                    // do NOT recurse (D3)
+                }
+
+                // *** D2: the containment boundary. Nothing below may escape. ***
+                try
+                {
+                    ProcessDatagram(buffer.AsSpan(0, dataSize),
+                                    receivedAddress, endPointTemplate);
+                }
+                catch (Exception ex)
+                {
+                    // Drop the packet, keep the listener alive. This is the
+                    // whole point of the rewrite - see bugs-network.txt N.0a.
+                    log.Error("Unhandled exception processing inbound packet " +
+                              $"from {receivedAddress}; packet dropped.", ex);
+                }
+            }
+        }
+
+        private void ProcessDatagram(ReadOnlySpan<byte> data,
+                                     SocketAddress from,
+                                     IPEndPoint endPointTemplate)
+        {
+            if (packetLog.IsDebugEnabled)
+            {
+                // D5: no byte[] copy - BuildPacketString already takes a range.
+                packetLog.Debug(
+                    $"Received Packet (Len: {data.Length}) " +
+                    $"[{from} => {ListenerEndpoint}]\n" +
+                    buffer.BuildPacketString(0, data.Length));
+            }
+
+            var packet = new ClientPacket();
+
+            if (!packet.Unpack(data))            // M5 (see section 5)
+                return;
+
+            // M1: materialise an IPEndPoint only now, and only because the
+            // existing ProcessPacket signature requires one. See section 5.
+            var ipEndPoint = (IPEndPoint)endPointTemplate.Create(from);
+
+            NetworkManager.ProcessPacket(this, packet, ipEndPoint);
+        }
+
+        public void Shutdown()
+        {
+            shutdown.Cancel();
+            if (Socket is { IsBound: true })
+                Socket.Close();
+            try { Task.WaitAll(receiveLoops ?? Array.Empty<Task>(), 2000); }
+            catch { /* best effort */ }
+            shutdown.Dispose();
+        }
+    }
+
+
+--------------------------------------------------------------------------------
+5. WHAT ELSE HAS TO CHANGE
+--------------------------------------------------------------------------------
+The sketch above is deliberately self-contained, but two things limit how much
+of M1 and M5 it can actually realise:
+
+a) ClientPacket.Unpack currently takes (byte[] buffer, int bufferSize) and
+   builds a MemoryStream over it (ClientPacket.cs:22-52). To pass a Span you
+   need a Span-based overload. That is M5 and it cascades into
+   PacketHeaderOptional.Unpack and ClientPacketFragment.Unpack, both of which
+   take a BinaryReader today.
+   INTERIM: keep the byte[] overload and pass (buffer, dataSize). The listener
+   rewrite still delivers D1-D4 without M5.
+
+b) NetworkManager.ProcessPacket(ConnectionListener, ClientPacket, IPEndPoint)
+   forces an IPEndPoint to be materialised per datagram, which partially
+   defeats M1. Two options:
+     - Change the signature to take SocketAddress and only convert on the paths
+       that need an IPEndPoint (the LoginRequest path and the endpoint-match
+       validation at NetworkManager.cs:152).
+     - Or cache the IPEndPoint on the Session and compare SocketAddress bytes
+       directly for the validation check.
+   The second is less invasive and keeps the allocation off the steady-state
+   path, since routing is by packet.Header.Id.
+
+
+--------------------------------------------------------------------------------
+6. SEQUENCING
+--------------------------------------------------------------------------------
+0. OPTIONAL CHEAP WIN, independent of everything else: cherry-pick 2883541b
+   (see D4 corroboration) to close D3 in ~10 lines. Needs a rebase. Worth doing
+   even if the rewrite is deferred indefinitely.
+1. FIRST: the D2 containment fix, on its own, against the CURRENT code.
+   Wrapping ProcessPacket in try/catch is a few lines and closes a remote DoS.
+   Do NOT bundle it with the rewrite - it should be reviewable and shippable
+   independently, and it makes the rewrite debuggable.
+2. Then the listener rewrite (M1 partial, M2, M3, M4) with the byte[] Unpack
+   overload retained. This is the bulk of the win.
+3. Then decide on the ProcessPacket signature (section 5b) to complete M1.
+4. Then M5 (Span parsing) as a separate change, since it touches ClientPacket,
+   PacketHeaderOptional and ClientPacketFragment.
+5. D6 (SIO_UDP_CONNRESET) and D5 (debug copy) can ride along with step 2.
+6. D7 (synchronous SendTo) separately, and only if measurement justifies it.
+
+
+--------------------------------------------------------------------------------
+7. RISK AND MEASUREMENT
+--------------------------------------------------------------------------------
+BE HONEST ABOUT THIS ONE. This is a plausible-sounding rewrite of the most
+latency-sensitive code in the server, and there is NO BENCHMARK HARNESS to
+prove it helps - seven test files across ~330,000 lines, no BenchmarkDotNet.
+
+Before starting step 2, capture a baseline:
+  - inbound packets/sec and mean time in OnDataReceive under a populated load
+  - the existing ServerPerformanceMonitor counters, particularly
+    DoSessionWork_TickOutbound
+  - allocation rate via dotnet-counters, to confirm the per-datagram
+    allocations actually matter at your player count
+
+CONCURRENCY CAUTION: raising ConcurrentReceives above 1 genuinely changes
+threading. Today inbound processing is serialised per port, and downstream code
+may be relying on that without documenting it - NetworkSession.ProcessPacket has
+a class comment (NetworkSession.cs:60-64) acknowledging it can be entered from
+multiple threads, and a later audit pass concluded fragment processing is
+currently serial BECAUSE of the single outstanding receive
+(bugs-network.txt I.3). That conclusion DEPENDS ON THE CURRENT DESIGN and this
+change invalidates it.
+
+    => Before raising N above 1, re-examine MessageBuffer.AddFragment /
+       TryGetMessage (MessageBuffer.cs:22-53) and the reorder-then-mutate
+       sequence in NetworkSession.ProcessPacket. Shipping M2 with N=1 first,
+       then raising it after that review, is the safe ordering.
+
+That caveat is the single most important line in this document.
+
+================================================================================
+END OF DESIGN NOTE
+================================================================================

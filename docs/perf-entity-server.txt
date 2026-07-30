@@ -1,0 +1,245 @@
+================================================================================
+ACE.Server/Entity - PERFORMANCE REPORT
+================================================================================
+Scope   : Source/ACE.Server/Entity  (143 files, ~32,900 lines)
+Date    : 2026-07-25
+Companion document: bugs-entity-server.txt
+
+UNPROFILED. Static analysis; impact ordering reasoned from code plus call
+frequency, not measured.
+
+CALL-FREQUENCY MODEL
+  Landblock.TickPhysics / TickMultiThreadedWork / TickSingleThreadedWork run
+  per active landblock at 30-60Hz, across landblock groups in Parallel.ForEach.
+  ActionQueue.RunActions / DelayManager.RunActions run on the ~1000Hz outer
+  loop.
+  DamageEvent is constructed per attack per target.
+
+DESIGN NOTE (do not "optimise" this): Landblock already uses sorted next-tick
+linked lists - sortedCreaturesByNextTick, sortedWorldObjectsByNextHeartbeat -
+so only DUE entities are processed. That design is correct. Finding E.2 below
+concerns the MAINTENANCE cost of those lists, not their traversal.
+================================================================================
+
+
+SECTION A - PER-FRAME ITERATION AND LIST MAINTENANCE
+================================================================================
+
+E.1  TickPhysics walks EVERY object in the landblock, every frame
+     Landblock.cs:408-415 -> WorldObjects/WorldObject_Tick.cs:228
+
+     30-60Hz per landblock. It fully iterates worldObjects - thousands of
+     static items in a town block - just to early-out on
+     `PhysicsObj == null || !is_active()`. The dictionary enumerator is a
+     struct so there is no allocation; the cost is pure pointer-chasing and
+     cache misses over cold objects.
+
+     The code carries the author's own TODO admitting this.
+
+     FIX: maintain a `LinkedList<WorldObject> physicsActive`, mirroring the
+     existing sortedCreaturesByNextTick design, driven by
+     PhysicsObj.set_active() and IsAnimating transitions.
+
+E.2  Object add/remove on the landblock is O(n) five times over
+     Landblock.cs:632-683, and InsertWorldObjectIntoSorted* at :685-785
+
+     Each removal calls LinkedList.Remove(VALUE) on three lists - an O(n)
+     linear scan each - plus players.Remove and sortedCreaturesByNextTick.Remove.
+     Each insertion does an O(n) sorted walk.
+
+     Spell projectiles and arrows are created and destroyed CONTINUOUSLY during
+     combat, so this is O(objects in landblock) per projectile.
+
+     FIX: store the LinkedListNode<WorldObject> on the WorldObject and call the
+     O(1) Remove(node) overload. The same fix repairs
+     ResortWorldObjectIntoSortedGeneratorRegenerationList (lines 787-794),
+     which currently does Contains + Remove + insert - three O(n) passes.
+
+
+SECTION B - BROADCAST AND ALLOCATION
+================================================================================
+
+E.3  Every broadcast allocates a fresh recipient list
+     Physics/Common/ObjectMaint.cs:717, called from
+     WorldObject_Networking.cs:1042, 1376, 1413/1418/1445 and PlayersInRange
+
+     GetKnownPlayersValuesAsPlayer() does
+     `Values.Select(...).OfType<Player>().ToList()` under a rwLock, allocating
+     a List<Player> plus two LINQ iterators for EVERY motion update, damage
+     message and state change.
+
+     Messages scale as players x known-players, so this is O(P^2) allocations
+     per landblock per second in a crowded area.
+
+     FIX: add an EnumerateKnownPlayers(List<Player> buffer) that fills a
+     caller-owned or [ThreadStatic] buffer, or keep KnownPlayers as a
+     pre-typed List<Player>.
+
+     (Also reported from the Network side - see perf-network.txt P.9. Same
+     root cause, and worth fixing once.)
+
+E.4  DamageEvent allocates 8-10 sub-objects per attack per target
+     DamageEvent.cs:151
+
+     Per event: the DamageEvent itself (~40 fields); BaseDamageMod and
+     BaseDamage (both CLASSES holding only floats - Entity/BaseDamageMod.cs,
+     Entity/BaseDamage.cs); Creature_BodyPart (line 502); the Armor list
+     (lines 307, 322 - `Where(...).ToList()` with a CAPTURING closure over
+     coverageMask, so display class plus delegate plus iterator plus list); and
+     up to four float[] from `params float[] AdditiveCombine` (lines 237, 242,
+     282, 285, 351, 358).
+
+     FIX: make BaseDamage, BaseDamageMod and Creature_BodyPart readonly
+     structs; add 2/3/4-argument AdditiveCombine overloads; replace the armor
+     LINQ with a manual loop over EquippedObjects.Values into a reused list.
+
+E.5  RollBodyPart recomputes a constant with LINQ
+     BodyPartTable.cs:69
+     `bodyParts.Sum(i => i.Probability)` runs on every body-part roll - once
+     per landed attack - but the per-quadrant total never changes.
+     FIX: precompute float[12] quadrantTotals in the constructor; also store
+     cumulative probabilities so the roll becomes a binary search.
+
+E.6  Corpse-limit check re-enumerates a sorted union three times
+     Landblock.cs:905-920
+     Runs on EVERY corpse creation, i.e. every creature death.
+     `worldObjects.Values.Union(pendingAdditions.Values)` allocates an internal
+     HashSet over ALL landblock objects, then `.Where(...).OrderBy(...)` is
+     stored lazily and evaluated by BOTH `.Count()` and `.First(...)` - two to
+     three full O(n log n) passes.
+     FIX: a single loop collecting matching corpses into one list; sort only if
+     count > corpseLimit.
+
+E.7  GetTopDamager full-sorts to find one maximum
+     DamageHistory.cs:64, called from Monster_Awareness.cs:193 on monster
+     retarget and from death handling.
+     FIX: a linear max scan, no OrderByDescending. The same pattern appears in
+     AttackList.TopDamager (AttackList.cs:44); AttackList.Add (line 37) also
+     does ContainsKey plus indexer plus indexer - three hashes.
+
+
+SECTION C - REPEATED LOOKUPS
+================================================================================
+
+E.8  PropertyManager getters are a triple dictionary lookup
+     Managers/PropertyManager.cs:101-102
+     `ContainsKey(key)`, then `Cached[key].Item`, then `Cached[key].Description`
+     - three string hashes per call on a ConcurrentDictionary. Hot callers on
+     tick paths include Player_Tick.cs:88 (per house-owning player per tick)
+     and Entity/GeneratorProfile.cs:329.
+     FIX: one TryGetValue removes two thirds of the cost for free; hoist out of
+     loops into locals.
+     (Also reported in perf-managers.txt P.10.)
+
+E.9  Generator update re-evaluates LINQ properties inside a loop
+     WorldObjects/WorldObject_Generators.cs:74, 98, 103, 319
+
+     `CurrentCreate => GeneratorProfiles.Select(...).Sum()` plus two Any()
+     calls, all consumed by GenStopSelectProfileConditions (line 319) - which
+     evaluates CurrentCreate UP TO THREE TIMES plus both Any()s PER GET. And it
+     is the condition of a while loop bounded at 1000 iterations (line 665),
+     re-checked inside SelectAProfile's per-profile loop (line 174).
+
+     Runs every 5 seconds per generator, and generators are numerous.
+
+     FIX: compute currentCreate into a local once per Generator_Generate;
+     replace the three properties with plain loops.
+
+E.10 GetFellowshipMembers allocates a Dictionary plus a HashSet per call
+     Fellowship.cs:738
+     Called from Player_Tick.cs:86 (OnVitalUpdate - flag-gated, but fires on
+     every vital change), TWICE per SplitXp (line 506, and again inside
+     GetMemberSharePercent at line 606), and THREE TIMES per SplitLuminance
+     (line 583, line 591 via WithinRange, plus an Intersect allocating another
+     set).
+     FIX: maintain a live List<Player> updated on join/leave/logout; at minimum
+     hoist the call so SplitXp and SplitLuminance resolve members once.
+
+E.11 ObjectGuid does not implement IEquatable<ObjectGuid>
+     ACE.Entity/ObjectGuid.cs:11-91
+
+     It only overrides Equals(object), so EqualityComparer<ObjectGuid>.Default
+     BOXES on every comparison. This taxes Landblock.worldObjects and
+     pendingAdditions lookups (Landblock.cs:76-77), DamageHistory.TotalDamage
+     (per damage tick), and `pendingRemovals.Contains(guid)` in GetObject
+     (Landblock.cs:1045) - a List<T>.Contains, so O(n) BOXED comparisons.
+
+     FIX: add IEquatable<ObjectGuid> with
+     `public bool Equals(ObjectGuid other) => Full == other.Full;` - a one-line
+     change that removes boxing repo-wide - and make pendingRemovals a
+     HashSet<ObjectGuid>.
+
+     This is the highest leverage-to-effort item in this document.
+
+
+SECTION D - LOOKS EXPENSIVE BUT IS ACTUALLY COLD
+================================================================================
+D.1  Landblock.CreateWorldObjects / SpawnDynamicShardObjects / SpawnEncounters
+     (lines 204-330) and LoadMeshes / LoadScenery - landblock load only.
+D.2  Unload / DestroyAllNonPlayerObjects / SaveDB ToList and Where
+     (lines 1130-1190) - unload and the 5-minute save.
+D.3  Landblock.EnqueueBroadcast with its OfType<Player>() and
+     `Adjacents.Where(adj => adj != null)` (lines 1212-1239) - used only for
+     landblock-wide death broadcasts. It should still use the cached players
+     list, but it is not a hot path.
+D.4  ADJACENCY IS NOT RECOMPUTED per tick or per broadcast. Adjacents is set
+     only in LandblockManager.SetAdjacents (line 663) on load, unload and
+     NotifyAdjacents. This is already correct - a plausible-looking concern
+     that checks out.
+D.5  IsDungeon / HasDungeon (lines 1247-1303) - memoised in nullable backing
+     fields; the CellLandblock.Height scan runs at most once.
+D.6  DamageEvent.ShowInfo (line 505) - heavy string concatenation, but gated
+     behind DebugDamage flags (HandleLogging, line 671), off in production.
+D.7  ExperienceSystem.cs - allocation-free arithmetic; the loops are bounded by
+     item level. (It does have CORRECTNESS bugs - see bugs-entity-server.txt
+     E.1 and E.2 - including one infinite loop, but not a performance problem.)
+D.8  HouseList.cs - startup and GetHouseList only, results cached in statics.
+D.9  AllegianceNode.BuildChain / CalculateRank / TotalFollowers - recursive and
+     LINQ-heavy, but run on allegiance load and rank recalculation, not per
+     tick.
+D.10 Fellowship's BinaryWriter extensions and SortedDictionary (line 785+) -
+     network serialisation on panel open.
+
+
+SECTION E - CHEAP WINS, LOWER CONFIDENCE ON IMPACT
+================================================================================
+E.12 Creature.Heartbeat (WorldObjects/Creature_Tick.cs:15-22) allocates a
+     List<WorldObject> expireItems plus a LINQ Where over EquippedObjects on
+     every creature every 5 seconds, almost always producing zero items.
+     Lazily allocate the list only on the first expiring item.
+E.13 DamageHistory.Prune (DamageHistory.cs:180) calls DateTime.UtcNow INSIDE
+     the per-entry loop. Hoist to a local.
+E.14 Adjacent to scope but drives everything above:
+     Managers/LandblockManager.cs:306 allocates a ConcurrentBag<WorldObject>
+     every world tick even when nothing moves, and line 312 re-sorts all
+     landblock groups (OrderByDescending + ThenByDescending + Partitioner.Create
+     + two Stopwatch allocations per group) every tick at 60Hz.
+     FIX: reuse the bag (clear it), and re-sort the group ordering on a
+     1-second cadence rather than per tick.
+     (Also in perf-managers.txt P.11.)
+
+
+SECTION F - SUGGESTED PRIORITY
+================================================================================
+  1. E.11 IEquatable<ObjectGuid>. One line, removes boxing on the single most
+          common comparison in the server, and benefits every subsystem.
+  2. E.2  O(1) LinkedListNode removal. Combat currently pays O(objects in
+          landblock) per projectile created and destroyed.
+  3. E.3  Stop allocating a recipient list per broadcast - coordinate with
+          perf-network.txt P.9.
+  4. E.1  Maintain a physics-active list instead of walking every object.
+  5. E.4  DamageEvent struct conversion and the armor LINQ.
+  6. E.8, E.10, E.9 - repeated lookups and re-evaluated properties.
+  7. E.6, E.5, E.7 - per-death and per-attack LINQ.
+  8. E.12, E.13, E.14 as cleanup.
+
+CROSS-CUTTING NOTE: E.1, E.2 and E.3 are all the same shape - the per-frame
+path pays a cost proportional to TOTAL objects rather than ACTIVE objects. The
+codebase already solved this correctly once, with the sorted next-tick lists.
+Applying the same principle to physics-active objects, list removal and
+broadcast recipients would make the landblock tick scale with activity instead
+of with content.
+
+================================================================================
+END OF REPORT
+================================================================================

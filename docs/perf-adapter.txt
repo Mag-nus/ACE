@@ -1,0 +1,136 @@
+================================================================================
+ACE.Adapter - PERFORMANCE REPORT
+================================================================================
+Scope   : Source/ACE.Adapter  (78 files, ~6,400 lines)
+Date    : 2026-07-25
+Companion document: bugs-adapter.txt
+
+UNPROFILED. Static analysis of call paths.
+
+SCOPE CAVEAT - READ FIRST
+  NOTHING in this project runs on a gameplay path. Every finding below is
+  reachable only from /import-json, /import-sql and /export-json in
+  ACE.Server/Command/Handlers/DeveloperContentCommands.cs.
+
+  Cost therefore matters ONLY for the `all` variants over thousands of
+  weenies - a content-pipeline concern, not a server-performance one. Nothing
+  here affects a running shard with players on it.
+
+  This report is included for completeness of the per-subsystem set. If you are
+  triaging server performance, skip it and read perf-network.txt,
+  perf-physics.txt, perf-database.txt and perf-managers.txt instead.
+================================================================================
+
+
+SECTION A - BULK IMPORT/EXPORT COST
+================================================================================
+
+R.1  One DB context and round-trip per FILE - the real wall-clock cost
+     ACE.Server/Command/Handlers/DeveloperContentCommands.cs:1216-1229
+
+         using (var ctx = new WorldDbContext())
+             ctx.Database.ExecuteSqlRaw(...)
+
+     performed once per file, driven from the loops at lines 133, 161, 189,
+     217 and 309. ImportSQLWeenie (lines 915-939) adds a ClearCachedWeenie plus
+     a GetWeenie second query.
+
+     So `import-sql all` over N weenies costs N contexts, 2N queries and N file
+     writes, with NO batching and NO transaction.
+
+     FIX: hoist one context and one transaction across the loop.
+
+     This is the single largest item in this report - it dominates everything
+     algorithmic below, because it is I/O and round-trip bound rather than CPU
+     bound.
+
+R.2  O(n^2) de-duplication scans over the growing output list
+     Lifestoned/LifestonedConverter.cs
+       import side: lines 153, 189, 359, 403, 412, 421, 432, 453, 462, 471
+       export side: lines 690, 906, 963, 974, 985, 998, 1032, 1055, 1073
+
+     Each is
+     `result.XxxStats.FirstOrDefault(x => x.Key == value.Key) == null` inside a
+     foreach over the source - a linear scan of the very list being appended
+     to. Called once per file from the loop at DeveloperContentCommands.cs:133.
+
+     Complex weenies carry 50-150 IntStats, so roughly 10,000 comparisons per
+     weenie.
+
+     FIX: a HashSet<ushort> of seen keys per property class.
+
+     NOTE: bugs-adapter.txt records that two of these de-duplication checks are
+     also CORRECT-BUT-WRONG-COLLECTION bugs. If you are rewriting them for
+     performance, fix the correctness at the same time.
+
+R.3  Attribute lookups repeated three to four times each
+     Lifestoned/LifestonedConverter.cs:561-628
+     `FirstOrDefault(a => a.Type == ...Strength)` is re-evaluated separately
+     for Ranks, LevelFromCp and XpSpent - roughly 30 scans plus 30 enumerator
+     allocations per exported weenie, for 9 distinct lookups.
+     FIX: hoist each to a local.
+
+R.4  Discarded per-iteration allocation plus a linear emote scan
+     Lifestoned/LifestonedConverter.cs:728-732, 889-894
+     A fresh EmoteCategoryListing and `new List<Emote>()` are allocated EVERY
+     iteration and then thrown away when existingEC != null. Line 889 is itself
+     a linear scan of result.EmoteTable. Vendor and NPC weenies carry hundreds
+     of emotes.
+     FIX: a Dictionary<int, EmoteCategoryListing>; allocate on miss only.
+
+R.5  Worst algorithmic shape in the project - but currently dead code
+     GDLE/GDLELoader.cs:174
+     `results.FirstOrDefault(x => x.Guid == part.ChildGuid)` where results
+     accumulates across ALL landblocks, giving
+     O(total_instances x total_links).
+
+     HONESTY NOTE: TryConvertLandblocks has ZERO CALLERS anywhere in
+     Source/ - it is a public API surface for external tooling. Biggest defect,
+     coldest path. Worth fixing only if that API is actually used downstream.
+
+R.6  UTF-16 round-trip on every JSON load
+     23 sites across both loaders, e.g. GDLELoader.cs:18-20,
+     LifestonedLoader.cs:20-22
+     `File.ReadAllText` followed by `Deserialize<T>(string)` decodes to UTF-16
+     and then transcodes back to UTF-8 inside System.Text.Json.
+     FIX: deserialise directly from the FileStream.
+
+
+SECTION B - CHECKED AND NEGLIGIBLE
+================================================================================
+Recorded because several are anti-patterns one would EXPECT to find here, and
+they are genuinely absent.
+
+B.1  The cached-JsonSerializerOptions anti-pattern is ABSENT. There is exactly
+     one instance (LifestonedConverter.cs:1120), a reused static; all
+     GDLELoader calls hit System.Text.Json's cached defaults. Correct as-is.
+B.2  There is NO string `+=` in any loop anywhere in the project.
+B.3  GDLEConverter.cs:37-39 builds a dictionary before an early-out - wasteful
+     in principle, negligible in practice.
+B.4  GetIndex at GDLEConverter.cs:385-401 - a guarded First() over at most 8
+     mods.
+B.5  LSDWeenie.cs:129-163 FirstOrDefault properties are [JsonIgnore] and only
+     Name is consumed.
+B.6  OrderBy at LifestonedConverter.cs:530 and 751 - tens of items.
+B.7  TryConvertACEWeeniesToLSDJSON (line 1097) has no caller.
+
+
+SECTION C - SUGGESTED PRIORITY
+================================================================================
+  1. R.1  Batch the database work across the import loop. Everything else in
+          this report is rounding error beside it.
+  2. R.2  HashSet de-duplication - and fix the two correctness bugs in the same
+          edit (see bugs-adapter.txt).
+  3. R.6  Stream-based deserialisation. Mechanical.
+  4. R.3, R.4 - hoisting and dictionary lookups.
+  5. R.5  Only if the external-tooling API is actually used.
+
+REALISTIC ASSESSMENT: unless you are routinely running `import-sql all` over
+the full content set and finding it slow, this whole report can be deferred
+indefinitely. The correctness findings in bugs-adapter.txt are considerably
+more valuable than anything here, because they silently damage content rather
+than merely taking time.
+
+================================================================================
+END OF REPORT
+================================================================================

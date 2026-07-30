@@ -1,0 +1,336 @@
+================================================================================
+ACE.Common - BUG REPORT
+================================================================================
+Scope   : Source/ACE.Common  (39 files, ~2,800 lines)
+          Cryptography/ (ISAAC, CryptoSystem, Hash32), Extensions/,
+          Performance/ (RateMonitor, RateLimiter, trackers), ThreadSafeRandom,
+          Time, DerethDateTime, ConfigManager, settings classes
+Date    : 2026-07-25
+Companion document: perf-common.txt
+
+VERIFICATION
+  TRACED BUT NOT RE-VERIFIED : all findings below. Spot-check before fixing.
+
+BLAST RADIUS: this project is referenced by every other project. A defect here
+propagates everywhere, so affected callers are named per finding.
+
+FINDINGS FROM THE INITIAL SWEEP (folded in)
+
+C.0a [MEDIUM] Non-atomic increment on a process-wide shared rate limiter
+     Performance/RateLimiter.cs (RegisterEvent, numberOfEventsRegistered++),
+     used via ACE.Server/Network/Session.cs:79
+
+     dddDataQueueRateLimiter is `private static readonly` - ONE instance shared
+     by every player session. ProcessDDDQueue() is called from
+     Session.TickOutbound(), which runs inside
+     `Parallel.ForEach(sessionMap, ..., s => s?.TickOutbound())` at
+     NetworkManager.cs:359.
+
+     FAILURE: concurrent sessions on different worker threads race on the
+     non-atomic `numberOfEventsRegistered++` and on the read-then-reset logic.
+     Lost increments let the shared limiter under-count, allowing more than the
+     intended 1000 events per minute through.
+
+     FIX: Interlocked.Increment, or a per-session limiter instance if the limit
+     was meant to be per-session rather than global - worth confirming which
+     was intended, since the shared-static choice may itself be the bug.
+
+C.0b [LOW] StringArrayToCharacterName drops the last word of two-word names
+     Extensions/CharacterNameExtensions.cs
+
+         string characterName = nameStrings[startingElement];
+         if (nameStrings.Length > 2) { for (i = startingElement+1; ...) ... }
+
+     The bound should depend on startingElement, not a fixed `> 2`.
+
+     FAILURE: with startingElement = 0 and a plain two-word name array such as
+     ["John","Smith"], Length == 2 fails the `> 2` test, the loop never runs,
+     and "Smith" is silently dropped - returning just "John". Currently
+     unreferenced elsewhere in the codebase, but the logic itself is broken.
+================================================================================
+
+
+SECTION A - HIGH SEVERITY
+================================================================================
+
+C.1  DerethDateTime date decoding loops once per in-game hour since PY 10
+     DerethDateTime.cs:493 (SetDateTimeFromTicks)
+
+     The date is derived by incrementing Hour one Derethian hour at a time, so
+     cost grows linearly with elapsed wall-clock time.
+
+     FAILURE: PortalYearTicks is roughly 298 million seconds as of 2026, so
+     `round = Ticks / 476.25` is about 626,000 ITERATIONS - each firing the
+     Hour -> Day -> Month -> Year property-setter cascade. Every
+     `new DerethDateTime(double)` pays that cost, and it grows by roughly
+     66,000 iterations per year.
+
+     CALLERS: Timers.cs:39 (CurrentInGameTime) ->
+     WorldObject_Generators.cs:368 CheckTimeOfDayStatus(), called per Day/Night
+     generator per heartbeat ON THE LANDBLOCK TICK THREAD. Also AddTicks,
+     SubtractTicks, SubtractMonths, SubtractDays, SubtractHours.
+
+     FIX: compute day/month/year/hour by integer division and modulo on Ticks
+     instead of looping.
+
+     ASIDE: MaxValue is 2^30, exceeded around February 2051, at which point
+     Timers.WorldStartLoreTime throws at startup. The comment on line 64 says
+     1073741828 while the expression actually yields 1073741824.
+
+C.2  Thread limits are never applied when the config keys are absent
+     ThreadConfiguration.cs:45, 59
+
+     The multipliers are applied only inside the property SETTERS, which JSON
+     deserialisation never invokes if the key is missing. The field defaults
+     (0.34 / 0.66) are therefore reported but never applied.
+
+     FAILURE: a Config.js predating the Threading block - or simply missing the
+     two multiplier keys - leaves LandblockManagerParallelOptions,
+     NetworkManagerParallelOptions and DatabaseParallelOptions
+     MaxDegreeOfParallelism at ParallelOptions' default of -1, i.e. UNLIMITED.
+     Parallel.ForEach then oversubscribes every core. LandblockManager.cs:338
+     computes Math.Min(count, -1) = -1, producing a NEGATIVE tick-efficiency
+     value that then poisons the stats tracker (see C.7).
+
+     CALLERS: LandblockManager.cs:317, 338, 379, 400; PlayerManager.cs:55;
+     RetailShardManager.cs:148, 185; AdminStatCommands.cs:116.
+
+     FIX: apply the multipliers explicitly once after ConfigManager.Initialize(),
+     not as a deserialisation side effect.
+     ALSO: DatabaseThreadCountMultiplier's `value == 0` branch reads
+     WorldThreadCountMultiplier, making the result depend on JSON KEY ORDER.
+
+
+SECTION B - MEDIUM SEVERITY
+================================================================================
+
+C.3  CryptoSystem search budget saturates permanently, hanging the session
+     Cryptography/CryptoSystem.cs:40-47
+
+     `int g = xors.Count` is captured BEFORE the loop, so the search budget is
+     `256 - unconsumedKeys`. Once xors saturates at 256 the loop body executes
+     zero times and Search can never again advance the keystream.
+
+     FAILURE: every packet lost or never retransmitted leaves a key in xors
+     permanently - nothing evicts. A forged UDP packet with EncryptedChecksum
+     set and an attacker-chosen checksum yields an attacker-chosen key
+     (ClientPacket.cs:142), forcing the server to burn up to 256 ISAAC outputs
+     into xors. After saturation, any legitimate key behind CurrentKey and
+     absent from xors is rejected forever - and VerifyCRC only increments a CRC
+     counter, so the session hangs SILENTLY until timeout rather than
+     terminating with a diagnosable reason.
+
+     CALLERS: ClientPacket.cs:138-147, i.e. all C2S traffic.
+
+     FIX: recompute the remaining budget inside the loop, age keys out, and
+     terminate the session with an explicit reason when the budget is
+     exhausted.
+
+C.4  ISAAC release races the network thread
+     Cryptography/ISAAC.cs:31-48, 24-29
+
+     Next() checks the NON-VOLATILE isReleased flag and then dereferences
+     randRsl, which ReleaseResources() nulls from another thread.
+
+     FAILURE: a session disconnect (Session.cs:333 -> NetworkSession.cs:973)
+     racing the network thread inside VerifyCRC/Search gives a
+     NullReferenceException at randRsl[offset].
+
+     RELATED: CryptoSystem.ReleaseResources is declared `new`, not `override`,
+     so releasing through an ISAAC-typed reference skips the xors cleanup - and
+     SessionConnectionData.IssacServer is NEVER released at all
+     (NetworkSession.cs:973 releases only CryptoClient).
+
+     FIX: make the base method virtual, guard release/consume under a lock (or
+     leave the arrays intact and only set the flag), and release IssacServer.
+
+C.5  SubtractTicks validates the wrong operation
+     DerethDateTime.cs:622
+
+     It validates `Ticks + numOfTicksToSubtract` but then computes
+     `Ticks - numOfTicksToSubtract`.
+
+     FAILURE: Ticks=1000, SubtractTicks(2000) passes validation (3000 is in
+     range) and then throws from the DerethDateTime(double) constructor with
+     the wrong parameter name. Conversely SubtractTicks(-500) near MaxValue
+     passes validation and then throws. The guard is correct only for
+     numOfTicksToSubtract == 0.
+
+     FIX: validate `Ticks - numOfTicksToSubtract`. SubtractYears:645 does this
+     correctly, confirming the intent.
+
+C.6  Real-world to Derethian year conversion double-counts a year for Jan-Mar
+     DerethDateTime.cs:971-973
+
+     ConvertFrom_RealWorld_to_Derethian_PY maps the portal year as
+     `10 + (Year - 1999)` regardless of month, but months 1-3 map to
+     Snowreap/Coldeve/Wintersebb, which GetTicksFromDateTime:559 already treats
+     as the TAIL of the preceding portal year (`Year - 9`).
+
+     FAILURE: a house bought in January 2027 gets a deed reading
+     "Snowreap 30, 38 P.Y." instead of 37. The derived instant jumps roughly 13
+     months forward on 1 January and roughly 11 months BACKWARD on 1 April -
+     lore time is non-monotonic across those boundaries.
+
+     CALLERS: Player_House.cs:157 (GiveDeed - the value is PERSISTED in
+     deed.LongDesc), Timers.CurrentLoreTime.
+
+     FIX: subtract 1 from convertedYear when Month <= 3.
+     ALSO: `convertedDay > 30 -> 30` (line 975) makes the 30th and 31st of
+     31-day months produce identical dates, and Feb 29/30 unreachable.
+
+C.7  Performance history statistics are structurally wrong
+     Performance/TimedEventHistory.cs:240, 245, 257
+
+     ShortestEvent starts at 0 and is only updated by
+     `LastEvent < ShortestEvent`, which is never true for non-negative
+     durations. AverageEventDuration divides by TotalEvents with no zero guard.
+
+     FAILURE: RateMonitor.ToString() always prints "Shortest: 0.0000 s", and
+     prints "Average: NaN s" for any monitor with no events (e.g. after
+     ClearEventHistory()). That NaN also makes the
+     OrderByDescending(AverageEventDuration) sorts in AdminStatCommands.cs:205-208,
+     224 NONDETERMINISTIC, because NaN comparisons are unordered.
+
+     CALLERS: AdminStatCommands.cs:205-249, Program_Metrics.cs.
+
+     FIX: initialise ShortestEvent to double.MaxValue (reporting 0 when
+     TotalEvents == 0) and guard the average.
+
+C.8  A single non-finite sample poisons a rolling tracker forever
+     Performance/RollingAmountOverTimeTracker.cs:207, 212;
+     RollingAmountOverHitsTracker.cs:135-137
+
+     Sum is maintained incrementally, so one NaN or Infinity input poisons it
+     permanently - `Sum -= NaN` is still NaN even after the value leaves the
+     window.
+
+     FAILURE: LandblockManager.cs:339 computes
+     `totalSecondsUsedInParallel / (sw.Elapsed.TotalSeconds * totalThreadsUsed)`.
+     With a zero-elapsed tick - or totalThreadsUsed == -1 from C.2 - this is
+     +/-Infinity or NaN, and TickPhysicsEfficiencyTracker.AverageAmount
+     (AdminStatCommands.cs:262) reports NaN for the rest of the server's life.
+
+     FIX: reject non-finite inputs in RegisterAmount, or recompute Sum when it
+     becomes non-finite.
+
+C.9  ISAAC keystream is determined by 32 bits, from a constant table
+     Cryptography/ISAAC.cs:50-83   [assessment]
+
+     Initialize mixes randRsl (all zeros) into mm and only THEN sets
+     `a = BitConverter.ToUInt32(keyBytes, 0); c = b = a;`.
+
+     CONSEQUENCE: mm[256] is a compile-time constant table identical for every
+     session and every server; the entire keystream is determined by 32 bits,
+     further weakened by a == b == c. SessionConnectionData.cs:54-61 supplies
+     exactly 4 bytes and transmits them in cleartext (matching retail).
+
+     This is obfuscation, not encryption - which matches the original protocol
+     and is not itself a defect. It is recorded here so nobody treats the CRC
+     keys as a security boundary. See also the ISAAC discussion in
+     Section 0 above.
+
+     FIX: document the 32-bit ceiling. Add a `keyBytes.Length < 4` guard to the
+     public constructors - neither ISAAC(byte[]) nor CryptoSystem(byte[])
+     validates length today, so a short seed throws ArgumentException from
+     BitConverter.
+
+C.10 String readers mis-handle the packed-length prefix and use UTF-8
+     Extensions/BinaryReaderExtensions.cs:22-31, 40-44
+
+     ReadString32L decides the packed-word prefix width with `if (length > 255)`,
+     but AC's packed word uses 2 bytes whenever the HIGH BIT of the first byte
+     is set (value >= 128). Both readers also use reader.ReadChars(n), which
+     decodes UTF-8 and consumes a VARIABLE number of bytes.
+
+     FAILURE: a login string of 128-254 characters consumes one prefix byte too
+     few, shifting the string by one character and mis-computing the trailing
+     pad. For ReadString16L, a client sending any byte >= 0x80 - and AC uses
+     Windows-1252 - makes ReadChars(length) read PAST length bytes to produce
+     length chars, desynchronising the stream so subsequent fields are garbage
+     or throw EndOfStreamException.
+
+     CALLERS: ACE.Entity/CharacterCreateInfo.cs:62 (character name) and roughly
+     40 GameAction* handlers reading player names, chat text and book pages -
+     ALL ATTACKER-CONTROLLED.
+
+     FIX: branch on the high bit of the first prefix byte; read raw bytes and
+     decode with an explicit single-byte encoding.
+
+
+SECTION C - INVESTIGATED, NOT A BUG
+================================================================================
+Recorded so a later pass does not re-investigate. Several of these are
+non-obvious.
+
+I.1  ThreadSafeRandom thread-local seeding (ThreadSafeRandom.cs:10) - the
+     classic "all threads seed from Environment.TickCount" correlation does NOT
+     apply here: every consuming project targets net10.0, where parameterless
+     `new Random()` seeds each instance from a thread-static high-quality
+     generator. Safe on this TFM. It WOULD be a real bug if retargeted to
+     net472 or netstandard on .NET Framework.
+I.2  ThreadSafeRandom.Next(int,int) is genuinely INCLUSIVE of max as
+     documented, and ListExtensions.Shuffle:75 (`Next(0, n)` after `n--`) is a
+     correct Fisher-Yates BECAUSE of that inclusivity - not a mistaken copy of
+     the exclusive Random idiom. Only overflow edge: max == int.MaxValue
+     throws; no caller does this.
+     NOTE the contrast with the FLOAT overload, which is [min,max) - see
+     bugs-entity-server.txt N.1.
+I.3  ThreadSafeRandom.Next(0, 1) at
+     Factories/LootGenerationFactory_Clothing.cs:261 - deliberately a 0-or-1
+     coin flip, not a mis-resolved overload.
+I.4  ISAAC.Next() offset walk (ISAAC.cs:38-45) - emits exactly 256 values per
+     scramble (255 down to 0, rescramble, 255). No skipped or duplicated word.
+I.5  Hash32 trailing-byte handling (both overloads) - correct for lengths not
+     divisible by 4. Only nit: the byte[] overload uses native-endian
+     BitConverter while the Span overload uses explicit little-endian, and both
+     are live in the packet path (ServerPacket.cs:62 vs ClientPacket.cs:109).
+     Divergent on a big-endian host only.
+I.6  DerethDateTime Wintersebb year handling - GetTicksFromDateTime:556-559
+     mutating Year looks wrong but exactly compensates for the Month setter's
+     `Year--` side effect at line 213. Ugly, correct.
+I.7  EnumHelper.NumFlags / HasMultiple - both handle 0 correctly despite the
+     `enumVal - 1` unsigned underflow.
+I.8  DoubleExtensions.FormatChance - traced 0.5, 0.1, 0.125, 0.005, 1e-120 and
+     negative inputs. The TrimEnd('0') is blocked by the decimal point, so 50%
+     does not degrade to 5%, and the all-zeros case is guarded at line 149.
+I.9  Time.cs - GetDateTimeFromTimestamp correctly returns DateTimeKind.Utc, and
+     every caller of GetUnixTime(DateTime) passes UTC or DB-UTC values, so the
+     missing kind normalisation is latent rather than live.
+I.10 RateLimiter constructor guards correctly reject non-positive
+     maxNumberOfEvents / overPeriod, so targetEventSpacingInSeconds cannot
+     divide by zero.
+I.11 ConfigManager - the missing-file path does throw rather than silently
+     defaulting. The only silent-null hole is a Config.js whose body is
+     literally `null`, which sets Config = null with no error.
+I.12 Cross-thread reads of RollingAmountOverHitsTracker
+     (AdminStatCommands.cs:272-286 reading while Parallel.ForEach workers call
+     RegisterAmount) - unsynchronised, but each LandblockGroup tracker has a
+     single writer and the array-based implementation can only yield stale or
+     torn stats, never a throw.
+
+
+SECTION D - SUGGESTED PRIORITY
+================================================================================
+  1. C.2  Thread limits never applied. It silently disables the entire
+          threading configuration, oversubscribes every core, AND feeds -1 into
+          the stats path (causing C.8). One fix resolves several symptoms.
+  2. C.1  DerethDateTime 626,000-iteration decode, on the landblock tick
+          thread, growing every year. Pure algorithm replacement.
+  3. C.10 String reader prefix/encoding bugs - attacker-controlled input on
+          roughly 40 handlers.
+  4. C.3  CryptoSystem saturation - a remotely induced silent session hang.
+  5. C.4  ISAAC release race and the unreleased IssacServer.
+  6. C.6  Lore-year conversion - persisted into deed text, so wrong values
+          outlive the fix.
+  7. C.5, C.7, C.8 - correctness of the diagnostics you would otherwise use to
+          validate everything else. Worth doing early for that reason alone.
+  8. C.9  Documentation plus a length guard.
+
+NOTE: C.2, C.7 and C.8 form a chain - the missing thread limits produce -1,
+which produces NaN, which permanently poisons the trackers and makes the admin
+statistics nondeterministic. Fix C.2 first, then C.7 and C.8 as hardening.
+
+================================================================================
+END OF REPORT
+================================================================================

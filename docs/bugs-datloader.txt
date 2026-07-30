@@ -1,0 +1,480 @@
+================================================================================
+ACEmulator (ACE) - ACE.DatLoader Comprehensive Audit
+================================================================================
+Scope   : Source/ACE.DatLoader  (198 files, ~9,500 lines)
+            top level  20 files, ~2,250 lines  - container/access layer
+            FileTypes/ 51 files, ~3,200 lines  - per-format parsers
+            Entity/   123 files, ~4,000 lines  - nested data structures
+Date    : 2026-07-25
+
+--------------------------------------------------------------------------------
+VERIFICATION STATUS
+--------------------------------------------------------------------------------
+  VERIFIED DIRECTLY (read line by line):
+      A.1 SpellSet unbounded loop
+      A.3 Texture.ReadBytes unvalidated length
+      A.7 DatReader silent zero-fill
+      A.8 DatManager swallows missing dat
+      B.1 DatDirectory unbounded recursion
+      C.2 BlockSize unvalidated
+      The shared-helper analysis in Section E
+
+  REPORTED WITH A TRACED FAILURE SCENARIO, NOT INDEPENDENTLY RE-VERIFIED:
+      all other findings. Spot-check before writing a fix.
+
+Two independent audits were run in parallel - one on the container/access layer,
+one on the parsers - plus first-hand reading of the core files. Findings are
+merged here.
+================================================================================
+
+
+SECTION 0 - WHAT THIS COMPONENT IS AND WHY IT MATTERS
+================================================================================
+
+ACE.DatLoader reads the original Asheron's Call client's binary data archives:
+
+    client_portal.dat        game content: spells, skills, animations, models,
+                             textures, chargen tables            (REQUIRED)
+    client_cell_1.dat        landblock/dungeon geometry          (REQUIRED)
+    client_local_English.dat strings and localisation            (REQUIRED)
+    client_highres.dat       high-resolution textures            (optional)
+
+ARCHITECTURE
+  A .dat file is a container with two layers:
+
+    1. A B-tree-ish directory tree (DatDirectory / DatDirectoryHeader) mapping
+       a 32-bit file ID to a (offset, size) record. Each node holds up to 0x3D
+       entries and 0x3E branches, and the whole tree is walked once at startup
+       to populate DatDatabase.AllFiles.
+
+    2. A block/sector chain. A logical file's bytes are scattered across
+       fixed-size blocks; the first 4 bytes of each block point at the next.
+       DatReader.ReadDat walks that chain and reassembles a contiguous buffer.
+
+  On top of that, DatDatabase.ReadFromDat<T>(fileId) looks up a
+  ConcurrentDictionary cache, and on a miss reads the block chain, wraps the
+  bytes in a MemoryStream/BinaryReader, and calls T.Unpack(reader). Each of the
+  ~51 FileTypes and ~123 Entity classes implements Unpack as hand-written
+  sequential deserialization reverse-engineered from the retail client.
+
+CONSUMPTION BY THE SERVER (call-site counts)
+    DatManager.PortalDat      169
+    DatManager.CellDat         19
+    DatManager.LanguageDat     11
+    DatManager.HighResDat       7
+  Dat content is read from the main world tick thread, from parallel
+  landblock-group worker threads, and from network threads.
+
+THREAT MODEL - THE POINT OF THIS AUDIT
+  The .dat files are supplied by whoever runs the server. Modified "custom
+  content" dats circulate widely in the AC emulation community, and are
+  routinely downloaded from third parties and dropped into a server directory.
+  A server operator installing a community dat pack is, in effect, feeding
+  untrusted binary input to ~170 hand-written parsers.
+
+  These parsers must therefore be robust against malformed, truncated,
+  corrupted and deliberately hostile files. AS AUDITED, THEY ARE NOT. The
+  dominant defect class is a length or count read from the file and then
+  trusted - used as an allocation size or a loop bound with no validation.
+
+  MITIGATING FACTOR: dat parsing happens almost entirely at startup, from a
+  local file, by the operator's own choice of file. This is not a remotely
+  reachable attack surface. The realistic severity is "a corrupted or hostile
+  dat pack hangs, OOMs, or hard-kills the server, possibly with no useful
+  error message" - a robustness and supportability problem, not a remote
+  exploit. It becomes sharper for anyone auto-distributing dat packs.
+
+  NOTE: because each file is parsed over a MemoryStream of exactly FileSize
+  bytes, most simple over-reads terminate safely with EndOfStreamException.
+  The genuinely dangerous bugs are the ones that (a) allocate before consuming
+  stream, (b) loop without consuming stream, or (c) recurse.
+
+
+SECTION A - HIGH SEVERITY
+================================================================================
+
+A.1  Unbounded loop that consumes no stream - best single fix target
+     Entity/SpellSet.cs:23-34   [VERIFIED DIRECTLY]
+
+         HighestTier = SpellSetTiers.Keys.LastOrDefault();
+         for (uint i = 0; i <= HighestTier; i++) { ... SpellSetTiersNoGaps.Add(i, ...); }
+
+     HighestTier is a raw dictionary KEY read from the file. The loop body
+     reads nothing from the stream, so the usual EndOfStreamException backstop
+     does not apply.
+
+     FAILURE: one SpellSet entry keyed 0xFFFFFFFF in SpellTable (file
+     0x0E00000E, loaded at startup) drives ~4.29 billion SortedDictionary.Add
+     calls - roughly 200 GB - producing a multi-minute hang then
+     OutOfMemoryException. Worse, at HighestTier == uint.MaxValue the condition
+     `i <= 0xFFFFFFFF` is ALWAYS true and `i++` wraps to 0, so the loop cannot
+     terminate on its own even in principle.
+
+     FIX: bound the gap-filling loop by the actual key count, or cap
+     HighestTier at a sane maximum before looping.
+
+A.2  Unbounded loop plus null poisoning in animation hooks
+     Entity/AnimationFrame.cs:25-30, Entity/AnimationHook.cs:150-151
+
+     numHooks is an unvalidated UInt32. ReadHook peeks the hook type, rewinds
+     (Position -= 4), and on an unrecognised type returns null HAVING CONSUMED
+     NOTHING - so the loop makes no forward progress.
+
+     FAILURE: an Animation (0x03) with numHooks = 0xFFFFFFFF and one bogus hook
+     dword spins 4 billion iterations at a fixed stream position, appending
+     null to a List (~32 GB) and emitting 4 billion log4net warnings. Hang plus
+     OOM plus log flood. The nulls also silently poison Hooks, consumed by
+     MotionTable.GetAttackFrames and PhysicsScriptData.Unpack:57.
+
+A.3  Unvalidated length straight into ReadBytes
+     FileTypes/Texture.cs:39-41   [VERIFIED DIRECTLY]
+
+         Length = reader.ReadInt32();
+         SourceData = reader.ReadBytes(Length);
+
+     BinaryReader.ReadBytes allocates new byte[count] UP FRONT, before reading,
+     so the MemoryStream size bound does not protect against the allocation.
+
+     FAILURE: Length = 0x7FFFFFFF requests an immediate 2 GB allocation
+     (OutOfMemoryException - and if it succeeds, the result is cached in
+     FileCache forever). A negative Length throws ArgumentOutOfRangeException.
+     A short read is silently truncated with no exception, yielding SourceData
+     shorter than Width*Height*bpp and corrupt output downstream.
+
+A.4  Same pattern, twice, in one 12-byte header
+     FileTypes/Wave.cs:20-24
+
+     headerSize and dataSize are signed Int32 fed straight to ReadBytes - up to
+     4 GB of allocation from a 12-byte header, or ArgumentOutOfRangeException
+     on a negative value. ExportWave then indexes Header[0] unchecked, giving
+     IndexOutOfRangeException when headerSize is 0.
+
+A.5  One gigabyte per malicious string file
+     FileTypes/LanguageString.cs:18-20
+
+     strLen comes from ReadCompressedUInt32 (max 0x3FFFFFFF) and goes straight
+     to ReadBytes((int)strLen) - up to a 1 GB allocation per 0x31 file. A
+     handful of such files exhausts the heap.
+
+A.6  Unbounded mutual recursion in BSP tree parsing - kills the process
+     Entity/BSPNode.cs:61-70, Entity/BSPPortal.cs:30-31
+
+     BSP trees are parsed by mutual recursion with no depth limit.
+
+     FAILURE: a GfxObj/Environment whose node bytes repeat "BPIN" + a 16-byte
+     plane costs ~20 bytes of file per stack frame, so a ~1 MB crafted file
+     reaches ~50,000 frames and throws StackOverflowException. In .NET this is
+     UNCATCHABLE and terminates the process immediately - no logging, no
+     graceful failure.
+
+A.7  DatReader silently returns zero-filled buffers on a corrupt chain
+     DatReader.cs:29, 40, 45, 47, 64   [VERIFIED DIRECTLY]
+
+     Three compounding problems in one 40-line method:
+       - Every Stream.Read return value is discarded. Read is not contractually
+         obliged to fill the buffer, and at EOF returns 0, leaving the buffer
+         as allocated zeros.
+       - nextAddress is a raw uint from the file passed to
+         stream.Seek(nextAddress, SeekOrigin.Begin). FileStream.Seek only
+         rejects negative results, so any value up to 4 GB seeks happily past
+         EOF.
+       - No validation of offset or nextAddress against stream.Length or
+         Header.FileSize.
+
+     FAILURE: portal.dat is ~600 MB. Flip one bit in a sector header so
+     nextAddress becomes ~2.16 GB. The Seek succeeds; GetNextAddress reads 4
+     bytes, gets 0 back, and returns 0 because nextAddressBytes stays zeroed;
+     the next pass takes the terminal branch, Read returns 0, the return value
+     is discarded, size is set to 0 and the loop exits. ReadDat returns a
+     correctly-SIZED buffer whose tail is ALL ZEROS, with no error raised at
+     any level. ReadFromDat then unpacks that garbage into a plausible-looking
+     object and caches it permanently.
+
+     This is the worst failure mode in the component: silent data corruption
+     rather than a crash.
+
+A.8  Missing required dat is swallowed; startup continues with null statics
+     DatManager.cs:58-62 (also 41-45, 84-88)   [VERIFIED DIRECTLY]
+
+     FileNotFoundException is logged and swallowed. PortalDat remains null and
+     Initialize returns normally, so Program.cs:239 proceeds to full server
+     startup. The failure resurfaces much later as a bare NullReferenceException
+     - e.g. Factories/PlayerFactory.cs:91 on the first character creation -
+     far from the cause.
+
+     portal.dat is not optional. This should rethrow. Note also that the
+     client_highres.dat branch (DatManager.cs:66-73) has NO try/catch at all,
+     so a present-but-corrupt highres dat throws unhandled.
+
+
+SECTION B - MEDIUM-HIGH
+================================================================================
+
+B.1  Unbounded recursion in the directory-tree walk
+     DatDirectory.cs:33-41   [VERIFIED DIRECTLY]
+
+     Read recurses on DatDirectoryHeader.Branches[i] with no visited set, no
+     depth cap, and no per-branch validation.
+
+     FAILURE: a single corrupted branch word pointing back at an ancestor
+     sector (e.g. root's Branches[0] == Header.BTree) recurses unboundedly into
+     StackOverflowException - uncatchable, kills the process during
+     DatManager.Initialize.
+
+     Separately, only Branches[0] != 0 is checked (line 33), yet the loop then
+     blindly recurses on Branches[1..EntryCount]. Any zero among those
+     constructs a DatDirectory at rootSectorOffset = 0 and parses the dat's
+     first 1716 bytes as a directory header.
+
+B.2  Unvalidated EntryCount drives a direct allocation
+     DatDirectoryHeader.cs:18-20   [VERIFIED DIRECTLY]
+
+         EntryCount = reader.ReadUInt32();
+         Entries = new DatFile[EntryCount];
+
+     No validation. EntryCount = 0xFFFFFFFF is a straight OutOfMemoryException.
+     Legitimate values max at 0x3D. Additionally, DatDirectory.cs:35 loops
+     `i < EntryCount + 1` indexing Branches[i] - an array of 0x3E - so any
+     EntryCount above 61 gives IndexOutOfRangeException.
+
+B.3  Unbounded recursion in UI layout parsing
+     Entity/ElementDesc.cs:76-83, Entity/BaseProperty.cs:61-81
+
+     Same shape as A.6: ElementDesc -> Children -> ElementDesc, and
+     BaseProperty -> Array/Struct -> BaseProperty. Each nesting level costs
+     ~7 bytes of file (0x00, count=1, key), so a small 0x21 file reaches stack
+     overflow and kills the process.
+
+
+SECTION C - MEDIUM
+================================================================================
+
+C.1  O(n^2) string building on an unvalidated length
+     BinaryReaderExtensions.cs:98-108 (ReadUnicodeString)
+     Length is an unvalidated compressed uint, and the string is accumulated
+     with `thestring += Convert.ToChar(...)` inside the loop. A 10 MB
+     StringTable declaring one 5-million-char string performs roughly 12 TB of
+     memcpy - an effective hang. Callers: Entity/StringTableData.cs:23,27,31
+     and Entity/NameFilterLanguageData.cs:22,26.
+
+C.2  BlockSize == 4 hangs the calling thread forever
+     DatReader.cs:45-49, with DatDatabaseHeader.cs:35   [VERIFIED DIRECTLY]
+     blockSize is read unvalidated from the file header. At blockSize == 4,
+     `blockSize - 4 == 0`: size never decreases, bufferOffset never advances,
+     Read(buffer, 0, 0) returns immediately, and the `while (size > 0)` loop
+     spins forever doing a Seek plus a 4-byte Read per pass. No timeout, no
+     progress, no exception. (blockSize < 4 instead throws
+     ArgumentOutOfRangeException - noisy but safe.)
+
+C.3  Static mutex serialises all dat I/O process-wide
+     DatDatabase.cs:24, 95
+     One static streamMutex is shared by CellDat, PortalDat, HighResDat and
+     LanguageDat, each of which owns a SEPARATE FileStream. Correctness is fine
+     (over-locking), but during the LandblockManager Parallel.ForEach every
+     worker's cell.dat read blocks on the same monitor as every portal.dat read
+     from the world tick and network threads, largely defeating the
+     parallelism. Should be an instance field.
+
+C.4  A dat miss is cached as a default-constructed, never-unpacked object
+     DatDatabase.cs:70-84
+     When GetReaderForFile returns null, obj is an empty `new T()` that is
+     still inserted into FileCache and returned. Callers cannot distinguish
+     "empty MotionTable" from "file absent", and the empty object is pinned in
+     the cache forever. Related: DatDatabase never implements IDisposable, so
+     with keepOpen: true (the server's setting) the FileStream is never
+     released; repeated Initialize calls leak handles.
+
+C.5  Unbounded loop governed by a file-supplied delta
+     FileTypes/Iteration.cs:157-167
+     `while (iterationCount > 0) { ... iterationCount += consecutiveIterations; }`
+     terminates only because retail files store a NEGATIVE delta. A
+     non-negative value reads pairs until EOF (EndOfStreamException) after
+     adding up to FileSize/8 dictionary entries, or throws ArgumentException on
+     a duplicate startingIteration. Runs on every DatDatabase.Iteration access.
+
+C.6  Unchecked dimension arithmetic in texture decoding
+     FileTypes/Texture.cs:99-111, 249, 341-350; DxtUtil.cs:56, 170, 318
+     Width/Height are unvalidated Int32 passed to DxtUtil.Decompress*, which
+     does `new byte[width * height * 4]` with an unchecked int multiply.
+     Width = Height = 0x10000 overflows to 0, giving a zero-length buffer and
+     IndexOutOfRangeException in the block decoder; other values overflow
+     negative into OverflowException. new Bitmap(Width, Height) and
+     colorArray[idx] are likewise unchecked.
+
+C.7  Signed counts silently produce empty tables
+     FileTypes/XpTable.cs:108-131
+     Four signed counts plus one uint, all used as `for (int i = 0; i <= count;
+     i++)`. A negative count yields EMPTY XP tables with no exception at load;
+     the server then throws ArgumentOutOfRangeException later on the first
+     level-up. The `<=` bound combined with int-vs-uint comparison also lets i
+     wrap negative and re-enter the loop.
+
+C.8  Vertex table keys and count both file-supplied
+     Entity/CVertexArray.cs:19-24
+     Unvalidated numVertices (uint) into Dictionary<ushort, SWVertex> whose
+     keys also come from the file: more than 65535 vertices, or any duplicate
+     key, throws ArgumentException; VertexType != 1 throws
+     NotImplementedException. Downstream Entity/Polygon.cs:59 indexes
+     Vertices[(ushort)id] with a file-supplied id (KeyNotFoundException).
+
+C.9  Wrong string format - silent parse desync
+     Entity/TabooTableEntry.cs:31, Entity/SexCG.cs:151,
+     Entity/HeritageGroupCG.cs:22, Entity/GearCG.cs:13,
+     Entity/StarterArea.cs:13, Entity/TemplateCG.cs:22
+     These use BinaryReader.ReadString(), i.e. .NET's 7-bit-encoded-length
+     UTF-8 format, NOT the client's PString. It coincidentally works for
+     strings under 128 bytes; any longer string desyncs the entire remaining
+     parse, silently producing wrong CharGen/taboo data. A crafted 5-byte
+     varint length also lets ReadString attempt a near-int.MaxValue string.
+
+C.10 Fixed-index access with no count check
+     FileTypes/GeneratorTable.cs:35-36 - Generators.Items[0] and Items[1] with
+     no count check; a 0x0E00000D file declaring fewer than 2 generators throws
+     ArgumentOutOfRangeException at startup.
+     FileTypes/SpellTable.cs:77-101 - RandomizeVersion1/2/3 index comps[0],
+     comps[4], comps[7] unchecked, throwing when a spell's 8 component slots
+     are zeroed.
+
+
+SECTION D - LOW
+================================================================================
+
+D.1  Entity/MediaDesc.cs:42 - switches on a file-supplied MediaType with NO
+     default case. An unknown value consumes only the 8 header bytes, silently
+     returns a default object, and desyncs everything parsed after it.
+D.2  DatDatabase.cs:114-135 - ExtractCategorizedPortalContents dereferences
+     dr.Buffer with no null check; GetReaderForFile can return null.
+D.3  DatDatabase.cs:20, 153 - Iteration is a PROPERTY that performs file I/O
+     and can log.Error on every access. Managers/DDDManager.cs:62 evaluates it
+     as a loop bound.
+D.4  DatDatabase.cs:32 - FileCache is unbounded; cell.dat has ~800,000 entries.
+D.5  DatManager.cs:11-13 - datFile and count are static fields used purely as
+     locals. Harmless today (Initialize runs once) but a thread-safety trap.
+D.6  FileTypes/Texture.cs (INDEX16/P8 branch) - GetBitmap applies
+     CustomPaletteColors by MUTATING the cached Palette instance obtained from
+     FileCache: `pal.Colors[entry.Key] = entry.Value;`. This permanently
+     poisons that palette for every subsequent reader in the process, so an
+     unrelated later texture render picks up the custom colours. Only reachable
+     from /exporttextures-style developer commands today, hence Low, but it is
+     a cache-corruption bug rather than a local error. Fix: copy the palette
+     before applying overrides. (Found during the performance pass; see
+     perf-datloader.txt P.9. Note this is the same code path as A.3/C.6 above -
+     the `<=` bounds error at Texture.cs:283 sits in this exact block.)
+
+
+SECTION E - THE HIGH-LEVERAGE FIX: THE SHARED HELPER
+================================================================================
+[VERIFIED DIRECTLY]
+
+UnpackableExtensions.cs is the common deserialization helper: roughly 40 of the
+51 file types read their counted collections through its ~15 overloads. It
+validates NOTHING. There are three tiers:
+
+    UnpackPackedHashTable   UInt16 count      - safe by construction (<=65535)
+    UnpackSmartArray        compressed UInt32 - bounded at 0x3FFFFFFF, and
+                                                every element consumes >=1 byte
+    Unpack (plain)          raw UInt32/Int32  - THE RISKY ONE
+                                                lines 162, 176, 214, 231, 260
+
+RECOMMENDED SINGLE CHANGE
+    Add a `Remaining(this BinaryReader)` helper (none exists anywhere in the
+    codebase today) and, in the plain Unpack overloads, reject any totalObjects
+    greater than the remaining stream length - optionally divided by the
+    minimum element size. Pre-size nothing.
+
+    This one change hardens the majority of parsers at once, and is far more
+    maintainable than patching ~170 Unpack methods individually.
+
+IMPORTANT LIMITATION
+    It does NOT cover findings A.1 through A.6, all of which BYPASS the helper:
+    they either allocate directly via ReadBytes (A.3, A.4, A.5), loop without
+    consuming stream (A.1, A.2), or recurse (A.6). Those need individual fixes.
+
+    BinaryReaderExtensions.cs is otherwise safe by construction, except
+    ReadUnicodeString (C.1).
+
+
+SECTION F - INVESTIGATED, NOT BUGS
+================================================================================
+Recorded so a later pass does not re-burn effort on them.
+
+F.1  Shared FileStream race - genuinely guarded. DatDatabase.cs:95 takes
+     streamMutex around the entire `new DatReader(...)`, and the
+     DatReader(FileStream, ...) constructor performs the whole seek-and-read
+     synchronously, so no interleaved Seek/Read is possible. The keepOpen:false
+     path opens a private handle per read; default FileShare.Read makes
+     concurrent opens fine.
+F.2  FileCache publication race - safe. obj.Unpack completes BEFORE GetOrAdd
+     (DatDatabase.cs:76-82), and ConcurrentDictionary's memory barriers
+     guarantee no half-initialised object is observable. Two threads racing a
+     miss merely duplicate the parse; the loser discards its copy.
+F.3  AllFiles plain Dictionary - written only in the constructor, read-only
+     afterwards. No concurrent-write risk.
+F.4  Block-chain CYCLE causing an infinite loop - does not occur for
+     blockSize > 4. size decreases by (blockSize-4) each pass, so iterations
+     are bounded; a short cycle throws ArgumentException from Read once
+     bufferOffset + count exceeds buffer.Length. (The blockSize == 4 case, C.2,
+     is the real hang.) NOTE: an earlier hypothesis that `size -= (blockSize-4)`
+     underflows into a near-infinite loop was checked and is wrong - it does
+     underflow, but the resulting oversized bufferOffset throws
+     ArgumentException promptly.
+F.5  B-tree branch loop bound - `for (i = 0; i < EntryCount + 1; i++)` over
+     Branches[0x3E] is correct for VALID files: legitimate EntryCount maxes at
+     0x3D, so i maxes at 61 < 62. Only corrupted EntryCount breaks it (B.2).
+F.6  Mutable cached objects shared across threads - mostly avoided by
+     consumers. Physics/Common/DBObj.cs and Physics/Entity/GfxObjCache.cs:51-55
+     wrap dat types in physics-owned classes rather than mutating them, and
+     GfxObj/DatDirectoryHeader expose private setters over readonly
+     collections. The one deliberate mutation, DatManager.cs:52
+     PortalDat.SkillTable.AddRetiredSkills(), runs single-threaded during init.
+F.7  Safe-by-construction parsers confirmed: UnpackPackedHashTable;
+     UnpackSmartArray; CellLandblock (fixed 81/81 + AlignBoundary);
+     LanguageInfo.UnpackList, ObjDesc, MotionData, EnvCell, LayoutDesc,
+     StateDesc, NameFilterTable, ActionMap, ChatPoseTable, ContractTable,
+     TabooTable, SpellComponentsTable (all byte/ushort counts);
+     ReadPString/ReadObfuscatedString (<=65535 bytes); PaletteSet.GetPaletteID
+     (explicitly clamped); Surface, Frame, Plane, Sphere, LandDefs
+     (fixed-size); QualityFilter, Font, MotionTable, DidMapper/EnumMapper
+     (unvalidated counts, but every iteration consumes bytes, so the worst case
+     is EndOfStreamException).
+
+
+SECTION G - ADJACENT FINDING (outside ACE.DatLoader)
+================================================================================
+Source/ACE.Server/Managers/DDDManager.cs:82 calls List<uint>.Add from inside a
+Parallel.ForEach over datDatabase.AllFiles with no lock. An unsynchronised List
+write from multiple threads can drop entries, produce a torn internal state, or
+throw IndexOutOfRangeException. Recorded here because it was found while
+tracing DatLoader consumers; it belongs with the concurrency findings in
+bugs-managers.txt M.0c.
+
+
+SECTION H - SUGGESTED REMEDIATION ORDER
+================================================================================
+  1. E - add Remaining() and guard the plain Unpack overloads in
+         UnpackableExtensions.cs. One change, hardens ~40 parsers.
+  2. A.7 - validate offsets/nextAddress against stream length in DatReader and
+         assert Read returned the requested count. This is the only finding
+         that causes SILENT DATA CORRUPTION rather than a visible failure, so
+         it is arguably the most important single fix despite ranking below
+         A.1 on raw severity.
+  3. A.8 - rethrow on a missing required dat so failure is immediate and
+         clearly attributed, instead of a NullReferenceException at first
+         character creation. Add a try/catch to the highres branch.
+  4. A.1, A.2 - the two loops that consume no stream. Small, local fixes.
+  5. A.6, B.1, B.3 - add depth caps to the three recursive parsers. These are
+         the findings that hard-kill the process via uncatchable
+         StackOverflowException, so a cap is worth more than its size suggests.
+  6. A.3, A.4, A.5 - validate lengths before ReadBytes.
+  7. C.2 - reject blockSize <= 4 at header parse.
+  8. C.3 - make streamMutex an instance field (performance, not correctness).
+  9. Remaining C and D items as cleanup.
+
+A useful structural follow-up: no fuzzing or malformed-input tests exist for
+this component. Given ~170 hand-written binary parsers over operator-supplied
+files, a corpus of mutated dat files run through DatManager.Initialize would
+likely surface more of the same class quickly.
+
+================================================================================
+END OF REPORT
+================================================================================

@@ -1,0 +1,1598 @@
+================================================================================
+ACE.Server/Physics - PERFORMANCE REPORT
+================================================================================
+Scope   : Source/ACE.Server/Physics  (162 files, ~27,200 lines)
+Date    : 2026-07-25
+Companion document: bugs-physics.txt (all three bug passes)
+
+SOURCE OF THIS DOCUMENT
+  FIVE independent performance passes, consolidated here.
+      Pass 1  collision/transition core       10 findings -> Sections A-C
+      Pass 2  targeted at the coverage gap    13 findings -> SECTION F
+      Pass 3  memory layout / GC behaviour    12 findings -> SECTION M
+      Pass 4  ObjectMaint algorithms + BSP     13 findings -> SECTION N
+      Pass 5  the collision math core          12 findings -> SECTION O
+  Pass 2 covers a disjoint region - Animation/, Common/ in depth, Managers/,
+  Trajectory.cs, PartArray.cs - so its findings are kept in their own section.
+
+*** THE MOST IMPORTANT ITEMS ACROSS ALL THREE PASSES ***
+  CONTENTION - there are TWO process-wide locks, and between them they
+  substantially negate the parallel landblock architecture:
+      P.1  LandblockManager.GetLandblock's global upgradeable lock (Section A)
+      F.1  ObjectMaint.rwLock is `static` - one lock for the entire server's
+           visibility system (Section F, VERIFIED DIRECTLY)
+  F.12 further shows the P.1 lock is entered 9x more often than necessary, so
+  fixing that multiplies the payoff.
+
+  MEMORY - Section M establishes that there is NOT ONE `struct` in the entire
+  subsystem (VERIFIED). Every value type - Sphere, AFrame, Position, BBox -
+  is a heap-allocated class, which is the root cause of the allocation
+  pressure catalogued in Sections B and F. Section M.12 separates the cheap
+  Gen0 churn (attack structurally, not one at a time) from the genuinely
+  PROMOTED allocations (M.1, M.9, H.2) that are worth fixing individually.
+
+  If you act on only three things in this document: P.1, M.2 (a one-line
+  deletion that halves the largest allocation site), and N.1 (delete the
+  duplicated walkable test in the innermost per-frame loop).
+  NOTE: F.1 was previously listed here. Its contention analysis stands, but the
+  fix originally proposed for it would deadlock - read F.1 before acting on it.
+
+UNPROFILED. A static read of the code weighted by call frequency, not measured
+hot spots. Validate before optimising.
+
+CALL-FREQUENCY MODEL
+  LandblockManager.TickPhysics runs from WorldManager.UpdateGameWorld at
+  30-60Hz, across landblock groups in a Parallel.ForEach.
+  PhysicsObj.UpdateObjectPhysics runs PER ACTIVE OBJECT PER FRAME. On a
+  populated server that is thousands of executions per second, so anything on
+  that path is multiplied enormously.
+
+ALSO FILED AS CORRECTNESS DEFECTS (full fix in bugs-physics.txt Section H)
+  CellArray.Cells is never cleared -> unbounded growth, so per-crossing cost
+  rises monotonically with server uptime.
+  Cells.Values.ElementAt(i) inside loops -> O(n^2) at PhysicsObj.cs:2489,
+  ObjCell.cs:356, Transition.cs:163.
+  Both are simultaneously correctness bugs AND performance problems. Fix them
+  once, from bugs-physics.txt Section H, which carries the full replacement
+  class and call-site list.
+================================================================================
+
+
+SECTION A - THREADING (the parallelism is largely defeated)
+================================================================================
+
+P.1  A global upgradeable lock serialises the parallel physics tick
+     LandblockManager.cs:481, via Common/LScape.cs:53-63
+
+     LScape.get_landcell -> LScape.get_landblock -> LandblockManager.GetLandblock,
+     which takes landblockLock.EnterUpgradeableReadLock().
+
+     ReaderWriterLockSlim permits only ONE upgradeable reader process-wide.
+     get_landcell is called from LandCell.add_outside_cell (Common/LandCell.cs:216)
+     up to 9 times per find_cell_list, and find_cell_list runs per transition
+     step per insertion attempt. Every physics thread in the Parallel.ForEach
+     therefore collides on this single lock thousands of times per second.
+
+     This is the finding that matters most: the multi-threaded landblock design
+     is substantially negated by it.
+
+     FIX: add a lock-free fast path to GetLandblock - read landblocks[x,y]
+     (volatile) first and return immediately when non-null; take the lock only
+     on the load path.
+
+
+SECTION B - ALLOCATION ON THE PER-OBJECT-PER-FRAME PATH
+================================================================================
+
+P.2  Roughly 45 heap objects allocated per transition() call - half of them
+     immediately garbage
+     Transition.cs:29-32, 604-611, 690-695
+
+     The Transition constructor calls Init(), and MakeTransition() calls Init()
+     AGAIN - so every allocation is made twice and the first set is discarded
+     instantly.
+
+     Each Init() builds ObjectInfo, SpherePath (4 Positions -> 4 AFrames, 1
+     Sphere, 5 List<Sphere>), CollisionInfo and its List, CellArray and its
+     Dictionary - roughly 20 objects. transition() runs at least once per
+     moving object per frame (PhysicsObj.cs:1691, 1778, 4351).
+
+     FIX: (a) delete the redundant Init() in MakeTransition - that alone frees
+     50% immediately; (b) add a [ThreadStatic] Transition pool with a Reset().
+     The CleanupTransition stub at Transition.cs:237 is where the original
+     static pool used to live, which is a strong hint the port dropped it.
+
+P.3  new Position per transition step
+     SpherePath.cs:271-277, 257-263, 265-269
+
+     SetCheckPos unconditionally does `CheckPos = new Position(position)`,
+     which also allocates a new AFrame. It is called from CheckCollisions,
+     FindPlacementPos (inside the numSteps x rad DOUBLE LOOP at
+     Transition.cs:402), FindTransitionalPosition:516, CheckWalkable:232,
+     SetEdgeSlide, plus RestoreCheckPos/SaveCheckPos/SetCurrentCheckPos. A
+     single player frame does this tens of times.
+
+     FIX: copy into the existing CheckPos/BackupCheckPos instances
+     (CopyFrom(position)) rather than reallocating.
+
+P.4  Shadow-object teardown and rebuild every frame
+     PhysicsObj.cs:1969-1996 and 3228-3238, driven from :1266-1272
+
+     SetPositionInternal calls remove_shadows_from_cells() then
+     add_shadows_to_cell(cellArray) EVERY FRAME for EVERY MOVING OBJECT. That
+     allocates a fresh ShadowObj per cell (1-9 for a player), and each
+     add/remove takes an ObjCell write lock (ObjCell.cs:96-109, 540-554), with
+     ShadowObjectList.Remove(shadowObj) being an O(n) linear scan of that
+     cell's list.
+
+     Per object per frame: ~2N lock acquisitions, N allocations, N O(n) scans.
+
+     FIX: compare the new cell-ID set against ShadowObjects.Keys first and skip
+     the entire teardown/rebuild when unchanged - which is the common case, as
+     objects usually stay in the same cells between frames. Otherwise reuse
+     ShadowObj instances and diff the sets.
+
+     NOTE: this interacts directly with the CellArray bug in bugs-physics.txt -
+     fix that first, or the "unchanged" comparison will never be true.
+
+P.5  Throwaway ObjectInfo on the hottest path
+     PhysicsObj.cs:2586-2622
+
+     get_object_info allocates a new ObjectInfo(), but the only field ever read
+     at its two call sites (PhysicsObj.cs:4071, 2205) is .State - and
+     trans.InitObject then recomputes everything from scratch anyway.
+
+     FIX: change the return type to ObjectInfoState and drop the allocation
+     entirely.
+
+P.6  AFrame is a class, not a struct
+     Animation/AFrame.cs:8
+
+     It holds only a Vector3 plus a Quaternion (28 bytes) yet is heap-allocated
+     everywhere: UpdatePositionInternal allocates one per call
+     (PhysicsObj.cs:1864); AFrame.Combine allocates its result (AFrame.cs:43-49,
+     called at PhysicsObj.cs:1878); and every `new Position(...)` allocates
+     another (Position.cs:50, 61). UpdateObjectInternal alone allocates 3-4 per
+     object per frame (PhysicsObj.cs:1664).
+
+     FIX (low risk): give Combine an in-place overload and reuse a per-object
+     scratch AFrame for offsetFrame.
+     FIX (high value, invasive): convert AFrame to a struct. Blast radius is
+     large - it is used across physics and ACE.Entity - so treat this as its
+     own project.
+
+
+SECTION C - LOCKING AND COLLECTIONS IN THE INNER LOOP
+================================================================================
+
+P.7  Per-cell ReaderWriterLockSlim in the collision inner loop
+     ObjCell.cs:150-199
+
+     FindObjCollisions enters and exits a read lock on every call, and is
+     invoked per cell, per insertion attempt (up to 5), per step, per
+     transition - easily 50-200 lock round-trips per object per frame.
+     ReaderWriterLockSlim read acquisition is roughly 10x the cost of an
+     uncontended Monitor.
+
+     FIX: landblock-group threading already guarantees a single writer per
+     group, so a lighter mechanism suffices - an immutable snapshot array
+     swapped on mutation, or a plain Monitor.
+
+P.8  Visible-object set fully recomputed on every cell change
+     PhysicsObj.cs:2748; ObjectMaint.cs:354, 387; Landblock.cs:660-671
+
+     handle_visible_cells - called from enter_cell_server, i.e. several times
+     per second per running player - calls GetServerObjects(true), which copies
+     this landblock PLUS ALL ADJACENTS into a new List, then runs
+     .Where().ToList(), then .Except(...).ToList() (building a HashSet), and in
+     the dungeon path also .Distinct().ToList().
+
+     On a populated landblock that is thousands of elements copied and 4-5
+     intermediate collections per call.
+
+     FIX: maintain the visible set incrementally; at minimum reuse scratch
+     List/HashSet buffers and drop the Distinct (the source cells are already
+     disjoint except for the SeenOutside merge).
+
+P.9  Per-frame allocations in the movement iterator
+     Managers/MoveToManager.cs:414, 416
+
+     HandleMoveToPosition is called every frame from UseTime for every moving
+     NPC. It allocates `new Position(PhysicsObj.Position)` (2 objects) used
+     only for a read-only curPos.heading(...) call - PhysicsObj.Position works
+     directly - and a `new MovementParameters()` (~30 fields) used only to
+     carry Speed, HoldKeyToApply and CancelMoveTo.
+
+     FIX: use PhysicsObj.Position directly and hold one reusable
+     MovementParameters field per manager. Also PendingActions.First()
+     (line 773) should be PendingActions[0].
+
+P.10 Double dictionary lookups and LINQ in cell-list building
+     Common/CellArray.cs:31-47; ObjCell.cs:389, 452
+
+     add_cell does ContainsKey then Add (two hashes - use TryAdd); remove_cell
+     does ContainsKey then Remove (use Remove's bool return).
+     ObjCell.find_cell_list:389 calls `cellArray.Cells.Values.ToList()` on every
+     indoor find_cell_list, and the nested loop over VisibleCells.Values inside
+     it is O(cells x visible) where a ContainsKey on the existing VisibleCells
+     dictionary is O(1). ObjCell.cs:452 allocates
+     `new List<Sphere>{ sphere }` per call; Transition.InitSphere:657 does the
+     same for every sphere-less object.
+
+     NOTE: the CellArray fixes here should be folded into the rewrite described
+     in bugs-physics.txt Section H rather than done separately.
+
+
+SECTION D - LOOKS EXPENSIVE BUT IS ACTUALLY COLD
+================================================================================
+Recorded so a later pass does not spend effort here.
+
+D.1  ObjCell.Get (ObjCell.cs:201-210) allocates a new ObjCell - with a
+     Position, 3 Lists and a ReaderWriterLockSlim - and then DISCARDS it
+     unused. Genuinely wasteful, but nothing in Physics/ calls it. Dead weight,
+     not a hot path.
+D.2  Common/TextureMergeInfo.cs:24-45 - heavy Enumerable.Repeat/Where/ToList
+     chains, but terrain texture merging runs at landblock load only.
+D.3  Common/Landblock.cs:699 ServerObjects.OrderBy(...).ToList() and
+     Landblock.cs:88 ServerObjects.Contains(obj) - object add/sort paths, not
+     per-frame.
+D.4  BSPNode.Equals / GetHashCode (BSP/BSPNode.cs:325-376) - fully recursive
+     over the whole tree, but used only for dat-file comparison, never during
+     traversal.
+D.5  EnvCell.build_visible_cells / PostInit - one-time per cell load. (Though
+     see perf-datloader.txt P.5: it is one-time but happens under a global
+     lock.)
+D.6  BSP traversal virtual dispatch (BSPNode/BSPLeaf/BSPPortal) is real
+     polymorphism, correctly used, and the tree prunes on a cheap sphere test
+     first. No change warranted.
+D.7  Enum.HasFlag is used pervasively; the JIT has intrinsified it since
+     .NET Core 2.1, so it is not the boxing cost it appears to be.
+
+
+SECTION E - SUGGESTED PRIORITY
+================================================================================
+  1. P.1  Lock-free fast path in GetLandblock. Without this the parallel
+          landblock design does not deliver, and it is a contained change.
+  2. Fix the CellArray bug (bugs-physics.txt H.2 and Section H).
+     It is a prerequisite for P.4 and removes the uptime-proportional
+     degradation.
+  3. P.2  Delete the duplicate Init() in MakeTransition - a one-line change
+          that halves the largest per-frame allocation source.
+  4. P.4  Skip shadow teardown/rebuild when the cell set is unchanged.
+  5. P.3, P.5, P.9 - remove per-frame Position/ObjectInfo/MovementParameters
+          allocations.
+  6. P.7  Lighter locking in FindObjCollisions.
+  7. P.8  Incremental visible-set maintenance.
+  8. P.6  AFrame - the in-place Combine overload first; treat the
+          struct conversion as a separate project.
+  9. P.10 as cleanup, folded into the CellArray rewrite.
+
+Sequence note: items 1-4 are all about the same thing - the physics tick is
+supposed to be parallel and allocation-light, and currently is neither. Doing
+them together will show far more than doing them individually.
+
+
+================================================================================
+================================================================================
+PASS 2 - TARGETED AT THE COVERAGE GAP
+   (Animation/, Common/ in depth, Managers/, Trajectory.cs, PartArray.cs)
+   Findings are numbered F.1-F.13 and do not collide with P.1-P.10 above.
+   Section letters below are pass 2's own internal lettering.
+================================================================================
+================================================================================
+SECTION A - THE HEADLINE: A PROCESS-WIDE LOCK
+================================================================================
+
+F.1  ObjectMaint.rwLock is STATIC - one global lock for the entire server
+     Common/ObjectMaint.cs:23   [VERIFIED DIRECTLY]
+
+         private static readonly ReaderWriterLockSlim rwLock =
+             new ReaderWriterLockSlim(LockRecursionPolicy.SupportsRecursion);
+
+     Referenced 91 times in that file. Every Known / Visible / KnownPlayers /
+     VisibleTargets READ AND WRITE, for every player and every creature in the
+     world, serialises on this ONE lock.
+
+     It is taken on:
+       - every network broadcast - GetKnownPlayersValuesAsPlayer, called from
+         WorldObject_Networking.cs:1049, 1355, 1391, 1434, 1472
+       - every monster target scan - Monster_Awareness.cs:242, 351, 513, at 5Hz
+         times every monster on the shard
+       - every cell change
+
+     WRITE locks (AddVisibleObject / RemoveObject) stall ALL READERS GLOBALLY -
+     and they are taken from inside the Parallel.ForEach physics tick.
+
+     This means the visibility system is effectively single-threaded across the
+     whole server, and it is on the path of both the physics tick and every
+     outbound broadcast.
+
+     Together with the already-reported global landblock lock
+     (perf-physics.txt P.1), this is the second of two process-wide
+     serialisation points that between them negate most of the benefit of the
+     parallel landblock design.
+
+     *** THE ORIGINAL FIX PROPOSED HERE WAS WRONG AND WOULD DEADLOCK THE
+         SERVER. RESOLVED BY DIRECT VERIFICATION - SEE BELOW. ***
+
+     RETRACTED RECOMMENDATION: "make it a per-instance lock, or a plain lock on
+     a private object. Nothing in the class requires cross-instance atomicity -
+     each ObjectMaint tracks visibility for ONE owner (the class doc comment
+     says so explicitly). LOW RISK, HIGH VALUE - the single best change in this
+     document."
+
+     WHY IT IS WRONG   [VERIFIED DIRECTLY]
+     The doc comment is accurate about OWNERSHIP but says nothing about
+     COUPLING. There are TWELVE cross-instance calls inside ObjectMaint.cs -
+     lines 208, 245, 450, 500, 941, 951, 968, 986, 1127, 1132, 1135, 1138 - all
+     of the form `obj.ObjMaint.<Method>(PhysicsObj)`, maintaining visibility
+     "for both parties".
+
+     And they are made WHILE HOLDING THE LOCK. AddKnownObject (lines 194-215):
+
+         public bool AddKnownObject(PhysicsObj obj)
+         {
+             rwLock.EnterWriteLock();
+             try
+             {
+                 ...
+                 // maintain KnownPlayers for both parties
+                 if (obj.IsPlayer)
+                     AddKnownPlayer(obj);
+                 obj.ObjMaint.AddKnownPlayer(PhysicsObj);   // <-- INSIDE the lock
+                 return true;
+             }
+             finally { rwLock.ExitWriteLock(); }
+         }
+
+     With ONE STATIC lock declared LockRecursionPolicy.SupportsRecursion, that
+     nested acquisition is the SAME lock re-entered on the SAME thread -
+     harmless by construction. The static lock is therefore NOT an oversight;
+     it is LOAD-BEARING. It is a deliberately coarse lock that makes the
+     "both parties" pattern safe without any lock-ordering discipline.
+
+     With PER-INSTANCE locks it becomes a textbook lock inversion:
+         Thread 1: A.AddKnownObject(B) -> holds A's lock -> wants B's lock
+         Thread 2: B.AddKnownObject(A) -> holds B's lock -> wants A's lock
+     Two players entering each other's visibility range simultaneously on
+     different landblock-group worker threads DEADLOCK the physics tick. This
+     is not a theoretical race - it is the ordinary case the code exists to
+     handle.
+
+     THE CONTENTION PROBLEM IS STILL REAL. The fix has to respect the coupling.
+     In rough order of practicality:
+
+       1. MAKE THE READS LOCK-FREE, keep the static write lock.
+          The hot path is READS - broadcasts, monster target scans, cell
+          changes - not the paired writes. Publishing an immutable snapshot
+          (or using ConcurrentDictionary for the read paths) removes most of
+          the contention WITHOUT touching the write coupling at all. This is
+          the lowest-risk option and probably captures most of the benefit.
+       2. HOIST THE PAIRED WRITES OUT OF THE LOCK. Collect the "other party"
+          updates while holding the lock, release, then apply them. Removes the
+          nesting, after which per-instance locks become viable.
+       3. PER-INSTANCE LOCKS WITH A TOTAL ORDER - always acquire in ascending
+          ObjectGuid order. Standard, correct, and the most invasive.
+
+     Do NOT simply change the modifier on the field.
+
+     REVISED RATING: the contention is real and worth addressing, but this is
+     NOT a low-risk change and it is not "the single best change in this
+     document". Treat P.1 (the landblock lock) as the safer headline.
+
+F.2  Visibility accessors allocate a LINQ chain plus a List per call, on the
+     broadcast path
+     Common/ObjectMaint.cs:709, 722, 735, 875, 888, 901 (also 168, 181, 287,
+     300, 313)
+
+         KnownPlayers.Values.Select(v => v.WeenieObj.WorldObject)
+                            .OfType<Player>()
+                            .ToList()
+
+     Three enumerators, a List, and one weak-reference dereference per entry -
+     per broadcast, per object.
+
+     FIX: maintain a materialised List<Player> alongside the dictionary, or
+     expose a struct-enumerator iteration under the lock.
+
+     NOTE: three separate audits have now independently found this same
+     allocation from three different directions - perf-network.txt P.9,
+     perf-entity-server.txt E.3, and here. That convergence is strong evidence
+     it is real and worth fixing once, properly.
+
+
+SECTION B - ANIMATION (never examined for performance before)
+================================================================================
+
+F.3  Every appended animation deep-copies the dat animation
+     Animation/AnimSequenceNode.cs:98-99 -> Animation/Animation.cs:17-27
+     [VERIFIED DIRECTLY]
+
+         PosFrames = new List<AFrame>();
+         foreach (var posFrame in anim.PosFrames)
+             PosFrames.Add(new AFrame(posFrame));
+
+     set_animation_id does `new Animation(anim)`, which allocates a
+     List<AFrame> plus ONE AFrame PER POSFRAME. Locomotion animations have
+     dozens.
+
+     This runs per append_animation - i.e. on EVERY MOTION STATE TRANSITION
+     (MotionTable.add_motion, MotionTable.cs:365-369, which also allocates an
+     AnimData per anim). Every time a creature starts or stops walking, turns,
+     or changes stance.
+
+     The wrapper is immutable after construction: PartFrames is already shared
+     by reference (confirmed - the ctor assigns it directly, no copy), and
+     nothing mutates PosFrames.
+
+     FIX: a ConcurrentDictionary<uint, Animation> cache keyed by animID. The
+     dat layer is already cached; this wrapper simply is not.
+
+F.4  Two AFrames allocated per frame boundary for every animation that has no
+     position frames
+     Animation/Sequence.cs:382-383, 411-412; AnimSequenceNode.cs:60-62
+     [VERIFIED DIRECTLY]
+
+     Sequence tests `currAnim.Anim.PosFrames != null` - which is ALWAYS TRUE,
+     because the Animation constructor unconditionally allocates the list
+     (F.3). get_pos_frame then hits its out-of-range path and returns
+     `new AFrame()`, and AFrame.Combine allocates a SECOND one, plus a wasted
+     quaternion multiply and vector transform.
+
+     At a 30fps animation rate that is roughly 60 garbage AFrames per second
+     PER ANIMATING OBJECT, achieving nothing.
+
+     FIX: test `PosFrames.Count > 0` - which advance_to_next_animation already
+     does correctly at lines 153 and 169, so the correct idiom is in the same
+     file - and return a shared static identity AFrame.
+
+F.5  Roughly 5 heap objects per active object per frame in the core update
+     chain   [VERIFIED DIRECTLY]
+
+       PhysicsObj.cs:1664  `new Position(Position.ObjCellID)` - and
+                           Position.Init() itself does `Frame = new AFrame()`,
+                           so this is TWO allocations
+       PhysicsObj.cs:1813  another new Position (same doubling)
+       PhysicsObj.cs:1864  new AFrame()
+       PhysicsObj.cs:1878  AFrame.Combine allocates its result
+       PhysicsObj.cs:3637  `new AFrame(frame)` in set_frame
+
+     The allocation at 1664 happens unconditionally once past the early-out -
+     before anything knows whether the object actually moved.
+
+     At 60Hz times hundreds of active objects, this is the dominant
+     steady-state garbage source in the server, and it lands on the landblock
+     worker threads where GC pauses translate directly into tick stalls.
+
+     FIX: reuse a per-PhysicsObj scratch Position and AFrame - they never
+     escape the call - and in set_frame copy the two fields into the existing
+     Position.Frame rather than allocating.
+
+     Compounds with the already-reported "AFrame should be a struct"
+     (perf-physics.txt P.6).
+
+
+SECTION C - REPEATED EXPENSIVE COMPUTATION
+================================================================================
+
+F.6  InqRunRate recomputes a full skill value up to 4x per movement update
+     Common/WeenieObject.cs:124-135
+
+     `GetCreatureSkill(Skill.Run).Current`
+     (WorldObjects/Entity/CreatureSkill.cs:154+) runs the attribute formula
+     PLUS EnchantmentManager.GetSkillMod_Multiplier AND GetSkillMod_Additives.
+     For monsters these are the UNCACHED base implementations that scan the
+     enchantment registry.
+
+     CALLERS: adjust_motion 3x per apply_raw_movement (MotionInterp.cs:518-520
+     -> 427 -> 532); get_max_speed / get_adjusted_max_speed per interpolation
+     frame (InterpolationManager.cs:219-221, StickyManager.cs:112);
+     get_state_velocity (line 691).
+
+     FIX: compute once per apply_raw_movement and cache on WeenieObject with
+     enchantment/skill invalidation.
+
+     SAME FILE: `WorldObject` is a property hiding a
+     WeakReference.TryGetTarget (line 21), called 2-5 times per method in
+     PotentialFoe, InqCollisionProfile and DoCollision. Cache in a local.
+
+     See perf-worldobjects.txt O.4 and perf-entity-shared.txt E.1 for why
+     CreatureSkill.Current is so expensive - this is the physics-side caller of
+     the same problem.
+
+F.7  find_cell_list allocates a List<Sphere> and Spheres per call
+     Common/ObjCell.cs:421-429, 437-442, 452 (`new List<Sphere>() { sphere }`)
+     Called per moving object per frame via calc_cross_cells
+     (PhysicsObj.cs:2095, 2100), and again per transition step via
+     find_cell_list(CellArray, ref checkCell, path).
+     FIX: reuse the sphere list held on SpherePath/PhysicsObj; make the
+     single-sphere overload use a cached one-element array.
+
+F.8  Indoor visible-cell filtering is O(cells x visibleCells) where a
+     dictionary lookup suffices
+     Common/ObjCell.cs:387-412
+     For each cell in the array it LINEARLY SCANS
+     ((EnvCell)visibleCell).VisibleCells.Values - 100+ entries in large
+     dungeons - comparing IDs. IsVisibleIndoors (EnvCell.cs:451-452) already
+     performs the equivalent test as
+     `VisibleCells.ContainsKey(cell.ID & 0xFFFF)`.
+     FIX: use the dictionary lookup.
+     RELATED BUG (already filed as bugs-physics.txt L.2):
+     build_visible_cells checks ContainsKey(blockCellID) but ADDS under key
+     visibleCellID (EnvCell.cs:122-124), so the duplicate check never hits.
+
+F.9  GlobalToLocalVec builds and transposes a Matrix4x4 from a quaternion on
+     every call
+     Animation/AFrame.cs:64-68
+     HOT CALLERS: EnvCell.point_in_cell and find_transit_cells
+     (EnvCell.cs:324, 341, 356, 420 - per portal per sphere per step);
+     SpherePath.CacheLocalSpaceSphere (SpherePath.cs:205, per transition step);
+     and Position.LocalToLocal - which BBox.LocalToLocal calls EIGHT TIMES PER
+     BOX (Collision/BBox.cs:116-127).
+     FIX: `Vector3.Transform(point, Quaternion.Conjugate(Orientation))` - no
+     matrix at all. Same pattern in get_heading (line 147) and
+     get_vector_heading (line 154), both called per frame from MoveToManager
+     and StickyManager.
+
+F.10 add_all_outside_cells is O(parts^2) with fully redundant inner work
+     Common/LandCell.cs:135-180
+     For each part it re-converts EVERY part's bounding box - `new BBox` plus 8
+     LocalToGlobal calls each, i.e. 8 matrix builds (see F.9) - while min_x /
+     max_x accumulate across outer iterations and are NEVER RESET, so
+     iterations 2..n recompute values already folded in.
+     Reached per frame for moving objects with a physics BSP
+     (calc_cross_cells -> find_bbox_cell_list, PhysicsObj.cs:2091).
+     FIX: hoist the bbox loop out of the outer loop.
+
+F.11 Per-cell and per-step Sphere/BBox garbage in cell traversal
+     LandCell.FindEnvCollisions - `new Sphere(path.GlobalSphere[0])` plus a
+     duplicated GetBlockOffset computation (LandCell.cs:46 vs 63)
+     EnvCell.find_transit_cells - `new Sphere` per portal per sphere
+     (EnvCell.cs:342, 357) and `new BBox` per portal per part (179, 278, 298)
+     BBox.GetCorners allocates an 8-element List<Vector3> UP FRONT in
+     box_intersects_cell_bsp even when the loop exits on the first plane
+     (BSP/BSPNode.cs:120, BBox.cs:81-95 - the source comment literally says
+     "cache?")
+     FIX: stack-allocated or Span corners; scratch Sphere/BBox per SpherePath.
+
+F.12 Neighbour-cell lookups re-enter the global landblock lock 9x per sphere
+     LandCell.add_outside_cell -> LandCell.Get -> LScape.get_landcell ->
+     get_landblock -> LandblockManager.GetLandblock (the already-reported
+     global lock, perf-physics.txt P.1) for each of up to 9 neighbours, times
+     up to 10 spheres per step.
+     Same pattern in Landblock.GetCell (Common/Landblock.cs:139-148), which
+     round-trips through the global lookup even though `this` IS the landblock
+     and LandCells is right there.
+     FIX: resolve the landblock once per find_cell_list and index LandCells
+     directly. This MULTIPLIES the payoff of the known lock fix - the lock is
+     not merely contended, it is entered 9x more often than necessary.
+
+F.13 InterpolationManager: O(n^2) walk, out-of-range start, and a discarded
+     result
+     Managers/InterpolationManager.cs:163-165, 100, 253
+     `PositionQueue.ElementAt(i)` inside a loop starting at Count - quadratic
+     AND an immediate ArgumentOutOfRangeException. Line 100 does ElementAt(1).
+     Worse, adjust_offset line 253 assigns `frame = offset` to a BY-VALUE
+     parameter, so every per-frame interpolation computation - distance,
+     get_adjusted_max_speed (which triggers F.6's skill lookup), normalisation -
+     is THROWN AWAY.
+     Both a bug (already filed as bugs-physics.txt G.6) and pure waste.
+     RELATED: TargetManager.HandleTargetting allocates VoyeurTable.Values.ToList()
+     plus a new Position per voyeur (TargetManager.cs:75, 95) and uses Distance
+     (sqrt) where a squared compare works (line 86).
+     Sequence.remove_cyclic_anims uses AnimList.Remove(node.Value) - an O(n)
+     value search instead of Remove(node) (Sequence.cs:317).
+
+
+SECTION D - LOOKS EXPENSIVE BUT IS COLD
+================================================================================
+D.1  Trajectory.cs quartic solvers and their double[4] per call - per missile
+     or spell launch only. (Note it has SEVERE correctness bugs - see
+     bugs-physics.txt G.1 and G.2 - but it is not a hot path.)
+D.2  MotionTable static helpers (GetAttackFrames / GetAnimationLength /
+     GetMotionData) - ReadFromDat is FileCache-backed and attack frames are
+     cached in attackFrameCache.
+D.3  AdjustCell.GetCell (Util/AdjustCell.cs:39-45) - a linear BSP point test
+     over every dungeon cell, but only reached on spawn and teleport
+     (set_request_pos passes a non-null cell on the normal path).
+D.4  SmartBox.cs - dead client structure.
+D.5  CellStruct / BSPCache / PolygonCache / GfxObjCache construction,
+     Landblock.get_land_scenes, EnvCell.init_static_objects - landblock load
+     time. (See perf-datloader.txt P.4 for the separate finding that CellStruct
+     is cached at the wrong granularity.)
+D.6  TexMerge / ImgTex / PalShift - client rendering, unreferenced on server.
+D.7  PartArray.UpdateParts per-part `new AFrame(curFrame.Frames[i])`
+     (PartArray.cs:605) IS a real per-part allocation, but on the server
+     set_frame gates it to HasPhysicsBSP objects (PhysicsObj.cs:3643-3647).
+     Worth fixing, but far cooler than it looks.
+
+
+SECTION E - A SEQUENCING TRAP: ONE BUG IS CURRENTLY ACTING AS AN OPTIMISATION
+================================================================================
+[VERIFIED DIRECTLY - flagging this because fixing bugs here will make
+performance WORSE unless the two are sequenced together]
+
+bugs-physics.txt G.13 reports that AFrame.Equals
+(Animation/AFrame.cs:231-234) compares `frame.Orientation.X - frame.Orientation.X`
+- self minus self - on all four terms, so orientation is never tested and
+equality degrades to origin-only.
+
+Now look at where that lands, at PhysicsObj.cs:1671:
+
+    if (newPos.Frame.Equals(Position.Frame))
+    {
+        CachedVelocity = Vector3.Zero;
+        set_frame(newPos.Frame);
+        InitialUpdates++;
+    }
+    else
+    {
+        ... transition(Position, newPos, false) ...   // full collision work
+    }
+
+Because orientation is never compared, A CREATURE THAT ONLY ROTATES TAKES THE
+CHEAP BRANCH and skips transition() entirely.
+
+CONSEQUENCE: fixing P3.13 - which is unambiguously correct to do, since pure
+rotation genuinely should re-evaluate cells and collisions - will route every
+rotating creature through the full transition path, which is precisely the
+~45-object-allocation path from perf-physics.txt P.2.
+
+RECOMMENDATION: land the P3.13 correctness fix TOGETHER WITH F.5 (scratch
+Position/AFrame reuse) and perf-physics.txt P.2 (removing the duplicate
+Transition.Init). Fixing the bug alone, on a busy shard, could measurably
+regress tick time and would look like the fix "caused" a performance problem.
+
+
+SECTION F - COVERAGE HONESTY
+================================================================================
+WELL COVERED by this pass: Animation/ (Sequence, AnimSequenceNode, Animation,
+AFrame, MotionTable, MotionTableManager, and MotionInterp's
+movement-application path), Managers/ (all except MoveToManager's interior
+beyond HandleMoveToPosition), Common/ (ObjCell, EnvCell, LandCell, LandDefs,
+Position, LScape, DBObj, CellStruct, SortCell, WeenieObject, Landblock head,
+and ObjectMaint's locking and accessor surface), PartArray, PhysicsPart, BBox,
+BSPNode, and the per-frame PhysicsObj update chain.
+
+THIN:
+  - MotionInterp's ~900 lines outside apply_* / get_*
+  - MoveToManager beyond lines 380-470
+  - ObjectMaint's 1,150 lines were read for LOCKING AND LINQ PATTERNS, not
+    line-by-line for algorithmic issues - given F.1 and F.2 both came from
+    there, a dedicated algorithmic pass on this file is likely productive
+  - LandblockStruct.cs (681 lines) and the Landblock.cs body (water depth,
+    buildings) were skimmed
+  - Particles/, Scripts/, Hooks/, Combat/ not examined at all
+  - BSPTree.cs and BSPLeaf.cs not read (BSPNode only)
+  - Sphere.cs / CylSphere.cs / Polygon.cs deliberately left to pass 1
+
+
+SECTION G - SUGGESTED PRIORITY
+================================================================================
+  1. F.1  ObjectMaint contention - but NOT by making the lock per-instance.
+          That was retracted: it would DEADLOCK (see F.1 for the verification).
+          Do the lock-free-reads variant instead, which captures most of the
+          benefit without touching the paired-write coupling.
+  2. F.12 Resolve the landblock once per find_cell_list. This multiplies the
+          payoff of the known global-lock fix (perf-physics.txt P.1) by
+          removing 9x redundant entries, so do the two together.
+  3. F.5  Scratch Position/AFrame reuse on the per-frame path - AND read
+          SECTION E first, because this needs to land with the P3.13 fix.
+  4. F.3 + F.4  The animation allocations. F.4 in particular is pure waste -
+          two AFrames per frame boundary achieving nothing - and the correct
+          idiom is already in the same file.
+  5. F.2  Materialised known-player list. Three independent audits found this;
+          fix it once in ObjectMaint and all three benefit.
+  6. F.6  Cache the run rate. Also reduces pressure on the
+          CreatureSkill.Current problem documented in perf-entity-shared.txt.
+  7. F.9, F.10, F.7, F.8 - the matrix-build and O(n^2) cell-traversal items.
+  8. F.11, F.13 as cleanup.
+
+WHAT TWO PERFORMANCE PASSES NOW SHOW
+  Pass 1 (collision/transition core)  10 findings
+  Pass 2 (targeted at the gap)        13 findings, including a process-wide
+                                      lock that pass 1 never saw
+
+  The same pattern as the bug passes: aiming at unread territory beats
+  re-sampling covered ground. Between them the two passes have now identified
+  TWO process-wide locks (LandblockManager's and ObjectMaint's) that together
+  substantially negate the parallel landblock architecture. If only two things
+  are done from either document, make it those two.
+
+
+================================================================================
+================================================================================
+SECTION M - MEMORY LAYOUT, ALLOCATION LIFETIME AND GC BEHAVIOUR
+   A third, memory-focused pass. Passes 1 and 2 catalogued WHERE allocations
+   happen; this section is about WHAT SHAPE the data has, HOW LONG it lives,
+   and which GC generation actually pays for it.
+   Findings are numbered M.1-M.12.
+================================================================================
+================================================================================
+
+UNPROFILED. Sizes computed from actual field lists on a 64-bit CLR (16-byte
+object header, 8-byte alignment, net10.0). Figures assume default
+LayoutKind.Auto field reordering - add [StructLayout] verification before
+relying on exact byte counts.
+
+
+M.0  THE STRUCTURAL HEADLINE   [VERIFIED DIRECTLY]
+
+     There is NOT A SINGLE `struct` in the entire physics subsystem. A grep for
+     struct declarations across all 162 files returns nothing. Every core value
+     type - Sphere, CylSphere, Polygon, AFrame, Position, BBox, CollisionInfo,
+     ObjectInfo, SpherePath, Transition, CellArray, AnimData, Ray, Vertex - is
+     a `class`.
+
+     That is not a style accident. It is the C++ port converting
+     stack-allocated value types into heap-allocated reference types WHOLESALE,
+     and it is the root cause of the heap pressure this subsystem exhibits.
+
+     MEASURED SIZES (payload / heap cost as a class):
+
+         Sphere      Vector3 + float            16 B / 32 B + allocation
+         CylSphere   Vector3 + 2x float         20 B / 40 B + allocation
+         BBox        (see M.5)                  24 B / 40 B + allocation
+         AFrame      Vector3 + Quaternion       28 B / 48 B + allocation
+         ObjectInfo  ~30 B                      ~30 B / 48 B + allocation
+         Position    uint + AFrame REFERENCE    -> 80 B ACROSS TWO OBJECTS
+
+     Position is the standout: it holds a uint and a POINTER to an AFrame, so
+     what is conceptually 32 bytes of data costs 80 bytes spread over two heap
+     objects, two allocations and two cache lines - and UpdateObjectInternal
+     allocates one per active object per frame (P.5 / F.5 above).
+
+     A CORRECTNESS DIVIDEND: bugs-physics.txt G.14 (a part's Position aliased
+     rather than copied, so morphing one object deforms another) exists
+     PRECISELY BECAUSE Position became a reference type when the C++ member was
+     by value. Value semantics would eliminate that bug class rather than
+     patching its symptom.
+
+
+--- M: WHERE THE MEMORY ACTUALLY GOES ---
+
+M.1  Visibility lists are the only reliably PROMOTED allocation
+     Common/Landblock.cs:660 (GetServerObjects), called from
+     Common/ObjectMaint.cs:352, 382, reached from PhysicsObj.cs:2740/2779/2787/2795
+     via handle_visible_cells.
+
+     *** FREQUENCY CORRECTED - THIS FINDING WAS OVERSTATED ***   [VERIFIED DIRECTLY]
+     This was originally written as "once per player/monster per TICK" (i.e. 60Hz).
+     That is WRONG. handle_visible_cells is called only from enter_cell_server
+     (PhysicsObj.cs:2388/2393), which is reached from change_cell_server ->
+     set_current_pos (3483) and change_cell (2153). I read the call site at
+     PhysicsObj.cs:2183: it sits in the `else` branch after `leave_cell(true)`,
+     so it fires on an ACTUAL CELL CHANGE, not every frame.
+     ObjMaint.DestroyObjects() additionally runs per player Heartbeat (~5s,
+     Player_Tick.cs:126).
+
+     Cell transitions are frequent for a moving player - cells are small - but
+     they are roughly an order of magnitude rarer than 60Hz. Treat this as a
+     per-transition cost, which lowers its rank relative to the genuinely
+     per-frame items in Sections B and F. It is still the clearest PROMOTION
+     path in the subsystem, which is why it remains in Tier 2 of the GC
+     guidance in README.md - but do not expect 60Hz-scale returns from fixing
+     it.
+
+     GetServerObjects(true) builds `new List<PhysicsObj>(ServerObjects)` then
+     AddRanges up to 8 adjacents. On a busy landblock - say 400 objects across
+     9 blocks - that is a 3.2 KB backing array; then
+     `ApplyFilter(...).Where(...).ToList()` produces a second; then
+     PhysicsObj.cs:2748 `.Except(visibleObjects)` allocates an internal
+     HashSet; and ObjectMaint.cs:387 adds `.Distinct()` (another HashSet).
+
+     Four-plus collections of hundreds of references, per observer, per tick.
+
+     WHY THIS ONE MATTERS MOST: these are large enough and live long enough -
+     across the whole visibility pass - to survive a Gen0 collection under load
+     and be PROMOTED TO GEN1. A Gen0 collection costs roughly the SURVIVOR
+     count, not the garbage count, so promoted allocations are far more
+     expensive per byte than the transient churn in M.11.
+
+     FIX: cache one reusable List<PhysicsObj> per ObjectMaint - they are
+     per-observer, so no cross-thread issue - and Clear()+refill instead of
+     `new`. Replace Except/Distinct with a reusable HashSet<uint> of IDs.
+     RISK: low. Confirm no caller retains the returned list beyond the tick.
+
+M.2  The Transition object graph: ~1.3 KB and ~45 objects, allocated TWICE
+     Transition.cs:690-695 (MakeTransition), 29-32 (ctor -> Init), 604-611
+
+     MakeTransition calls `new Transition()` - whose constructor calls Init() -
+     and then calls Init() AGAIN, so the entire graph is built and immediately
+     orphaned once.
+
+     MEASURED SHELL SIZES: Transition 48 B; SpherePath ~304 B (18 refs, 8
+     Vector3, 13 bool, 8 int/float); CollisionInfo ~128 B plus a
+     List<PhysicsObj> ~72 B; ObjectInfo 48 B; CellArray 48 B plus a Dictionary
+     ~200 B; plus four Position+AFrame pairs (SpherePath.cs:63-67) at 80 B
+     each.
+
+     Deleting the second Init() is a ONE-LINE, ZERO-RISK 50% CUT. Do this
+     first, before any pooling work.
+
+M.3  Pooling Transition is viable - but NOT with a naive free-list
+     Transition.cs:237 (the CleanupTransition stub where the C++ pool lived)
+
+     Three hard requirements, found by reading the reset surface:
+
+     (a) THREAD AFFINITY. Landblock groups tick under Parallel.ForEach and
+         Transition is created inside update_object on the ticking thread. A
+         [ThreadStatic] free-list is correct and lock-free. A
+         per-landblock-group pool also works, but only if no transition ever
+         crosses groups.
+
+     (b) *** THE ESCAPE HAZARD - THIS IS THE MAIN CORRECTNESS GATE ***
+         [VERIFIED DIRECTLY] `transition()` (PhysicsObj.cs:4066) RETURNS the
+         Transition, and five callers OUTSIDE the physics subsystem hold it and
+         then read trans.SpherePath.CurPos:
+             WorldObjects/WorldObject.cs:331, 369, 391, 420
+             WorldObjects/Player_Inventory.cs:1489
+         The object therefore outlives the physics call. Returning a pooled
+         object to a caller that retains it is a use-after-free-style aliasing
+         bug - strictly worse than the allocation it saves. A pool needs an
+         explicit release point at those five call sites, or the needed data
+         copied out before returning.
+
+     (c) MANDATORY RESET STATE. Three latent problems would become active bugs
+         under pooling, and all three are worth fixing on their own merits:
+           - CollisionInfo.CollideObject and LastCollidedObject hold live
+             PhysicsObj references. Not clearing them turns the pool into a
+             LEAK that keeps despawned objects alive into Gen2.
+           - CellArray.Cells is never Clear()ed; SetStatic/SetDynamic reset
+             NumCells but not the dictionary, so pooling would desync NumCells
+             from Cells.Count. (This is the same defect as bugs-physics.txt
+             H.2 - fix that first.)
+           - SpherePath.InitSphere (SpherePath.cs:114) APPENDS to LocalSphere
+             without clearing, so a reused path grows its sphere list every
+             transition.
+
+
+--- M: STRUCT CONVERSION, WITH THE CORRECTNESS TRAPS ---
+
+M.4  AFrame + Position: the highest-leverage conversion, and NOT safe as written
+     Animation/AFrame.cs:8, Common/Position.cs:12
+
+     Making AFrame a struct and inlining it into Position would collapse
+     80 B / 2 objects into one 48 B object, and halve pointer-chasing in
+     LocalToGlobal / GlobalToLocal - which run in the innermost collision
+     loops.
+
+     *** THE TRAP ***: AFrame fields are public and MUTATED THROUGH SHARED
+     REFERENCES - SpherePath.cs:121 (`CheckPos.Frame.Origin += offset`), :139,
+     PhysicsObj.cs:3468, 3637. If AFrame becomes a struct while Position.Frame
+     is a PROPERTY, then `pos.Frame.Origin += x` silently mutates a COPY. It
+     compiles cleanly only because Position.Frame is a field (it is) - but
+     every AFrame local that is mutated must be audited for accidental copy
+     semantics.
+
+     Note ACE.Entity.Frame uses auto-properties, so it cannot be converted
+     without also changing those to fields.
+
+M.5  Struct candidates, triaged by safety
+
+     SAFE (small, non-escaping, Init-then-read):
+         Ray (28 B / 48 B), BBox (24/40), Vertex (26/48),
+         ObjectInfo (ObjectInfo.cs:25 - escapes only as a value into
+         trans.InitObject)
+
+     UNSAFE AS WRITTEN - requires rewriting call sites first:
+         Sphere. It is mutated through SHARED LIST references:
+         SpherePath.cs:148, 170 create instances and
+         CacheGlobalCurrCenter / CacheGlobalSphere write
+         `GlobalSphere[i].Center = ...` through the list. As a struct in a
+         List<Sphere>, `list[i].Center = x` DOES NOT COMPILE, and any
+         `foreach (var s in list) s.Center += o` would silently NO-OP. Convert
+         only after rewriting those to indexed writeback or
+         CollectionsMarshal.AsSpan.
+
+     MUST STAY CLASSES (too large or genuinely aliased):
+         SpherePath (~304 B), Transition, CollisionInfo, Polygon, CellArray,
+         PhysicsObj
+
+M.6  Matrix4x4 (64 B) built and copied in the hottest conversion routine
+     Animation/AFrame.cs:66 (GlobalToLocalVec), also :149, :156, :185
+
+     GlobalToLocalVec builds Matrix4x4.CreateFromQuaternion AND
+     Matrix4x4.Transpose - two 64-byte stack temporaries per vector transform.
+     `Vector3.Transform(v, quaternion)` skips the matrix entirely.
+
+     Lines 149/156/185 build a full matrix to read one or two elements
+     (get_heading uses only M21/M22). Collision/BBox.cs:70 multiplies two
+     matrices per ConvertToGlobal, and BBox(List<Polygon>, Matrix4x4) at :14
+     passes 64 B BY VALUE - should be `in Matrix4x4`.
+
+     No heap cost, but real stack-copy and register pressure in the innermost
+     loop. (Overlaps F.9 above, which reached the same conclusion from the
+     call-frequency side.)
+
+M.7  stackalloc / Span - only where the size is STATICALLY BOUNDED
+     SAFE:
+       Collision/BBox.cs:81-95 GetCorners() returns `new List<Vector3>` of
+         exactly 8 - a 32 B list plus a 96 B array plus header per call, called
+         from BSP/BSPNode.cs:120 and Extensions/PlaneExtensions.cs:64 during
+         BSP descent (very hot). Exactly 8 -> `Span<Vector3> corners =
+         stackalloc Vector3[8]`. Same at BoundingBox.cs:170.
+       Common/ObjCell.cs:452 and Transition.cs:657 allocate
+         `new List<Sphere>() { sphere }` purely to satisfy a List<Sphere>
+         parameter - a one-element wrapper per call. Add a single-sphere
+         overload; no stackalloc needed.
+       Common/ObjCell.cs:416-432 - numCylSphere is explicitly clamped to 10 at
+         :418, so it is bounded; but the elements are Sphere CLASS instances,
+         so a span only helps after M.5.
+
+     *** MUST NOT STACKALLOC ***: CellArray.Cells, CollisionInfo.CollideObject,
+     Landblock.ServerObjects, Polygon.Vertices - all unbounded by object or
+     terrain count. stackalloc on any of these risks an UNCATCHABLE
+     StackOverflowException. (Same hazard as the network-side finding in
+     perf-network.txt Section 0.)
+
+M.8  SpherePath list capacity
+     SpherePath.cs:70-75 create five lists with NO capacity, even though
+     NumSphere is known to be <= 2 at :117. Each starts at 0 and reallocates
+     its array on first Add. `new List<Sphere>(2)` removes five array
+     reallocations per transition. The grow-and-reuse idiom at :148/170/186/189
+     is already allocation-conscious - this is just the missing capacity hint.
+
+M.9  LinkedList node churn on LONG-LIVED motion state
+     Animation/MotionState.cs:11-18, MotionInterp.cs:24
+
+     Each insert allocates a 48 B LinkedListNode (4 refs plus header). These
+     lists hang off per-object MotionState, which is LONG-LIVED - so nodes
+     inserted and removed during sustained combat or movement are prime GEN1
+     PROMOTION candidates, far worse per byte than the Gen0 transition garbage.
+
+     FIX: a small free-list of nodes, or List<Motion> where ordered removal is
+     not required.
+     RISK: MotionTable.cs:334 holds a LinkedListNode<Motion> prevMod across
+     iterations, so ordering semantics matter - do not blindly swap the
+     container.
+
+M.10 Boxing - mostly a false alarm, with two real spots
+     HasFlag appears 127 times in PhysicsObj.cs alone. On net10.0 the JIT
+     INTRINSIFIES Enum.HasFlag - no boxing, no allocation. DO NOT "fix" these;
+     rewriting to `(a & b) != 0` buys nothing and risks typos.
+
+     Real boxing: Common/TexMerge.cs:20 uses an enum dictionary key with no
+     custom comparer (load-time only, ignorable); and 21 `$"..."`
+     interpolations in PhysicsObj.cs plus 14 in ObjectMaint.cs - interpolation
+     boxes every value-type argument and builds the string BEFORE any log-level
+     check. Verify which are live rather than commented out.
+
+M.11 Large Object Heap: NO OFFENDERS FOUND
+     Checked the plausible candidates. LandblockStruct holds Height/Terrain
+     lists sized by SideVertexCount (9x9 = 81) and Polygons at
+     SidePolyCount^2 x 2 = 128 - far under the 85,000-byte LOH threshold.
+     EnvCell.VisibleCells would need ~10,000 entries to reach it.
+     Landblock.ServerObjects copies (M.1) would need ~10,600 objects.
+     The List<PhysicsObj> copies are Gen0/Gen1 pressure, NOT LOH fragmentation.
+
+M.12 WHERE TO SPEND EFFORT: Gen0 churn vs promoted allocations
+     This is the most useful distinction in this section.
+
+     CHEAP GEN0 CHURN - only worth fixing in BULK, structurally:
+       AFrame / Position / Sphere / Plane temporaries inside a single
+       transition (Transition.cs:190, 211, 398, 618, 626, 766, 1086;
+       SpherePath.cs:259, 268, 273, 283, 297, 300, 306). These die within
+       microseconds. A Gen0 collection costs roughly the SURVIVOR count, not
+       the garbage count - so picking these off one at a time is poor value.
+       Attack them via M.4/M.5 (struct conversion) and M.3 (pooling), or leave
+       them.
+
+     WORTH FIXING INDIVIDUALLY because they PROMOTE:
+       M.1  visibility list copies
+       M.9  LinkedList nodes on long-lived MotionState
+       H.2  CellArray retention (bugs-physics.txt Section H) - cells are
+            long-lived landblock structures, so this is a GEN2 RETENTION path,
+            not garbage
+       CollisionInfo.CollideObject holding PhysicsObj references past despawn
+
+
+--- M: WHAT A PROFILER MUST CONFIRM ---
+
+This section cannot rank its findings by actual bytes per second. Needed:
+  (a) dotnet-counters on gen-0/1/2-gc-count and alloc-rate under a
+      populated-landblock load, to establish whether promotion is ACTUALLY
+      occurring - the entire M.12 prioritisation depends on it;
+  (b) a dotnet-trace allocation-tick profile to confirm Position / AFrame /
+      Sphere dominate by count as predicted;
+  (c) per-tick call counts for handle_visible_cells versus transition() - both
+      are inferred to be per-tick from PhysicsEngine.cs:122, but the RATIO
+      determines whether M.1 or M.2 is the larger win;
+  (d) GCSettings.IsServerGC and whether background GC is enabled, since Gen1
+      cost differs sharply between configurations.
+
+
+--- M: SUGGESTED ORDER ---
+  1. M.2  Delete the duplicate Init(). One line, zero risk, halves the largest
+          allocation site in the subsystem.
+  2. M.1  Reusable visibility lists. The only confirmed promotion path, and
+          per-observer state so there is no threading hazard.
+  3. M.7  stackalloc the 8-element BBox corner arrays on the BSP descent path.
+  4. M.8, M.6  List capacities and the matrix-free vector transform.
+  5. M.9  LinkedList node churn on MotionState.
+  6. M.5  Struct-convert the SAFE set only (Ray, BBox, Vertex, ObjectInfo).
+  7. M.4  AFrame/Position - the biggest win, but audit every mutation site
+          first for copy semantics.
+  8. M.3  Transition pooling LAST. It requires M.2, the H.2 CellArray fix, the
+          SpherePath.InitSphere fix, AND resolving the escape hazard at the
+          five external call sites. Attempting it before those is how you turn
+          an allocation problem into an aliasing bug.
+
+--- M: COVERAGE NOTES ---
+Type declarations were read for all 162 files; BODIES were read only for
+PhysicsObj, Transition, SpherePath, ObjCell, ObjectMaint, Landblock(Struct),
+AFrame, Position, Sphere, CylSphere, BBox, CollisionInfo, ObjectInfo,
+CellArray, MotionTable, MotionState.
+NOT examined: BSP/ traversal internals (likely hot and likely allocating -
+BSPNode.cs:120 was the only line traced), Particles/, Combat/, Managers/
+(MoveToManager, MotionInterp at 835 lines), PartArray.cs, Common/TexMerge.cs.
+Animation/Sequence.cs (445 lines) and MotionTable's animation-wrapper caching
+deserve their own pass - MotionTable.WalkSpeed/RunSpeed/TurnSpeed are STATIC
+ConcurrentDictionaries that grow per weenie ID and never evict, which is
+bounded-but-permanent Gen2 retention that was not verified.
+
+*** THAT LAST CLAIM IS NOW RESOLVED - IT IS NOT A FINDING ***   [VERIFIED DIRECTLY]
+  MotionTable.WalkSpeed / RunSpeed / TurnSpeed are public static
+  ConcurrentDictionaries allocated in the static constructor
+  (Animation/MotionTable.cs:23-31) - but a search of the entire solution shows
+  they are NEVER READ AND NEVER WRITTEN anywhere. They are dead declarations,
+  not a retention path. Zero growth, NOTHING TO FIX.
+
+  CAUTION ON DELETING THEM: an earlier version of this note said they "could
+  simply be deleted along with the static constructor". They are PUBLIC STATIC
+  members, and ACE ships a HARMONY-BASED MOD SYSTEM (ACE.Server/Mods/) that
+  loads arbitrary assemblies from disk at runtime
+  (ModContainer.cs:32-40, 201). Mods can reference any public API and Harmony
+  can patch arbitrary methods, so "no callers in this solution" does NOT mean
+  "no consumers". Deleting public members is a breaking change for third-party
+  mods regardless of in-tree usage.
+  Since they cost nothing to leave in place, the correct action is to leave
+  them alone (or mark them [Obsolete] first) rather than delete.
+
+
+================================================================================
+================================================================================
+SECTION N - FOURTH PASS: ObjectMaint ALGORITHMS AND BSP TRAVERSAL
+   Both areas were explicitly flagged by earlier passes as inadequately
+   covered. ObjectMaint had been read only for LOCKING patterns, never
+   algorithmically - yet both of pass 2's top findings came from it. BSP/ had
+   never been examined for performance at all, despite sitting in the innermost
+   collision loop.
+   Findings are numbered N.1-N.12.
+================================================================================
+================================================================================
+
+*** FREQUENCY CORRECTION ESTABLISHED BY THIS PASS ***
+  handle_visible_cells is PER CELL-TRANSITION, not per 60Hz frame. See the
+  correction inline at M.1 above. BSP traversal genuinely IS per-frame per
+  moving object, so Section N's BSP findings carry the higher frequency
+  weighting and the ObjectMaint ones the lower.
+
+
+--- N: BSP TRAVERSAL (per-frame, innermost loop) ---
+
+N.1  walkable_hits_sphere runs the polygon/sphere test TWICE - four times on
+     disagreement - as leftover debug scaffolding
+     Polygon.cs:400-412
+
+     It calls polygon_hits_sphere_precise, then calls polygon_hits_sphere
+     purely to compare, and if the two disagree it calls BOTH AGAIN, discarding
+     every result.
+
+     This is the innermost statement of the BSP leaf loop: BSPLeaf.find_walkable
+     (BSPLeaf.cs:36) and BSPLeaf.hits_walkable (BSPLeaf.cs:56), reached from
+     BSPTree.find_collisions -> RootNode.find_walkable for EVERY WALKING STEP
+     of EVERY MOVING OBJECT EVERY FRAME. Each redundant call is an O(verts)
+     loop with a cross product and three dot products per edge.
+
+     FIX: delete lines 406-410 and keep `hit`. A straight ~50% cut of walkable
+     polygon cost, with no behavioural change.
+
+     NOTE: this was already filed as a correctness/cleanliness item in
+     bugs-physics.txt L.5 ("leftover debug code"). What is NEW here is the
+     FREQUENCY - it was not previously understood to be in the innermost
+     per-frame collision loop. That escalates it from cosmetic cleanup to one
+     of the cheapest real wins in the subsystem.
+
+N.2  adjust_to_plane burns 15 identical iterations before failing
+     BSPTree.cs:50-67
+
+     checkPos, curPos and movement are modified ONLY inside
+     `if (touchTime == 1.0f)`. So when adjust_sphere_to_poly returns anything
+     other than exactly 1.0 on iteration 0, iterations 1-14 recompute
+     byte-identical inputs and then `return false` at i == 14.
+
+     FIX: `if (touchTime != 1.0f) return false;` - behaviourally identical,
+     saves 14 calls. Reached via collide_with_pt on the PerfectClip path, per
+     collision per frame.
+     The second loop then performs one full sphere_intersects_poly tree
+     traversal before its `upperTime - lowerTime < 0.02` check can fire; hoist
+     that check above the traversal.
+
+     RELATED: bugs-physics.txt M.2 reports this same loop as a CORRECTNESS
+     defect (the float `== 1.0f` gate makes projectile precision clipping dead
+     code). Fixing the correctness bug will make these iterations start doing
+     real work - so N.2's saving should be taken at the same time, or the
+     correctness fix will cost more than expected.
+
+N.3  Box-corner allocation happens twice per part per portal, and
+     unconditionally
+     BSPNode.cs:120, Extensions/PlaneExtensions.cs:64, EnvCell.cs:179-184,
+     278-300
+
+     box_intersects_cell_bsp allocates its 8-element List<Vector3> BEFORE the
+     loop, so it is allocated even when every node hits the
+     `dist >= -EPSILON` continue and _inner is never called.
+
+     Separately PlaneExtensions.intersect_box allocates its OWN second
+     List<Vector3> - and EnvCell.find_transit_cells and check_building_transit
+     call intersect_box and box_intersects_cell BACK TO BACK on the same box.
+     That is 2 lists plus 16 Vector3 per part per portal per transition, on top
+     of 2 `new BBox()`.
+
+     FIX: Span<Vector3>/stackalloc (the count is statically 8 - see M.7), or a
+     GetCorner(int i) accessor; and hoist the allocation in
+     box_intersects_cell_bsp to first use.
+
+N.4  Defensive `new Sphere(...)` copies in BSPTree, one provably dead
+     BSPTree.cs:99, 116, 166, 246, 251, 331
+
+     Sphere is a class (Physics/Sphere.cs:15). check_walkable (line 99) copies
+     checkPos and passes it only to hits_walkable, which reaches
+     walkable_hits_sphere / check_small_walkable / polygon_hits_sphere_precise -
+     ALL READ-ONLY. That allocation can be deleted outright.
+
+     The copies at 116, 166, 246/251 and 331 ARE mutated
+     (adjust_sphere_to_plane writes Center), so they need a pooled or stack
+     alternative rather than deletion. Making Sphere a struct (M.5 - safe only
+     after the shared-list writes are rewritten) or pooling one per SpherePath
+     removes a per-frame allocation from every collide and step-down path.
+
+N.5  CORRECTION to an earlier assessment: the cheap-test-first claim does NOT
+     hold for the box, point and cell paths
+     BSPNode.cs
+
+     Pass 1 assessed BSP traversal as "correctly pruning on a cheap sphere test
+     first" and marked it as not worth changing. That assessment HOLDS for the
+     sphere paths - find_walkable, hits_walkable, sphere_intersects_poly,
+     sphere_intersects_solid and sphere_intersects_solid_poly all lead with
+     Sphere.Intersects, and BSPLeaf.sphere_intersects_solid correctly orders
+     NumPolys == 0 -> Solid -> sphere test.
+
+     It does NOT hold for box_intersects_cell_bsp, point_inside_cell_bsp or
+     sphere_intersects_cell_bsp, which have NO bounding pre-test and walk the
+     whole PosNode chain, treating leaves as degenerate zero-planes rather than
+     short-circuiting on type. These are convex chains so the walk is bounded,
+     but they touch every node.
+
+     Virtual dispatch itself is genuinely fine - the leaf overrides are the
+     terminating cases. That part of the original assessment stands.
+
+
+--- N: ObjectMaint ALGORITHMS (per cell-transition) ---
+
+N.6  AddVisibleObjects scans every visible object against a usually-empty
+     destruction queue
+     ObjectMaint.cs:477 -> RemoveObjectsToBeDestroyed (620-624) ->
+     RemoveObjectToBeDestroyed (595), PER OBJECT
+
+     Each per-object call takes a recursive WRITE lock and does a dictionary
+     lookup. With N of roughly 100-400 visible objects that is N lock
+     enter/exit pairs plus N hashes, per cell transition, for a queue that is
+     typically EMPTY.
+
+     Worse, the same shape applies to the whole call: AddVisibleObjects costs
+     roughly 3N+1 recursive write-lock acquisitions, because AddVisibleObject
+     (N), RemoveObjectToBeDestroyed (N) and AddKnownObject (N) are all the
+     PUBLIC LOCKING ENTRY POINTS being used as internal helpers.
+
+     FIX: `if (DestructionQueue.Count == 0) return;` and split each method into
+     a locked public wrapper plus an unlocked private core, so the internal
+     path acquires the lock once.
+
+N.7  The visible set is recomputed wholesale and diffed with LINQ every
+     transition
+     PhysicsObj.cs:2740-2755
+
+     GetVisibleObjects(CurCell) materialises every object in the landblock plus
+     8 adjacents; then line 2748 does
+     `ObjMaint.GetVisibleObjectsValues().Except(visibleObjects).ToList()`,
+     which copies the entire VisibleObjects dictionary into a List, builds an
+     internal HashSet<PhysicsObj> over visibleObjects, and allocates a third
+     list. Three collections per transition, none reused, plus a
+     PhysicsObj.GetHashCode per element.
+
+     Nothing here is incremental, even though cell enter/leave already tells
+     you exactly WHICH cells changed.
+
+     FIX (minimum): reuse thread-static scratch buffers and replace Except with
+     an explicit loop over VisibleObjects testing membership in a set built
+     once. (Proper fix: maintain the visible set incrementally.)
+
+N.8  GetVisibleObjects accumulates duplicates and then Distinct()s them
+     ObjectMaint.cs:365-388
+
+     Objects are appended from the current cell plus EVERY entry of
+     cell.VisibleCells (dozens in dungeons), duplicates included, optionally
+     plus the whole outdoor landblock - then run through ApplyFilter (one
+     iterator) -> .Where(...) (a second) -> .Distinct() (allocates a
+     HashSet<PhysicsObj>) -> .ToList().
+
+     Cost is O(sum of cell contents) with three iterator objects and two
+     collections.
+
+     FIX: accumulate directly into a reused HashSet<PhysicsObj> applying the
+     filter inline; drop Distinct and the closure chain entirely.
+
+N.9  Every ObjectMaint insert hashes the key twice
+     ObjectMaint.cs:199/202, 435/447, 554/557, 768/771, 977/982, 1055/1061,
+     1066/1071
+
+     All use ContainsKey followed by TryAdd or Add. The in-source comment
+     "TryAdd for existing keys still modifies collection?" is FALSE for
+     Dictionary<K,V> - TryAdd returns false and leaves the dictionary
+     untouched.
+
+     FIX: `if (!dict.TryAdd(k, v)) return false;`. Halves hashing on the add
+     path, which AddVisibleObjects and AddVisibleTargets execute N times.
+
+N.10 DestroyObjects allocates unconditionally
+     ObjectMaint.cs:636-637
+     `Where(...).Select(...).ToList()` builds two iterators plus a List on
+     EVERY call, even when nothing has expired - the common case - for every
+     player per cell transition AND per 5-second heartbeat.
+     FIX: loop the dictionary, lazily allocate the list on first expiry, and
+     return a static empty list otherwise.
+
+N.11 AddVisibleTarget's clamp test queries the WRONG dictionary
+     ObjectMaint.cs:968
+         !obj.ObjMaint.KnownObjects.ContainsKey(obj.ID)
+     asks whether `obj` knows ITSELF - always true, since self is filtered out
+     of visibility sets. Compare the correct form at line 438.
+     Consequence: a wasted lookup, AND the distance clamp fires on every call
+     including already-known targets - so this is a behaviour difference, not
+     only a cost. Should almost certainly be `!KnownObjects.ContainsKey(obj.ID)`.
+
+N.12 KnownObjectsContainsValue is an O(n) linear scan of a keyed dictionary
+     ObjectMaint.cs:137-148
+     Uses `KnownObjects.Values.Contains(value)`, called from
+     Player.AddTrackedObject (Player_Tracking.cs:81) on every object-creation
+     broadcast (WorldObject_Networking.cs:1473). The dictionary is keyed by
+     obj.ID - use ContainsKey(value.ID) for O(1).
+
+N.13 RemoveKnownPlayer mutates under a READ lock
+     ObjectMaint.cs:806-814 enters the READ lock and then calls
+     KnownPlayers.Remove.
+     Currently latent: both internal callers (245, 666) already hold the static
+     write lock, so this is a benign recursive acquisition. BUT the method is
+     public, and the one external caller (DeveloperCommands.cs:2274) holds only
+     a read lock - and a concurrent Remove plus enumeration on a Dictionary can
+     corrupt buckets or spin.
+     FIX: EnterWriteLock. (Correctness, not performance - filed here because it
+     was found during this pass.)
+
+
+--- N: LOOKS EXPENSIVE BUT IS COLD ---
+BSPNode/BSPLeaf/BSPPortal Equals and GetHashCode (BSPNode.cs:327-374,
+BSPLeaf.cs:114-127, BSPPortal.cs:18-41) - full recursive tree walks, but used
+only for BSPCache dedupe at dat-load. The BSPNode dat constructor, PurgePortals,
+LinkPortals, Polygon.make_plane and PolygonCache.Get are load-time only.
+BSPTree.placement_insert does 20 iterations x a full tree traversal, but only
+per object INSERTION (spawn, teleport, SetPosition), not per frame.
+ObjectMaint.DestroyObject (1121-1148) is O(known x per-object removal) with
+redundant RemoveObject calls for objects in multiple tables, but runs once per
+object destruction - worth watching on mass landblock unload only.
+GetKnownObjectsWhere / GetVisibleObjectsWhere / GetKnownPlayersWhere (150, 282,
+691) are DeveloperCommands only. CellStruct.get_portal (CellStruct.cs:55-63)
+has a null-deref/logic bug but appears unreferenced. BSPNode.TraceRay returns
+-1 and is unused.
+
+--- N: NON-PERFORMANCE NOTE FOUND EN ROUTE ---
+sphere_intersects_poly (BSPNode.cs:251/254) and
+sphere_intersects_solid/_poly dereference PosNode/NegNode WITHOUT null checks
+on the non-straddling branches, while the straddling branch DOES check.
+Inconsistent, and an NRE risk if any interior node is half-populated. Belongs
+with the findings in bugs-physics.txt.
+
+--- N: COVERAGE ---
+Read line by line: ObjectMaint.cs in full, all of BSP/, plus the immediate
+callers (PhysicsObj.handle_visible_cells, EnvCell.find_transit_cells, Polygon,
+PlaneExtensions, BBox).
+NOT examined by this pass: Sphere.IntersectsSphere / SlideSphere, SpherePath,
+Transition, CellArray, and the Polygon methods beyond those on the BSP leaf
+path.
+
+--- N: SUGGESTED PRIORITY ---
+  1. N.1  Delete the duplicated walkable test. Innermost per-frame loop,
+          ~50% cut of walkable polygon cost, zero behavioural risk, and the
+          lines are already marked as debug leftovers.
+  2. N.2  The 15-iteration no-op loop - but read the bugs-physics.txt M.2 note
+          first and take both together.
+  3. N.6 + N.9  The ObjectMaint lock and hash multiplication. Both are
+          mechanical, and together they remove roughly 3N lock acquisitions and
+          N redundant hashes per transition.
+  4. N.3  stackalloc the box corners (bundle with M.7 - same fix, same file).
+  5. N.7 + N.8  Reused buffers for the visibility diff. Bundle with M.1, which
+          is the same code path.
+  6. N.4  Delete the provably-dead Sphere copy; pool the rest with M.3.
+  7. N.10, N.11, N.12, N.13 as cleanup - note N.11 and N.13 are behaviour and
+          correctness issues, not just cost.
+
+
+================================================================================
+================================================================================
+SECTION O - FIFTH PASS: THE COLLISION MATH CORE
+   Sphere.cs, CylSphere.cs, SpherePath.cs, Transition.cs, Polygon.cs and
+   Collision/ - all listed by pass 4 as NOT EXAMINED. This is the innermost
+   loop of the entire server, so constant factors here multiply enormously.
+   Findings are numbered O.1-O.12.
+================================================================================
+================================================================================
+
+HOW MUCH WORK IS A "QUIET" STEP? (structural answer from this pass)
+  numSteps = ceil(dist / LocalSphere[0].Radius) (Transition.cs:108-115), so a
+  running player is typically 1-3 steps per frame. A step in which NOTHING IS
+  HIT still costs roughly:
+      TransitionalInsert(3) -> InsertIntoCell -> CheckOtherCells (full cell
+      rebuild) -> StepDown -> TransitionalInsert(5) -> CheckWalkable ->
+      TransitionalInsert(1) -> StepDown's placement TransitionalInsert(1)
+  That is 4-5 COMPLETE cell-and-BSP collision passes per step even on a clean
+  move, each re-deriving the cell list, the local-space spheres and the global
+  spheres. Nothing is memoised between insertion attempts -
+  RestoreCheckPos/SetCheckPos deliberately invalidate the caches.
+
+
+--- O: HIGH IMPACT ---
+
+O.1  [VERIFIED DIRECTLY] Insertion attempts are QUADRATIC in the attempt count
+     Transition.cs:789-791 and 660-675
+
+         // TransitionalInsert
+         for (var i = 0; i < num_insertion_attempts; i++)
+             transitState = InsertIntoCell(SpherePath.CheckCell, num_insertion_attempts);
+                                                                ^^^^^^^^^^^^^^^^^^^^^^^
+         // InsertIntoCell
+         for (var i = 0; i < num_insertion_attempts; i++)
+             transitionState = cell.FindCollisions(this);
+
+     TransitionalInsert loops n times and passes n AGAIN into InsertIntoCell,
+     which loops n times itself. I read both loops and confirmed the nesting.
+
+     So TransitionalInsert(3) is up to 3x3 = 9 full FindCollisions passes, and
+     StepDown's TransitionalInsert(5) (line 728) is up to 5x5 = 25 - each pass
+     walking every overlapping cell's BSP tree.
+
+     InsertIntoCell returns early on OK/Collided and only re-loops on
+     Slid/Adjusted, so the worst case is not always hit. But see the compounding
+     note below.
+
+     FIX: pass a constant (InsertIntoCell(cell, 1)) or hoist the retry to one
+     level. Potentially a 3-5x multiplier on the hottest call in the engine.
+
+     *** THIS IS A BEHAVIOUR CHANGE, NOT A PURE OPTIMISATION ***
+     The nested count is not just wasted work - it determines HOW MANY
+     COLLISION-RESOLUTION ATTEMPTS occur. InsertIntoCell re-loops on Slid and
+     Adjusted, so today a Slid result gets up to n further internal attempts
+     before control returns to the outer loop. Passing 1 changes the total from
+     up to n*n attempts to n.
+
+     For most moves that is identical (resolution succeeds on the first or
+     second attempt). But a contact that currently resolves on, say, the
+     seventh cumulative attempt would no longer resolve, and the object would
+     be reported Collided instead of Adjusted - a visible difference in tight
+     geometry, corners and stair edges.
+
+     So: valid finding, real win, but it must be validated against movement
+     behaviour rather than treated as a free refactor. Change one level at a
+     time and test walking into corners, up stairs, and against moving objects.
+     Do NOT bundle it with the H.1 fix in the same commit - H.1 also changes
+     how often Adjusted is returned, and the two would be impossible to
+     attribute separately if movement regresses.
+
+     *** COMPOUNDS WITH A CORRECTNESS BUG ***
+     bugs-physics.txt H.1 (the inverted early-out in Sphere.IntersectsSphere)
+     causes AddOffsetToCheckPos to return Adjusted FOR AN OBJECT THAT WAS NEVER
+     TOUCHED - which is precisely the state that drives the inner retry. So the
+     correctness bug inflates the retry rate feeding this quadratic loop.
+     Fixing H.1 is therefore also a throughput fix, and the two should be
+     measured together.
+
+O.2  Per-vertex edge geometry recomputed on EVERY sphere test
+     Polygon.cs:151-153, 191-193, 268, 308-310, 349-351, 363-365
+
+     In check_walkable, find_crossed_edge, point_in_polygon, polygon_hits_sphere
+     and polygon_hits_sphere_precise, every iteration computes:
+         edge  = vertex - lastVertex
+         cross = Cross(Plane.Normal, edge)
+         edge.LengthSquared()
+         cross.LengthSquared()
+
+     All four are PURE FUNCTIONS OF STATIC GEOMETRY - Vertices and Plane never
+     change after make_plane(). This runs per polygon, per BSP leaf, per cell,
+     per insertion attempt, per step.
+
+     FIX: precompute Edge[], EdgeCross[], EdgeLenSq[], CrossLenSq[] once after
+     make_plane(). Removes one cross product and two length-squares per vertex
+     per test - probably the largest raw-FLOP win available in the subsystem.
+
+O.3  polygon_hits_sphere_precise restarts the entire vertex loop
+     Polygon.cs:342-382
+     The outer loop computes edge/disp/cross per vertex; on the FIRST vertex
+     with a negative dot it DISCARDS that work and re-runs the identical loop
+     from vertex 0 (lines 356-380), recomputing everything. Worst case 2n cross
+     products for an n-gon where n would do. The inner loop body is
+     byte-for-byte polygon_hits_sphere.
+     FIX: single pass with a `result` flag - exactly what polygon_hits_sphere
+     already does.
+
+O.4  CacheLocalSpaceSphere allocates a Position and does five
+     quaternion-to-matrix transposes per cell, per attempt
+     SpherePath.cs:181-207, called from EnvCell.cs:94 and CylSphere.cs:348
+     Per call: `new Position(pos)` (line 204, plus a nested new AFrame),
+     2 x NumSphere LocalToLocal calls (199, 202) each doing LocalToGlobal +
+     GetBlockOffset + GlobalToLocal (a matrix transpose), plus GlobalToLocalVec
+     at 205 (another transpose).
+     The `pos` argument is the CELL's static position - the result only changes
+     when CheckPos/CurPos change, i.e. NEVER within an insertion-attempt retry.
+     FIX: reuse a preallocated LocalSpacePos (copy fields, do not allocate),
+     cache the transposed matrix per cell, and skip the call entirely when
+     (pos, CheckPos, CurPos) are unchanged since the last attempt.
+
+O.5  CheckOtherCells rebuilds the entire cell list on every attempt
+     Transition.cs:154-159
+     It sets CellArrayValid = true and then UNCONDITIONALLY calls
+     find_cell_list, which re-runs add_all_outside_cells / find_transit_cells
+     over every cell. On the common path where InsertIntoCell returned OK with
+     no offset applied, CheckPos is unchanged and the list is provably identical
+     to the previous attempt's.
+
+     THE OBSERVATION STANDS. THE ORIGINAL FIX DID NOT.
+
+     RETRACTED FIX: "honour CellArrayValid - it is already invalidated by
+     AddOffsetToCheckPos (SpherePath.cs:124) - and skip the rebuild."
+
+     WHY IT IS WRONG   [VERIFIED DIRECTLY]
+     CellArrayValid is WRITE-ONLY DEAD STATE. A search of the whole Physics
+     tree finds eleven occurrences and NOT ONE READ:
+         SpherePath.cs:55         declaration
+         SpherePath.cs:124,261,275    = false
+         Transition.cs:91,154,199,315,331,524  = true
+         Transition.cs:720            = false
+     There is no `if (CellArrayValid)` anywhere. Nothing has ever consumed it.
+
+     So the flag's set/clear discipline has NEVER BEEN EXERCISED, and there is
+     zero evidence it is maintained correctly. "Honour the existing flag"
+     assumes an invariant that no code has ever depended on - if any write site
+     is missing or mis-placed, honouring it silently skips a REQUIRED cell
+     rebuild, and the object collides against a stale cell list. That is a
+     correctness failure that would present as rare, unreproducible clipping.
+
+     This is the SAME SHAPE as bugs-physics.txt H.2, where CellArray.NumCells is
+     written but never read and the stale-count idiom silently does nothing -
+     and the same shape as the ObjDesc invalidation error in
+     perf-worldobjects.txt P.2. An existing mechanism being PRESENT is not
+     evidence it is CORRECT.
+
+     REVISED FIX: do not trust the flag. Either
+       (a) derive the skip condition directly - cache the (CheckPos, CurCell)
+           pair the list was built from and rebuild only when it changes; or
+       (b) audit all eleven write sites first, prove the discipline is complete,
+           and only then start reading the flag - at which point also delete it
+           if the audit shows it is unsalvageable.
+     Option (a) is preferable: it does not depend on untested invariant
+     maintenance.
+
+O.6  Missing early-out sends non-colliding objects through the full sqrt solve
+     Sphere.cs:374-381
+     This is the PERFORMANCE face of bugs-physics.txt H.1. When NumSphere == 1
+     and CollidesWithSphere is false, nothing returns and control falls into the
+     interpolation block (384-412): GetBlockOffset, a Math.Sqrt, Plane
+     construction, and an AddOffsetToCheckPos that returns Adjusted for an
+     untouched object - which then forces another insertion attempt (O.1),
+     cascading.
+     CylSphere.cs:301 guards this correctly; Sphere does not.
+     Also note lines 384-412 use disp / GlobalCurrCenter[0] even when it was
+     sphere ONE that collided.
+
+
+--- O: MEDIUM IMPACT ---
+
+O.7  new CylSphere allocated per cylsphere, per object, per cell, per attempt
+     CylSphere.cs:349
+     IntersectsSphere(Position, scale, transition) heap-allocates a scaled copy
+     purely to hold three floats and a transformed LowPoint.
+     FIX: mirror Sphere.IntersectsSphere's static overload - pass
+     (lowPoint, height, radius) by value.
+
+O.8  Eager sqrt and duplicated Dot2D
+     CylSphere.cs:106-109, 138, 185
+     `diff = Math.Sqrt(diffSq)` is computed at 109 BEFORE any branch, but the
+     `definate && collisionNormal.Z != 0` path (158-178) never uses it - and
+     diffSq may be negative there, yielding a wasted NaN.
+     Separately xyDiff IS -movement.Dot2D(old_disp), yet lines 138 and 185
+     recompute movement.Dot2D(old_disp); `diff + xyDiff` is the same value.
+     FIX: sink the sqrt into the two branches that need it; reuse xyDiff.
+
+O.9  Normals normalised twice, and stored un-normalised
+     Collision/CollisionInfo.cs:50-64
+     SetCollisionNormal assigns the field then normalises a LOCAL COPY only to
+     test smallness, so the stored value is whatever the caller passed. Callers
+     such as Sphere.SlideSphere (Sphere.cs:481-484) and
+     CylSphere.CollideWithPoint (92-96) have ALREADY normalised - so this is a
+     second Length() plus divide per collision resolution, and a latent bug
+     where an unnormalised caller silently stores garbage.
+     SetSlidingNormal (line 58, called every step from ValidateTransition:1027)
+     is worse: it stores the Z-flattened vector but smallness-tests the
+     UN-flattened one.
+     This is the performance face of bugs-physics.txt M.1 - fix once.
+
+O.10 Redundant block offsets and a duplicated disp
+     Sphere.cs:266, 296-300, 627; CylSphere.cs:236, 350, 399
+     LocalToGlobal(position, ...) computes
+     GetBlockOffset(CheckPos.ObjCellID, position.ObjCellID) per part-sphere,
+     although it is identical for every sphere of the object and every attempt
+     within a step. And `disp_ = GlobalSphere[1].Center - center` is computed at
+     Sphere.cs:299 and AGAIN at 627 inside StepSphereDown (same for CylSphere
+     236 vs 399), while the StepDown branch (317-323) never uses the first one.
+     FIX: hoist the offset to object level; pass disp_ into the step routines.
+
+O.11 SetCurrentCheckPos does the copy-and-recache twice
+     Transition.cs:1084-1091
+     `new Position(CheckPos)` then SetCheckPos(CurPos, ...) allocates a SECOND
+     Position and calls CacheGlobalSphere(null), recomputing NumSphere
+     LocalToGlobal transforms plus GlobalLowPoint. At that point CheckPos and
+     CurPos are equal by construction, so the recache is provably a no-op.
+     Runs once per step on the normal path.
+
+O.12 Per-polygon-hit allocations in the walkable path
+     SpherePath.cs:213, 297-300
+     SetWalkable (called from BSPTree.cs:181 and :353, i.e. per walkable polygon
+     hit) allocates `new Sphere` plus `new Position`; CheckWalkables (line 213)
+     allocates another `new Sphere` on every call, and is called from
+     Transition.CheckWalkable per insertion attempt.
+     FIX: preallocated scratch objects on SpherePath.
+
+
+--- O: LOOKS EXPENSIVE BUT IS COLD ---
+Sphere.Attack (Sphere.cs:66-135) - two mutually inverse LocalToLocal calls (68,
+79), each a quaternion transform plus block offset plus matrix transpose, to
+recover a value derivable from the first. MELEE-SWING frequency, not per-frame.
+(Lines 123-129 are unreachable - line 107 already returned on attack_ht < 0.
+That is bugs-physics.txt L.4.)
+Transition.FindPlacementPos (336-424) - new AFrame per ring plus
+set_heading/get_vector_heading trig and a SetCheckPos (new Position) per
+candidate direction, hundreds of candidates. PLACEMENT/TELEPORT/SPAWN ONLY.
+Polygon.make_plane, Equals, GetHashCode - load-time or diagnostic only.
+Sphere.SphereIntersectsRay - ray picking, not the transition loop.
+BSPTree.adjust_to_plane's bisection - only reached under PerfectClip
+(projectiles).
+
+--- O: COVERAGE ---
+READ IN FULL: Sphere.cs, CylSphere.cs, SpherePath.cs, Transition.cs,
+Polygon.cs, Collision/CollisionInfo.cs.
+SUPPORTING CONTEXT ONLY (not audited): BSPLeaf.cs, BSPTree.cs (partial),
+ObjCell.cs, LandCell.cs, EnvCell.cs, ObjectInfo.cs, AFrame.cs, Position.cs,
+Vector.cs, CellArray.cs.
+NOT EXAMINED: Collision/BBox.cs, CollisionRecord.cs, EnvCollisionProfile.cs,
+ObjCollisionProfile.cs - the rest of the 289-line Collision/ folder. They appear
+to be data carriers but that was not verified.
+IMPORTANT CAVEAT: the actual per-frame numSteps distribution and the average
+cell/polygon counts were NOT measured, so the multipliers in O.1, O.4 and O.5
+are STRUCTURAL UPPER BOUNDS, not measurements.
+
+--- O: SUGGESTED PRIORITY ---
+  1. O.1  Break the quadratic insertion nesting - and take bugs-physics.txt H.1
+          at the same time, since H.1 inflates the retry rate that feeds it.
+          Highest structural multiplier found in the subsystem.
+  2. O.2  Precompute the per-vertex edge geometry. Largest raw-FLOP win, and
+          entirely mechanical - the data is immutable after make_plane().
+  3. O.5  Honour CellArrayValid instead of rebuilding the cell list per attempt.
+  4. O.4  Cache/reuse the local-space sphere transform per cell.
+  5. O.3  Single-pass polygon_hits_sphere_precise.
+  6. O.6  Covered by the H.1 fix - verify the sqrt path is no longer entered.
+  7. O.9  Fold into the M.1 correctness fix.
+  8. O.7, O.8, O.10, O.11, O.12 as cleanup.
+
+================================================================================
+END OF REPORT
+================================================================================

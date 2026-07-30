@@ -1,0 +1,279 @@
+================================================================================
+ACE.Entity (shared domain model) - BUG REPORT
+================================================================================
+Scope   : Source/ACE.Entity  (287 files, ~55,200 lines)
+          Position, ObjectGuid, LandblockId, Enum/, Models/ (Biota, Weenie,
+          PropertiesXXX and their extension methods), Adapter/
+          NOTE: this is the SHARED ACE.Entity project referenced by everything -
+          not ACE.Server/Entity (see bugs-entity-server.txt).
+Date    : 2026-07-25
+Companion document: perf-entity-shared.txt
+
+STATUS  : 2 of the findings below are FIXED on master/Claude1 (S.1, S.2) by
+          commit 5385d19d "Bug fixes 1 (#4470)", 2026-07-29. BOTH ARE STILL
+          LIVE ON `combined`, which does not have that commit merged.
+
+VERIFICATION
+  FIXED UPSTREAM, RE-VERIFIED 2026-07-27 : S.1, S.2
+  TRACED BUT NOT RE-VERIFIED : all other findings. Spot-check before fixing.
+
+  NOTE: S.1 and S.2 COMPOUNDED EACH OTHER - both are in the book-page path. The
+  off-by-one index (S.1) misdirected page edits, while the shared page objects
+  (S.2) meant an edit that did land was written into the world-cache weenie and
+  seen by every book of that class. Fixing only one would have left book editing
+  still visibly broken, which is worth remembering when triaging `combined`.
+
+FIRST AUDIT OF THIS PROJECT. It had never been reviewed. Much of it is enum
+declarations with no runtime behaviour; the findings concentrate in Position,
+the Models/ extension methods, and two genuinely wrong enum values.
+
+BLAST RADIUS: every other project depends on these types, so a defect here
+surfaces far from its cause.
+================================================================================
+
+
+SECTION A - HIGH SEVERITY
+================================================================================
+
+S.1  [** FIXED on master/Claude1 in 5385d19d, 2026-07-29 **]
+     AddPage returns a 1-based index into a 0-based list
+     Models/PropertiesBookPageDataExtensions.cs:71
+
+     STATUS: fixed upstream in "Bug fixes 1 (#4470)", applying the recommended
+     one-line change verbatim: `index = value.Count - 1;` (line 68).
+     STILL PRESENT ON `combined` - that branch does not have the fix merged.
+
+         value.Add(page);
+         index = value.Count;      // should be value.Count - 1
+
+     FAILURE: a player writes in a book. Book.AddPage
+     (WorldObjects/Book.cs:121) passes this out-parameter straight to
+     GameEventBookAddPageResponse (Player_Book.cs:88). Adding the FIRST page
+     reports index 1, but the only valid index is 0 - so the client then edits
+     or reads a page that does not exist (GetPage returns null) and the write
+     is silently dropped.
+
+     FIX: `index = value.Count - 1;`
+
+S.2  [** FIXED on master/Claude1 in 5385d19d, 2026-07-29 **]
+     Book pages are shallow-copied while every other collection is deep-cloned
+     Adapter/WeenieConverter.cs:163
+
+     STATUS: fixed upstream in "Bug fixes 1 (#4470)", applying the recommended
+     deep-clone loop essentially verbatim (WeenieConverter.cs:162-168):
+         result.PropertiesBookPageData =
+             new List<PropertiesBookPageData>(weenie.PropertiesBookPageData.Count);
+         foreach (var page in weenie.PropertiesBookPageData)
+             result.PropertiesBookPageData.Add(page.Clone());
+     Note it also pre-sizes the list by Count, which the original did not.
+     STILL PRESENT ON `combined` - that branch does not have the fix merged.
+
+         new List<PropertiesBookPageData>(weenie.PropertiesBookPageData)
+
+     This copies the LIST but aliases the ELEMENT objects.
+     PropertiesBookPageData.Clone() exists and is not used here.
+
+     FAILURE: WorldObject.cs:107 converts from the CACHED weenie, so every
+     instance of a book weenie shares page objects. A player edits a page
+     (Book.ModifyPage mutates page.PageText in place), which mutates the
+     world-cache weenie - and every existing and future book of that class now
+     shows the edited text.
+
+     FIX: `foreach (var p in weenie.PropertiesBookPageData)
+            result.PropertiesBookPageData.Add(p.Clone());`
+
+S.3  Enchantment heartbeat mutates under a READ lock
+     Models/PropertiesEnchantmentRegistryExtensions.cs:244-256
+
+     HeartBeatEnchantmentsAndReturnExpired takes EnterReadLock() and then
+     WRITES `enchantment.StartTime -= heartbeatInterval`.
+
+     FAILURE: ReaderWriterLockSlim permits CONCURRENT READERS, so this races
+     with GetEnchantmentsTopLayer* (which sorts by StartTime) and with any
+     other concurrent heartbeat. A buff's StartTime can be double-decremented
+     or read mid-write, so enchantments expire early or late, or the wrong
+     layer wins.
+
+     FIX: EnterWriteLock().
+
+
+SECTION B - MEDIUM SEVERITY
+================================================================================
+
+S.4  Cell coordinate decoding uses the wrong format
+     Position.cs:23-29 (CellX, CellY, GlobalCellX, GlobalCellY)
+
+     Outdoor cell IDs are packed as `cellX * 8 + cellY + 1` (see SetLandCell at
+     line 196 and GetCellFromBase at line 387) - a 1..64 value in the low byte.
+     These properties instead read `Raw >> 8 & 0xFF` and `Raw & 0xFF`, so CellX
+     is ALWAYS 0 outdoors and CellY returns the raw 1..64 cell ID.
+
+     FAILURE: ACE.Server/Entity/PositionExtensions.cs:172, 195 (CellDist)
+     returns a garbage distance, and that value is used for range gating.
+
+     FIX: `CellX => ((Raw & 0xFF) - 1) >> 3; CellY => ((Raw & 0xFF) - 1) & 7;`
+     mirroring LandblockId.LandcellX/Y.
+
+S.5  Map-edge clamp produces an out-of-range cell
+     Position.cs:152, 180
+
+     When TransitionX/Y returns null (landblock 0x00 or 0xFE),
+     PositionX = BlockLength (192). SetLandCell then computes
+     cellX = 192/24 = 8, giving cellID = 8*8 + cellY + 1 = 0x41..0x48 - outside
+     the valid 0x01..0x40 range and below the 0x100 indoor threshold.
+
+     FAILURE: an object pushed off the east or north edge of the world gets
+     cell 0x41. Physics/Common/Landblock.get_landcell (line 414) finds no
+     matching LandCell.ID and returns null, so the object cannot be placed or
+     collided with.
+
+     FIX: clamp to BlockLength - 0.5f, matching
+     ACE.Server/Entity/Landblock.cs:282's Math.Clamp(..., 0.5f, 191.5f).
+
+S.6  LandblockId.GetHashCode is inconsistent with Equals
+     LandblockId.cs:114
+
+     == and Equals compare only Landblock (the upper 16 bits), but GetHashCode
+     returns base.GetHashCode() - the ValueType hash over ALL of Raw. Two IDs
+     in the same landblock with different cells are Equals but hash
+     differently.
+
+     FAILURE: landblockIds.Distinct() and HashSet<LandblockId> fail to
+     de-duplicate, and a Dictionary<LandblockId,_> lookup using a different
+     cell in the same block misses.
+
+     FIX: `return Landblock.GetHashCode();`
+
+S.7  Enum value with nine hex digits
+     Enum/SetupConst.cs:37
+
+         UmbraenFemaleVoid = 0x2001A6EE
+
+     Every other value in the file is 0x020xxxxx. This is 537,240,814 instead
+     of the intended 0x02001A6E (33,562,734).
+
+     FAILURE: the `case (uint)SetupConst.UmbraenFemaleVoid` at
+     WorldObjects/Creature_Networking.cs:68 can never match, so Umbraen female
+     void-form setup handling is dead code.
+
+     FIX: 0x02001A6E.
+
+S.8  Duplicate enum values where distinct ones were intended
+     Enum/SetupConst.cs:34, 46
+
+     UmbraenFemaleCrownGen == UmbraenFemaleCrown (0x02001970) and
+     PenumbraenFemaleCrownGen == PenumbraenFemaleCrown (0x0200196D), whereas
+     the MALE pairs are distinct (0x0200196F/0x02001972 and
+     0x0200196E/0x02001971). The two "Gen" values were never filled in.
+
+     CONSEQUENCE: any switch listing both labels will not compile, and the Gen
+     variant is unreachable - which is why Creature_Networking.cs:66, 80 have
+     those cases commented out.
+
+S.9  Position.Equals is an overload, not an override
+     Position.cs:520
+
+     object.Equals and GetHashCode are left as reference identity, so
+     positions.Contains(p) or Distinct() over IEnumerable<Position> uses
+     REFERENCE equality and silently never matches. It is also inconsistent
+     with LandblockId.operator == used by DistanceTo (full Cell versus
+     landblock-only).
+
+     FIX: `override bool Equals(object)` plus a matching GetHashCode.
+
+
+SECTION C - LOW SEVERITY
+================================================================================
+
+S.10 Unguarded, unlocked property access
+     Models/BiotaExtensions.cs:838
+     GetName dereferences PropertiesString with no null check and without the
+     lock, while every other accessor in the file guards `== null` first - and
+     Biota's own doc comment (Biota.cs:10-12) says "Be sure to check for null
+     first." A biota with no string properties gives NullReferenceException.
+     Currently unreferenced, but a landmine.
+     Same class: WeenieExtensions.cs:132
+     `GetProperty(PropertyString.Name).Pluralize()` NREs when a weenie has no
+     Name - reachable from Player_Inventory.cs:3751.
+
+S.11 EquipMask.All drops a bit that Clothing uses
+     Enum/EquipMask.cs:56-57
+     `All = CanGoInReadySlot = 0x7FFFFFFF` omits bit 0x80000000, which Clothing
+     (line 45) actively uses. Masking a clothing item's ValidLocations with
+     EquipMask.All would strip its top flag. Currently unreferenced.
+
+S.12 RadarColor.BrightGreen breaks the contiguous sequence
+     Enum/RadarColor.cs:15
+     BrightGreen = 0x10 interrupts the otherwise contiguous 0x00-0x09 range;
+     the client value is 10 (0x0A). Fellowship and FellowshipLeader alias it,
+     so if wired up they would send radar blip colour 16. Currently
+     unreferenced at runtime.
+
+
+SECTION D - INVESTIGATED, NOT A BUG
+================================================================================
+Several of these look wrong and are not. Recorded to prevent re-investigation.
+
+I.1  ObjectGuid.cs:21-38 - Player/Static/Dynamic ranges are contiguous and
+     non-overlapping; the 0x60000000-0x6FFFFFFF gap is deliberate and
+     documented. Minor nit only: line 34's comment says uint.Max is reserved
+     for invalid, but Invalid is new ObjectGuid(0); 0xFFFFFFFF classifies as
+     Undef, which is harmless.
+I.2  Position.SetLandblock negative-X/Y handling - the
+     `(int)PositionX / BlockLength - 1` truncation-toward-zero looks off-by-one
+     at exact multiples (e.g. -192 gives offset -2), but the subsequent
+     `>= BlockLength` block re-transitions and self-corrects.
+I.3  LandblockId.Landcell `((Raw & 0x3F) - 1)` - the 6-bit mask looks too
+     narrow for cell 0x40, but the byte underflow to 255 happens to yield the
+     correct LandcellX=7, LandcellY=7.
+I.4  BiotaExtensions.GetPosition:179 / SetPosition:352 - the
+     RotationX,Y,Z,W argument order matches the Position(uint, float x7)
+     constructor and round-trips symmetrically.
+I.5  Position(BinaryReader):260-263 - reading W before X/Y/Z is correct and
+     matches Serialize.
+I.6  EquipMask.Weapon = SigilTwo|TrinketOne|Held - matches acclient's
+     WEAPON_LOC = 0x25000000 bit reuse for ready slots.
+I.7  Enum/ DUPLICATE-VALUE SWEEP (scripted across all non-[Flags] enums):
+     RadarColor, SecurityLevel, StatType, EmoteType, NumberingType,
+     AllegianceHouseAction and SurfacePixelFormat duplicates are all
+     intentional aliases or sentinels. Only SetupConst (S.7, S.8) is
+     unintentional.
+I.8  ChatMessageTypeExtensions.ToMask (`1 << (int)type`) - max ChatMessageType
+     is 0x1F (31), so no shift overflow.
+I.9  Clone() methods dropping DatabaseRecordId (PropertiesEmoteAction, Emote,
+     Generator) - the only caller is WeenieConverter, where the target biota's
+     records genuinely are new, so 0 is correct for BiotaUpdater.cs:257.
+I.10 EphemeralProperties / SkillHelper public static mutable HashSet and List
+     fields - never written after the static initialiser anywhere in the
+     solution, so concurrent read access is safe. They should still be readonly
+     or IReadOnlySet.
+I.11 Biota / Weenie model classes - plain property bags with no equality or
+     hashcode overrides, so there is no contract to violate; all mutation is
+     funnelled through the lock-taking extension methods.
+
+
+SECTION E - SUGGESTED PRIORITY
+================================================================================
+  1. S.2  Book page aliasing - a player edit permanently corrupts the shared
+          world cache for every book of that class. Worst blast radius here.
+  2. S.3  Read-lock mutation in the enchantment heartbeat - a data race on
+          state consulted constantly during combat.
+  3. S.1  AddPage off-by-one - trivially reproducible by any player writing in
+          a book, and it silently discards their writing.
+  4. S.4  Cell decoding - CellX being permanently 0 outdoors means every
+          CellDist range check is wrong.
+  5. S.6, S.9 - equality and hashcode contract violations. Cheap to fix and
+          they cause silent, hard-to-trace lookup failures.
+  6. S.5  Map-edge clamp.
+  7. S.7, S.8 - the SetupConst values. Mechanical.
+  8. S.10-S.12 as hygiene.
+
+NOTE: S.6 and S.9 are the same class of defect - a value type that overrides
+equality without honouring the GetHashCode contract. Anywhere either type is
+used as a dictionary key or de-duplicated, results are silently wrong rather
+than erroneous. Worth a sweep for other types in this project with the same
+shape.
+
+================================================================================
+END OF REPORT
+================================================================================

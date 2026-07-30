@@ -1,0 +1,854 @@
+================================================================================
+ACE.Server/Physics - BUG REPORT (consolidated)
+================================================================================
+Scope   : Source/ACE.Server/Physics  (162 files, ~27,200 lines)
+          Movement integration, collision detection and resolution, BSP tree
+          traversal, cell/landblock geometry, transitions, shadow/cell
+          bookkeeping.
+Date    : 2026-07-25
+Companion document: perf-physics.txt (performance analysis, both passes)
+
+SOURCE OF THIS DOCUMENT
+  This subsystem received THREE independent bug-audit passes - more than any
+  other - and this document consolidates all three. Passes 2 and 3 were each
+  run WITHOUT being shown the earlier passes' findings, so agreement between
+  them is genuine corroboration rather than an echo.
+
+      Pass 1  broad sweep                     5 findings   -> Sections A-D
+      Pass 2  dedicated, collision core      10 findings   -> Sections A-D
+      Pass 3  targeted at the coverage gap   14 + 5 low    -> SECTION G
+
+  Pass 3 covers a DISJOINT REGION - Animation/, Managers/, Command/,
+  Trajectory.cs and PartArray.cs, roughly 7,900 lines neither earlier pass had
+  read - so its findings are kept in their own section rather than interleaved.
+
+  Each pass found MORE than the last. See Section F.
+
+  SECTION H is the full fix for the CellArray defect (H.2), which is large
+  enough to warrant its own treatment.
+
+VERIFICATION
+  VERIFIED DIRECTLY : H.1, H.2, M.1 (Sections A-B); G.3, G.4 and the U+202C
+                      character in G.19 (Section G)
+  VERIFIED EMPIRICALLY : G.1 and G.2 - the pass-3 auditor extracted the
+                      trajectory solvers and ran a 200,000-shot randomised
+                      harness. Strongest evidence in the audit; treat as
+                      confirmed.
+  TRACED BUT NOT RE-VERIFIED : all others. Spot-check before fixing.
+
+WHY THIS CODE IS UNUSUAL
+  This is a hand-port of the original Asheron's Call client's C++ physics
+  engine. The dominant bug class is therefore not ordinary logic error but
+  PORTING ARTIFACT: a C idiom mechanically translated into C# where the
+  translation silently changed the semantics. Three findings below (H.2, M.4,
+  L.1) are the same artifact - a fixed C array plus a separate count variable
+  became a .NET collection, but code still manipulates the now-meaningless
+  count. Expect more of this class in the areas not yet audited.
+================================================================================
+
+
+SECTION A - HIGH SEVERITY
+================================================================================
+
+H.1  Inverted early-out runs the collision sweep when NO collision occurred
+     Sphere.cs:374-381   [VERIFIED DIRECTLY - pass 2]
+
+         if (!CollidesWithSphere(disp, radsum))
+         {
+             if (transition.SpherePath.NumSphere > 1)
+             {
+                 if (!CollidesWithSphere(disp_, radsum))
+                     return TransitionState.OK;
+             }
+         }
+         // falls through into the sweep math at line 384
+
+     When NumSphere == 1 and the endpoint does not collide, the inner condition
+     is false, nothing returns, and control falls through into the sweep solve
+     regardless. The sibling implementation at CylSphere.cs:301 shows the
+     intended shape - run the sweep only when at least one sphere actually
+     collides:
+
+         if (CollidesWithSphere(globSphere, disp, radsum)
+             || path.NumSphere > 1 && CollidesWithSphere(globSphere_, disp_, radsum))
+         { ... sweep ... }
+         return TransitionState.OK;
+
+     FAILURE: a single-sphere object (dropped item, missile - anything where
+     isCreature is false) on a Collide retry pass against a sphere obstacle it
+     has already been adjusted clear of. Line 392 computes
+
+         Math.Sqrt(diff*diff - (disp.LengthSquared() - radsum*radsum) * lenSq)
+
+     With no collision, disp.LengthSquared() > radsum*radsum, so the
+     discriminant can go negative and Math.Sqrt returns NaN. Because every
+     comparison against NaN is false, the NaN is silently laundered into an OK
+     via the IsWalkableAllowable path. Alternatively, when the extended line of
+     motion does cross the obstacle, a real root outside the valid window
+     produces a spurious Collided for an object touching nothing.
+
+     FIX: restore the combined guard, mirroring CylSphere.cs:301.
+
+     *** THERE IS A TEST FOR THIS PATH, AND IT PASSES ANYWAY ***
+     [VERIFIED DIRECTLY - read the test]
+     ACE.Server.Tests/Physics/SphereTests.cs:145-153
+     (Sphere_IntersectsSphere_Inner) exercises EXACTLY this defect path:
+
+         transition.SpherePath.NumSphere = 1;
+         transition.SpherePath.GlobalSphere[0] = sphereNonCollide;
+         SetCenter(transition);
+         var transitionState = sphere.IntersectsSphere(transition, false);
+         Assert.AreEqual(TransitionState.OK, transitionState);
+
+     NumSphere == 1, a non-colliding sphere, and isCreature: false - i.e. past
+     the `if (isCreature) return OK;` guard, on the vulnerable branch - and it
+     asserts OK.
+
+     The test is in the repository and passes. That does NOT refute this
+     finding. It means the expected answer is being reached THROUGH the sweep
+     math rather than via the early-out, because the early-out is dead on this
+     path. The test therefore cannot distinguish "the early-out works" from
+     "the sweep happens to return OK", and provides NO protection for this
+     branch.
+
+     IMPLICATIONS FOR WHOEVER FIXES THIS:
+       - Do not treat the passing test as evidence the branch is correct.
+       - After restoring the guard, this test should still pass - that is
+         necessary but not sufficient.
+       - ADD a case that fails against the CURRENT code: a single-sphere,
+         non-creature object on a Collide retry pass against an obstacle it has
+         already been adjusted clear of, asserting OK. That is the geometry
+         where the fall-through produces either a NaN-laundered OK or a
+         spurious Collided, and it is the only way to lock the fix in.
+
+     This is the clearest example in the audit of why "there is a test for it"
+     is not the same as "it is covered".
+
+H.2  CellArray.Cells is never cleared - vestigial C-array count reset
+     Common/CellArray.cs:17-37, Common/ObjCell.cs:337,
+     PhysicsObj.cs:144, 2086-2105, 2481
+     [VERIFIED DIRECTLY - found by BOTH passes]
+
+     SetStatic(), SetDynamic(), find_cell_list() and find_bbox_cell_list() all
+     reset NumCells to 0 but never call Cells.Clear(). add_cell additionally
+     skips IDs already present, so entries are permanent. NumCells itself is
+     write-only dead state - a grep of the whole Physics tree shows it is never
+     read - so nothing detects the inconsistency.
+
+     TWO distinct accumulating instances (pass 2 found the second):
+       (a) The persistent per-object PhysicsObj.CellArray accumulates every
+           cell the object has ever occupied. Each calc_cross_cells() re-adds a
+           ShadowObj to all of them, giving unbounded memory and CPU growth for
+           roaming objects, plus stale shadows leaving the object registered as
+           present in cells it left long ago.
+       (b) transition.CellArray accumulates across every step, StepDown and
+           retry WITHIN a single transition, so SetPositionInternal plants
+           shadows in every cell touched during the tick rather than only the
+           final overlap set.
+
+     PAIRED DEFECT: remove_shadows_from_cells (PhysicsObj.cs:3228-3249) never
+     clears the ShadowObjects dictionary either. Fixing CellArray alone will
+     NOT stop the growth.
+
+     FULL ANALYSIS, REPLACEMENT CLASS AND CALL-SITE LIST:
+     see bugs-physics.txt Section H.
+
+
+SECTION B - MEDIUM SEVERITY
+================================================================================
+
+M.1  SetCollisionNormal / SetSlidingNormal normalise a discarded copy
+     Collision/CollisionInfo.cs:50-64   [VERIFIED DIRECTLY - pass 2]
+
+         public void SetCollisionNormal(Vector3 normal)
+         {
+             CollisionNormalValid = true;
+             CollisionNormal = normal;      // author's own comment: "use original?"
+             if (Vec.NormalizeCheckSmall(ref normal))
+                 CollisionNormal = Vector3.Zero;
+         }
+
+     Vector3 is a struct passed by value, so `ref normal` refers to the LOCAL
+     PARAMETER COPY. The field was already assigned the un-normalised value on
+     the line above. The normalisation result is computed and thrown away; only
+     its boolean "too small" return is used. The stored normal is never unit
+     length. The original acclient normalises in place.
+
+     SetSlidingNormal is worse: it stores new Vector3(normal.X, normal.Y, 0)
+     and then normalises the untouched 3D copy, so the stored sliding normal is
+     the XY projection of the input - length sqrt(x^2+y^2), well below 1 for
+     any sloped contact.
+
+     FAILURE: Transition.AdjustOffset (Transition.cs:39-51) computes
+     `offset -= SlidingNormal * Dot(offset, SlidingNormal)`, scaling the
+     correction by |n|^2. For a steep-slope normal such as (0.1, 0, 0.995), the
+     XY projection is (0.1, 0, 0), so the slide restriction removes only ~1% of
+     the blocked component - movement is allowed to push into the surface.
+
+     FIX: normalise the field itself, as Transition.InitSlidingNormal
+     (Transition.cs:641-648) already does correctly.
+
+M.2  Projectile precision clipping is dead code
+     BSP/BSPTree.cs:43-85, with Sphere.cs:244-248
+
+     adjust_to_plane is a no-progress loop gated on a float `== 1.0f`
+     comparison. adjust_sphere_to_poly returns exactly 1.0f only via a literal
+     (Polygon.cs:103); for any other value the loop body does nothing, so
+     touchTime is recomputed identically 15 times and the function returns
+     false. When it IS 1.0f, `checkPos.Center = curPos + movement * 1.0` is the
+     unchanged position and the bisection collapses. Net: always false, so
+     collide_with_pt always returns Collided and never Adjusted.
+
+     Same effect from a second cause: Sphere.FindTimeOfCollision negates BOTH
+     quadratic roots, so a forward collision in (0,1] comes back negative and
+     CollideWithPoint's PerfectClip path also collapses to Collided. The porter
+     left a remark at line 231 flagging exactly this.
+
+     FAILURE: fast projectiles resolve impacts at the coarse pre-collision
+     position rather than the refined contact point, so they visibly detonate
+     short of their true contact.
+
+     FIX: restore the per-iteration position update, and return the un-negated
+     entry root. NOTE: this is the riskiest fix in this document - it
+     re-enables a code path that has effectively never executed, so behaviour
+     will change in ways the current tests almost certainly do not cover.
+
+M.3  Copy-paste slips in the CylSphere end-cap branch
+     CylSphere.cs:120, 125 (vs 164, 166); :151 (vs 173, 195)
+
+     In CollideWithPoint, the `!definate` branch computes cap-hit times using
+     movement.Z in the numerator - `(movement.Z + checkPos.Radius) / movement.Z`
+     - where the parallel `definate` branch correctly uses old_disp.Z. The same
+     branch computes its offset as `globCenter - scaledMovement - checkPos.Center`
+     where the other two occurrences use `+ scaledMovement`.
+
+     FAILURE: a PerfectClip sphere approaching a cylinder end-cap in the
+     "indefinite normal" case gets a nonsense collision time - typically
+     outside [0,1], producing a spurious Collided - or an offset displaced to
+     the wrong side of the cylinder entirely.
+
+     FIX: use old_disp.Z and + scaledMovement to match the sibling branch.
+
+M.4  CylinderDistance double-counts the Z axis
+     Common/Position.cs:100-131
+
+     `reach = offset.Length() - (r1 + r2)` uses the full 3D offset length, and
+     the result is then combined with the vertical gap via
+     sqrt(diffZ^2 + reach^2). The Pythagorean combination is only valid if
+     reach is the HORIZONTAL component; as written Z contributes twice.
+
+     FAILURE: get_distance_to_object(..., use_cyls: true) (PhysicsObj.cs:2504)
+     returns inflated distances to targets above or below - stairs, ledges,
+     multi-level dungeon rooms - so range checks fail at distances that should
+     be in range.
+
+     FIX: compute reach from the 2D (XY) offset length.
+
+M.5  Degenerate polygons produce NaN plane normals, silently disabling collision
+     Polygon.cs:210-232 (make_plane)   [pass 1]
+
+     `normal` is accumulated via cross products of fan-triangulated edges and
+     passed straight to Vector3.Normalize with no near-zero-length guard. A
+     collinear or degenerate polygon - duplicate or collinear vertices from bad
+     DAT geometry - produces a zero vector, and Normalize on Vector3.Zero
+     yields NaN components.
+
+     FAILURE: that Plane is then used throughout the polygon's collision
+     routines (polygon_hits_sphere, adjust_sphere_to_poly). A NaN normal makes
+     every dot-product comparison indeterminate, so collision on that face is
+     silently disabled rather than throwing - players fall through or walk
+     into the affected geometry.
+
+     FIX: guard for near-zero length before normalising and mark the polygon
+     degenerate.
+
+M.6  AddOffsetToCheckPos silently discards its radius argument
+     SpherePath.cs:129-132   [pass 1]
+
+     The two-argument overload forwards to the one-argument version, with a
+     `// radius ignored?` comment already left by a previous porter. It is
+     called from ~14 sites in collision resolution (Sphere.cs:199, 412, 511,
+     519, 566, 587, 595, 661; CylSphere.cs:152, 174, 196, 331, 420), all
+     passing the contact sphere's radius - implying the original client used it
+     to scale or clamp the offset, or to update a low-point cache.
+
+     FIX: recover the original semantics from the acclient reference before
+     changing this - the correct behaviour is not inferable from the port
+     alone.
+
+
+SECTION C - LOW SEVERITY
+================================================================================
+
+L.1  C-array index used as a dictionary key (latent crash)
+     PhysicsObj.cs:1007, and 199-216
+
+     RemoveObjectFromSingleCell reads ShadowObjects[0], but ShadowObjects is a
+     Dictionary<uint, ShadowObj> keyed by CELL ID - key 0 never exists, so this
+     throws KeyNotFoundException. Its counterpart AddObjectToSingleCell never
+     registers its ShadowObj in ShadowObjects at all (the original stored it at
+     shadow_object_list[0]). Currently dormant - no external callers - but a
+     latent crash if ever wired up. Same porting artifact as H.2.
+
+L.2  build_visible_cells dedupe checks the wrong key
+     Common/EnvCell.cs:121-124
+     Checks ContainsKey(blockCellID) (full 32-bit) but adds with visibleCellID
+     (16-bit), so the dedupe is dead and a duplicated stab in DAT data would
+     throw ArgumentException on Add. Fix: check visibleCellID.
+
+L.3  Dead recursive branch in remove_shadows_from_cells
+     PhysicsObj.cs:3238-3250   [pass 1]
+     The loop computes totalChilds = Children == null ? 0 : Children.NumObjects
+     then breaks on i >= totalChilds, and only afterwards branches on
+     Children != null versus an `else remove_shadows_from_cells()` self-call.
+     Since Children == null forces totalChilds = 0, the break always fires
+     first and the self-recursive call is permanently unreachable. Harmless
+     today, but signals the intended per-child iteration was mistranslated.
+
+L.4  Duplicated unreachable branch in Sphere.Attack
+     Sphere.cs:107-113 / 123-129
+     The second `if (attack_ht < 0.0f)` block can never execute - that case
+     already returned at 107-113. Evidence of a garbled port of the
+     attack-quadrant cone logic; the whole function is worth re-verifying
+     against the original.
+
+L.5  Leftover debug code on a hot walkability path
+     Polygon.cs:400-411
+     In walkable_hits_sphere, when the precise and imprecise tests disagree,
+     both are pointlessly re-executed and the results discarded. Delete lines
+     406-410.
+
+L.6  Type-widening makes bounds checks dead code
+     Common/LandDefs.cs:169-198 (blockid_to_lcoord / gid_to_lcoord)
+     x and y are inferred as uint from the bit-shift expressions, so the
+     `x < 0 || y < 0` checks are always false. The code survives only because a
+     wraparound also trips the `x >= LandLength` upper bound.
+     DOWNGRADED BY PASS 2: pass 1 raised this as a finding; pass 2 read the
+     equivalent site (LandCell.add_outside_cell:213) and concluded the upper
+     bound genuinely catches it. Treat as dead/misleading code, not a defect.
+
+
+SECTION D - INVESTIGATED, NOT A BUG
+================================================================================
+Recorded so a later pass does not re-burn effort on these.
+
+D.1  Cells.Values.ElementAt(i) inside loops that APPEND to the same collection
+     (PhysicsObj.cs:2489, ObjCell.cs:356, Transition.cs:163) is INTENTIONAL
+     grow-during-iteration. Commented-out snapshot code nearby shows a previous
+     author tried .ToList() and reverted it - a snapshot silently drops transit
+     cells discovered mid-loop. BOTH passes independently found this same
+     reverted attempt. Correct as written, though O(n^2) - see perf-physics.txt.
+D.2  LandDefs.gid_to_lcoord:191-192 `- FirstLandCellID >> LandblockShift` looks
+     like an operator-precedence bug but is correct: additive binds tighter
+     than shift in C#.
+D.3  BSPNode single-side traversals (PosNode without null checks, lines
+     250-292) mirror the original; portal.dat guarantees children exist on
+     interior physics nodes.
+D.4  CylSphere.CollideWithPoint:109 - sqrt of a possibly-negative diffSq would
+     produce NaN, but every use is guarded by a `diffSq >= 0` check first.
+D.5  SpherePath.InitSphere appends to LocalSphere without clearing - safe,
+     because every Transition is freshly constructed via MakeTransition before
+     InitSphere runs.
+D.6  Polygon.point_in_poly2D iterates vertices in reverse (edges negated
+     relative to forward traversal) - self-consistent with the Sidedness
+     conventions of its terrain callers.
+
+
+SECTION E - SUGGESTED PRIORITY
+================================================================================
+  1. H.1  Sphere.cs:374-381 inverted early-out. Small, self-contained, and the
+          sibling CylSphere implementation gives the correct shape to copy.
+  2. H.2  CellArray - fix BOTH accumulating instances plus the paired
+          ShadowObjects.Clear(). See bugs-physics.txt Section H.
+  3. M.1  CollisionInfo - a two-line fix affecting all slope and slide
+          handling.
+  4. M.3  CylSphere end-cap branch - mechanical, verifiable against the
+          adjacent correct branch.
+  5. M.5  Polygon.make_plane degenerate guard - cheap, and it converts a silent
+          collision failure into something detectable.
+  6. M.4, L.1-L.5 as cleanup.
+  7. M.2  BSPTree / FindTimeOfCollision LAST, despite its severity - see the
+          risk note under M.2.
+  8. M.6  Only after consulting the acclient reference.
+
+All of this is core physics. Work on a branch and run
+Source/ACE.Server.Tests/Physics after each change.
+
+
+SECTION F - COVERAGE NOTE (UPDATED AFTER PASS 3)
+================================================================================
+THREE passes have now run, and each found MORE than the last:
+
+    Pass 1  broad sweep                    5 findings
+    Pass 2  dedicated, collision core     10 findings, incl. a new HIGH
+    Pass 3  targeted at the coverage gap  14 findings + 5 low, 9 of them HIGH
+
+PASS 3 IS IN SECTION G BELOW. It is kept in its own section rather than
+interleaved, because it covers a disjoint region - Animation/, Managers/,
+Command/, Trajectory.cs and PartArray.cs, roughly 7,900 lines that neither
+earlier pass had read. Sections A-D and Section G do not overlap.
+
+STILL OPEN FROM PASS 1 (pass 2 and pass 3 never reached these):
+    M.5  Polygon.make_plane degenerate guard
+    M.6  SpherePath.AddOffsetToCheckPos discarded radius
+    L.3  dead recursive branch in remove_shadows_from_cells
+
+AREAS NO PASS HAS EXHAUSTED, recommended for a FOURTH pass, in order:
+    1. Common/           57 files, 7,677 lines - pass 3 did not touch it at
+                         all; passes 1-2 only sampled it
+    2. MotionTable.cs    615 lines - pass 3 read it once and got three
+                         findings; worth a dedicated pass against the original
+                         client's CMotionTable semantics
+    3. MotionState / RawMotionState / InterpretedMotionState action-list
+       management - only sampled
+
+THE LESSON: breadth-first sampling of a 27,000-line hand-ported subsystem does
+not converge quickly. "We audited it" must not be read as "it is clean".
+
+THE MOST PRODUCTIVE LENS is the PORTING ARTIFACT - a C idiom mechanically
+translated to C# where the semantics silently changed. Every high-severity
+finding in pass 3 is one, and so are the two headline findings from passes 1-2
+(H.2 CellArray, M.1 CollisionInfo). A fourth pass should lead with that lens
+rather than with generic bug patterns:
+
+    C value semantics    -> C# reference semantics   (G.14, G.6a)
+    C array + count      -> .NET collection          (G.4, H.2)
+    C pointer splice     -> assignment to a local    (Section G, CommandList)
+    decompiled goto      -> commented-out branches   (Section G, Command/)
+    unset out-params     -> NaN rather than garbage  (G.1)
+    ref on a struct      -> operates on a copy       (M.1)
+
+
+================================================================================
+SECTION G - PASS 3 FINDINGS (Animation/, Managers/, Command/, Trajectory,
+            PartArray - a region neither earlier pass read)
+================================================================================
+
+--- G HIGH SEVERITY ---
+
+G.1  [VERIFIED EMPIRICALLY] NaN accepted as a projectile impact time -
+     projectiles that never hit, never expire, and leak
+     Trajectory.cs:425-450
+
+     SolveQuartic initialises s0..s3 to double.NaN and returns 1-3 for most
+     inputs, leaving NaN in the tail slots. Line 429 sorts all four REGARDLESS
+     of numTimes, and .NET's Array.Sort(double[]) NaN-prepass moves NaNs to
+     INDEX 0. The `if (t <= 0) continue` filter at line 440 does not reject
+     NaN, because every comparison against NaN is false.
+
+     EMPIRICAL RESULT: of 200,000 randomised shots, 19 of 104,581 successful
+     solves returned numSolutions == 2 with time = NaN and s0 = <NaN,NaN,NaN>.
+     TRIGGER: a close, fast target with vertical velocity - a strafing or
+     jumping player at roughly 5 metres.
+
+     FAILURE: the live caller WorldObjects/Creature_Missile.cs:327 checks only
+     `numSolutions > 0` and returns the NaN vector as the projectile velocity.
+     The projectile's position becomes NaN permanently; it never registers a
+     collision, never expires, and leaks as a live physics object for the rest
+     of the server's uptime.
+
+     FIX: skip `double.IsNaN(t)` in the loop, and only sort/scan
+     times[0..numTimes-1].
+
+G.2  [VERIFIED EMPIRICALLY] Stationary ballistic solver lacks a
+     zero-ground-distance guard its two siblings both have
+     Trajectory.cs:321-349
+
+     `proj_pos == target` (line 302) catches only exact 3D equality. When XY
+     matches but Z differs - a target directly overhead, i.e. flying, on a
+     platform, or a self-cast - groundDist is 0, Vector3.Normalize(diffXY)
+     yields NaN, and gx is 0. CONFIRMED BY EXECUTION: returns 1 with
+     s0 = <NaN,NaN,NaN>, t0 = 0.
+
+     SolveBallisticArc:482 and solve_ballistic_arc_lateral:533 both have
+     `if (lateralDist == 0) return false;` - the correct pattern is present
+     twice in the same file and simply missing here.
+
+     Also `numSolutions = lowAng != highAng ? 2 : 1` (line 341) is a float
+     equality test that should be an epsilon compare on root.
+
+G.3  [VERIFIED DIRECTLY] Null check inverted so that it GUARANTEES the NRE
+     Animation/MotionInterp.cs:747
+
+         if (WeenieObj == null && !WeenieObj.IsCreature() || ...)
+
+     If WeenieObj is null the left operand is TRUE, so && evaluates the right
+     operand - dereferencing the null it just tested for. The correct pattern
+     appears five times elsewhere in the SAME FILE (lines 179, 196, 396, 434,
+     591): `if (WeenieObj != null && !WeenieObj.IsCreature())`.
+
+     The operator is also semantically inverted: for a NON-creature the
+     intended "jump always allowed" branch is now never taken.
+     REACHED FROM: MotionInterp.jump().
+
+G.4  [VERIFIED DIRECTLY] List capacity mistaken for count, then indexed
+     PartArray.cs:367-373
+
+         Parts = new List<PhysicsPart>((int)obj.NumParts);   // capacity, Count == 0
+         ...
+         Parts[i] = PhysicsPart.MakePhysicsPart(obj.Parts[i]);   // throws
+
+     A textbook C-array-to-List artifact. InitParts (lines 323-325) does it
+     CORRECTLY by pre-filling with nulls. MorphToExistingObject does not, so
+     this throws ArgumentOutOfRangeException on the FIRST iteration whenever
+     NumParts > 0.
+     REACHED FROM: PhysicsObj.makeObject (PhysicsObj.cs:2940) - appraisal and
+     clone objects.
+
+G.5  Mismatched action-stamp masks break command sequencing after ~32k actions
+     Animation/MotionInterp.cs:805-806
+         action.Stamp & 0x7FFF   vs   ServerActionStamp & 0x7FFFF   (extra F)
+     The wraparound comparison at line 810 (`deltaStamp <= 0x3FFF`) assumes
+     both are 15-bit. Once ServerActionStamp exceeds 0x7FFF, serverStamp
+     exceeds any possible currentStamp and diff inverts PERMANENTLY. After
+     roughly 32,000 client actions in a session, every incoming attack or cast
+     in move_to_interpreted_state is either replayed or silently dropped, and
+     only a relog fixes it.
+     FIX: mask both with 0x7FFF.
+
+G.6  Three independent defects in InterpolationManager (latent)
+     Managers/InterpolationManager.cs:253, 9/41, 163
+     (a) `frame = offset;` rebinds a LOCAL - AFrame is a class, so the caller's
+         frame is untouched. Siblings StickyManager.cs:99-121 and
+         ConstraintManager.cs:71-76 correctly mutate in place.
+     (b) PositionQueue is declared but NEVER ALLOCATED anywhere in the tree -
+         NRE on first use at line 41.
+     (c) `for (var i = PositionQueue.Count; i >= 0; --i) ElementAt(i)` throws on
+         the first iteration; Count - 1 was intended.
+     All dormant only because PhysicsObj.InterpolateTo has no callers. Wiring
+     it up would fail immediately in three different ways.
+
+G.7  Target-timeout transition is unreachable, producing a stuck MoveTo
+     Managers/TargetManager.cs:62-72
+     A guard added to dodge an NRE -
+     `if (TargetInfo != null && TargetInfo.TargetPosition == null) return;` -
+     returns BEFORE the timeout check below it. But Status == Undefined holds
+     ONLY while TargetPosition is null.
+     FAILURE: SetTarget on an object GetObjectA cannot resolve never times out,
+     so MoveToManager.HandleUpdateTarget never sees a non-OK status and never
+     calls CancelMoveTo(ObjectGone). The same early return also skips
+     LastUpdateTime and the voyeur loop, so the object stops publishing
+     position updates entirely - it freezes in place for observers.
+     A commented-out Console.WriteLine at line 64 marks prior debugging here.
+
+G.8  StopObjectCompletely can spin forever on the world thread
+     Animation/MotionTable.cs:295-306
+     The loop re-reads Modifiers.First and terminates only if
+     StopSequenceMotion removes the head - but that returns false WITHOUT
+     removing when the dictionary lookup fails (lines 342-346). TurnRight
+     (0x6500000D) carries both SubState and Modifier bits, so
+     add_modifier_no_check (line 175) can push a modifier with no Modifiers
+     entry, and the loop never advances.
+     An infinite loop on the world thread is a total server hang.
+     FIX: advance to node.Next on failure.
+
+G.9  set_vector_heading feeds pitch into the yaw slot
+     Animation/AFrame.cs:214
+     `CreateFromYawPitchRoll(xRot, 0, zRot)` rotates about Y, not X; the
+     intended frame is rotZ * rotX. Any pitched projectile heading
+     (WorldObject_Magic.cs:1806, PhysicsObj.cs:1680) is silently flattened and
+     replaced by a roll - projectiles fired up or down travel level.
+     `Math.Asin(normal.Z)` is also UNCLAMPED: 1.0000001f yields NaN which
+     propagates into Orientation, after which every epsilon test on that frame
+     is false.
+     NOTE: this is the one pass-3 HIGH that was NOT verified numerically the
+     way G.1 and G.2 were. It is reasoned, not executed - verify before fixing.
+
+--- G MEDIUM SEVERITY ---
+
+G.10 TurnToObject writes the desired heading to a field nobody reads
+     Managers/MoveToManager.cs:246 vs :274
+     TurnToObject writes the heading into CurrentTargetPosition, but
+     TurnToObject_Internal reads it from SoughtPosition, and line 271 then
+     overwrites CurrentTargetPosition wholesale. SoughtPosition holds either a
+     default (heading 0) or a STALE heading from the previous movement - and
+     the `PhysicsObj.ID != topLevelID` path at 251-256 returns before
+     CleanUp(), so it is never reset.
+     FAILURE: an NPC told to turn to a target with a heading offset either
+     ignores the offset or applies a leftover angle from an unrelated move.
+     FIX: SoughtPosition.Frame.set_heading(...) at line 246.
+
+G.11 MoveToPosition tests the stale field instead of its own argument
+     Managers/MoveToManager.cs:214
+     It tests the manager's MovementParams.UseFinalHeading rather than the
+     movementParams ARGUMENT - used correctly on adjacent lines 206 and 215 -
+     and the field is only replaced at line 222.
+     FAILURE: a MoveToPosition requesting a final facing gets no turn node if
+     the PREVIOUS move did not set the flag; conversely a leftover flag adds a
+     spurious turn to DesiredHeading (often 0), so the mover spins to face
+     north on arrival.
+
+G.12 SetHoldKey has no HoldKey.Run case
+     Animation/MotionInterp.cs:274-287
+     The state machine can only ever CLEAR RawState.CurrentHoldKey, never set
+     it to Run. A MovementParameters with SetHoldKey = true and
+     HoldKeyToApply = Run never establishes the persistent run-hold state; only
+     the per-command adjust_motion path (lines 423-427) still works, so the
+     next command without an explicit hold key reverts to walk - the classic
+     "character randomly stops running" symptom.
+
+G.13 AFrame.Equals compares a value against itself
+     Animation/AFrame.cs:231-234
+     `frame.Orientation.X - frame.Orientation.X` - self minus self - on all
+     four terms, so orientation is NEVER tested and equality degrades to
+     origin-only.
+     FAILURE: a creature turning in place looks "unchanged" to
+     PhysicsObj.UpdateObjectInternal (PhysicsObj.cs:1669), which zeroes
+     CachedVelocity and skips transition(). No cell or collision
+     re-evaluation happens for pure rotation.
+     *** SEQUENCING WARNING: this bug is currently acting as an accidental
+     PERFORMANCE OPTIMISATION - see perf-physics.txt Section E. Fixing it will
+     route every rotating creature through the full transition path and
+     increase per-frame cost, so it must land together with the allocation
+     fixes there. ***
+
+G.14 Position aliased rather than copied in part morphing
+     PhysicsPart.cs:115-121 and PartArray.cs:600
+     Position is a CLASS in C#; the original C++ member was by value.
+     MorphToExistingObject does `Pos = template.Pos`, and UpdateParts does
+     `Parts[0].Pos = Owner.Position`.
+     FAILURE: every morphed part shares Position instances with its template,
+     so UpdateParts' `Parts[i].Pos.Frame.Combine(...)` MUTATES THE SOURCE
+     OBJECT's per-part frames - morphing one object visibly deforms another.
+     FIX: new Position(...).
+
+--- G LOW SEVERITY ---
+
+G.15 Managers/StickyManager.cs:81 - StickyTimeoutTime is never refreshed on
+     update, so it is an unconditional 1-second cap rather than a no-updates
+     watchdog. Melee swings longer than 1s detach from the target.
+G.16 Managers/ConstraintManager.cs:34 vs :76 - ConstraintPosOffset is
+     initialised as a distance-from-anchor then overwritten each tick with the
+     per-frame movement delta, so the damping and clamp thresholds and
+     IsFullyConstrained() never trigger.
+G.17 Animation/MotionTable.cs:227 - `motionData_ == null ? 0 : motionData.Anims.Count`
+     tests one object and counts the OTHER, feeding a wrong count to
+     Sequence.remove_link_animations.
+G.18 Animation/MotionTable.cs:445-453 - re_modify builds a defensive copy
+     `state` but reads `pstate.Modifiers.First`; NRE once clear_modifiers
+     empties the original mid-loop.
+G.19 [VERIFIED DIRECTLY] Command/CommandInterpreter.cs:269 - the identifier
+     `MotionCommand.HoldRun` contains an embedded U+202C POP DIRECTIONAL
+     FORMATTING character (hexdump confirms e2 80 ac immediately after
+     "HoldRun"). C# treats Cf characters as ignorable so it compiles and
+     matches - but it defeats grep and is a Trojan-Source-style hazard. Strip
+     it.
+
+--- G: Command/ IS DEAD SCAFFOLDING (reduced severity, but do not revive it) ---
+
+CommandInterpreter is never instantiated - Common/SmartBox.cs:21 has
+`//public CommandInterpreter CmdInterp;` commented out. It is nonetheless the
+densest concentration of porting artifacts anywhere in this subsystem and
+would break immediately if wired up:
+
+  - CommandInterpreter.cs:443-530 is a decompiled goto graph in which EVERY
+    `goto LABEL_x` was left as a COMMENT, so all branches fall through. Any
+    non-mouse keyboard command falls from line 456 through 477, setting
+    start_sidestep_left AND start_sidestep_right; at 564-579 cmd1 is
+    overwritten to SideStepLeft at speed 1.0. Pressing "walk forward" would
+    sidestep.
+  - CommandList.cs:31-33 -
+    `var prevNext = mouse_cmd.Prev.Next; if (prevNext != null) prevNext = mouse_cmd.Next;`
+    writes to a LOCAL, discarding the pointer splice (the C was
+    `mouse_cmd->prev->next = mouse_cmd->next`). SetMouseCommand never sets
+    element.Prev, so mouse_cmd.Prev.Next is a guaranteed NRE. AddCommand's
+    entire body is inside `if (mouse)`, so keyboard commands are never enqueued
+    at all.
+  - ACCmdInterp.SetMotion never sets cmdStruct.Size or .Command;
+    HandleKeyboardCommand ignores its `command` parameter entirely and reads
+    cmdStruct.Command (always 0) and Args[0] (always 0, so start = false).
+    Every input decodes as "stop command 0".
+  - Disable() never sets Enabled = false. HandleSelectLeft(bool start)
+    hardcodes MouseLeftDown = true, ignoring start, which would wedge
+    MovePlayer at line 526 into permanent WalkForward.
+  - SetAutoRun:747 has `//ApplyCurrentMovement();` commented out - a reverted
+    fix.
+
+RECOMMENDATION: mark Command/ clearly as non-functional - a file-level comment
+and/or [Obsolete] on the public types. Leaving broken scaffolding in-tree
+un-annotated invites someone to wire it up.
+
+  PREFER ANNOTATION OVER DELETION. An earlier version of this said "either
+  delete Command/ or mark it non-functional". These are PUBLIC types, and ACE
+  ships a Harmony-based mod system (ACE.Server/Mods/) that loads arbitrary
+  assemblies from disk at runtime and can reference any public API. "No callers
+  in this solution" does not establish "no consumers". Annotating is
+  information-preserving and carries no compatibility risk; deleting does.
+
+--- G: INVESTIGATED, NOT A BUG (pass 3) ---
+
+QueueExtensions.cs rotate-based DequeueLast/EnqueueFirst - all four traced;
+rotation counts correct and order preserved (only unguarded when
+quantity > Count). Vector3Extensions.get_heading - NormalizeCheckSmall(ref
+normal) operates on a LOCAL, so unlike M.1 the result IS used. PartArray's
+Setup.MakeSimpleSetup / MotionTableManager.Create called through same-named
+fields - legal C# "Color Color" static resolution, not a null deref.
+MovementParameters.Flags - a computed property over the bool fields, so
+MoveToManager:466 and :736 cannot desync. MovementParameters.get_command's
+`MoveTowards || !MoveAway` and towards_and_away's epsilon branch - reachable
+and correct. AnimSequenceNode.get_part_frame/get_pos_frame bounds and the
+`HighFrame + 1 - EPSILON` sentinel - safe; the identity AFrame fallback makes
+Sequence.cs:382's inconsistency harmless. MotionInterp.set_hold_run:828 - the
+double-negated predicate is algebraically correct. Sequence.update_internal
+recursion - frameTimeElapsed decreases monotonically, terminates.
+InterpretedMotionState handling only the Right variants - intentional,
+adjust_motion folds Left into Right first. Entity/ caches, Util/AdjustPos (all
+profiles deliberately commented out), AttackManager / DetectionManager (empty
+stubs). Two prior-fix markers noted: MoveToManager.cs:552 and Sequence.cs:316.
+
+
+================================================================================
+SECTION H - FULL FIX FOR H.2 (CellArray never cleared)
+================================================================================
+H.2 is summarised in Section A. This section is its complete treatment,
+including the reason the obvious fix does not work.
+
+WHAT IS WRONG
+  CellArray is a scratch buffer rebuilt each time an object's cell occupancy is
+  recalculated. Three places "reset" it - CellArray.SetStatic/SetDynamic
+  (Common/CellArray.cs:17-29), ObjCell.find_cell_list (Common/ObjCell.cs:337),
+  and PhysicsObj.find_bbox_cell_list (PhysicsObj.cs:2481) - and all three do:
+
+      NumCells = 0;
+      AddedOutside = false;
+      // Cells is never touched
+
+  This is a C-to-C# porting artifact. In the original client CellArray was a
+  fixed array plus a count, so `NumCells = 0` genuinely emptied it - subsequent
+  add_cell calls overwrote slots from index 0. The port replaced the array with
+  `Dictionary<uint, ObjCell> Cells` but kept the idiom, which now clears
+  NOTHING. Worse, add_cell dedupes on key, so once a cell ID enters Cells it
+  stays for the object's lifetime and re-adding is a no-op.
+
+WHY NOTHING CATCHES IT
+  CellArray.NumCells is WRITE-ONLY DEAD STATE. A grep of the whole Physics tree
+  shows it is never read anywhere. (The NumCells hits in Landblock.cs,
+  SmartBox.cs and AdjustCell.cs are different fields on other types.) The
+  counter is silently wrong and no consumer notices.
+
+WHAT IT COSTS
+  PhysicsObj.CellArray is created once per object (PhysicsObj.cs:144) and
+  reused forever. Every cell crossing runs calc_cross_cells (line 2085), which
+  calls add_shadows_to_cell - allocating a new ShadowObj per entry and calling
+  cell.AddShadowObject. So:
+    1. Unbounded memory - Cells grows with every distinct cell ever occupied.
+    2. Monotonically growing per-crossing work - an object that has crossed
+       5,000 cells does 5,000 cells' worth of shadow registration on every
+       subsequent crossing.
+    3. GC pressure - one ShadowObj allocation per stale cell per crossing.
+    4. Correctness - the object stays registered as a shadow in cells it left
+       long ago, so anything walking ObjCell.ShadowObjectList sees phantom
+       occupants.
+
+  TWO DISTINCT ACCUMULATING INSTANCES (pass 2 found the second):
+    (a) the persistent per-object PhysicsObj.CellArray, and
+    (b) transition.CellArray, which accumulates across every step, StepDown and
+        retry WITHIN a single transition, so SetPositionInternal plants shadows
+        in every cell touched during the tick rather than the final overlap set.
+
+THE COMPOUNDING PROBLEM
+  Three call sites index this dictionary by position inside a loop -
+  PhysicsObj.cs:2489, ObjCell.cs:356, Transition.cs:163:
+
+      for (var i = 0; i < cellArray.Cells.Count; i++)
+          var cell = cellArray.Cells.Values.ElementAt(i);   // O(i) each time
+
+  Dictionary.ValueCollection has no indexer, so ElementAt walks the enumerator
+  from the start every time - making each loop O(n^2) over an UNBOUNDEDLY
+  GROWING n. This is why the symptom is "the server gets progressively slower
+  the longer it stays up".
+
+WHY THE OBVIOUS FIX DOES NOT WORK
+  PhysicsObj.cs:2485-2487 and ObjCell.cs:360-362 contain commented-out
+  attempts:
+      //var checkCells = cellArray.Cells.Values.ToList();
+      //foreach (var cell in checkCells)
+  Someone tried snapshotting and reverted it - correctly. find_transit_cells /
+  calc_cross_cells_static ADD cells to the array while it is being iterated,
+  and the loop deliberately re-reads the growing Cells.Count to pick them up. A
+  snapshot silently drops newly-discovered transit cells. BOTH pass 1 and pass
+  2 independently found this same reverted attempt.
+
+  The replacement must therefore support APPEND-DURING-ITERATION WITH O(1)
+  INDEX ACCESS.
+
+THE FIX
+  Swap the dictionary for a list (ordered, index-addressable, growable) plus a
+  set (O(1) dedupe), and make the reset actually reset:
+
+      public class CellArray
+      {
+          public bool AddedOutside;
+          public bool LoadCells;
+
+          private readonly List<ObjCell> cells = new List<ObjCell>();
+          private readonly HashSet<uint> cellIds = new HashSet<uint>();
+
+          public int Count => cells.Count;
+          public ObjCell this[int index] => cells[index];
+          public IReadOnlyList<ObjCell> Cells => cells;   // for foreach consumers
+
+          public void Clear()
+          {
+              cells.Clear();
+              cellIds.Clear();
+          }
+
+          public void SetStatic()  { AddedOutside = false; LoadCells = false; Clear(); }
+          public void SetDynamic() { AddedOutside = false; LoadCells = true;  Clear(); }
+
+          public void add_cell(uint cellID, ObjCell cell)
+          {
+              if (cellIds.Add(cellID))
+                  cells.Add(cell);
+          }
+
+          public void remove_cell(ObjCell cell)
+          {
+              if (cellIds.Remove(cell.ID))
+                  cells.Remove(cell);   // O(n), but rare
+          }
+      }
+
+  CALL-SITE UPDATES:
+    - Replace the two other `NumCells = 0` resets (ObjCell.cs:337,
+      PhysicsObj.cs:2481) with cellArray.Clear(), and drop the NumCells field.
+    - Replace `cellArray.Cells.Values.ElementAt(i)` with `cellArray[i]` at
+      PhysicsObj.cs:2489, ObjCell.cs:356, Transition.cs:163. This alone removes
+      the O(n^2).
+    - `foreach (var cell in cellArray.Cells.Values)` becomes
+      `foreach (var cell in cellArray.Cells)`.
+
+  VERIFIED: every find_cell_list overload funnels into the master overload at
+  ObjCell.cs:335, which resets on entry - so all consumers already treat the
+  array as freshly-built output. Nothing depends on accumulation.
+
+THE PAIRED BUG - MUST BE FIXED TOO
+  Fixing CellArray alone will NOT stop the growth.
+  remove_shadows_from_cells (PhysicsObj.cs:3228-3249) iterates
+  ShadowObjects.Values, removes each from its cell, sets NumShadowObjects = 0 -
+  but NEVER CLEARS THE DICTIONARY. The source even carries the author's own
+  uncertainty: `NumShadowObjects = 0;   // should be ShadowObjects.Count`.
+
+  Because ShadowObjects is keyed by cell ID (PhysicsObj.cs:1980-1983), it
+  accumulates one entry per distinct cell ever visited, independently of
+  CellArray. After the CellArray fix, add_shadows_to_cell would only add
+  current cells, but remove_shadows_from_cells would keep iterating an
+  ever-growing dictionary calling remove_shadow_object (an O(n) List.Remove)
+  for cells that no longer hold the shadow.
+
+  FIX: add `ShadowObjects.Clear();` alongside `NumShadowObjects = 0;`.
+
+HOW TO VERIFY
+  Log CellArray.Count and ShadowObjects.Count for a player object periodically.
+  Before: both climb monotonically and never fall. After: both should oscillate
+  around the object's actual cell footprint (single digits). The
+  ServerPerformanceMonitor counter LandblockManager_TickPhysics should also
+  stop degrading over uptime.
+
+  This is core physics - work on a branch and run
+  Source/ACE.Server.Tests/Physics after each change.
+
+================================================================================
+END OF REPORT
+================================================================================

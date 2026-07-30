@@ -1,0 +1,342 @@
+================================================================================
+ACE.Server/Managers - BUG REPORT
+================================================================================
+Scope   : Source/ACE.Server/Managers  (15 files, ~9,400 lines)
+          WorldManager, LandblockManager, PlayerManager, HouseManager,
+          AllegianceManager, EventManager, ServerManager, GuidManager,
+          InboundMessageManager, DDDManager, PropertyManager, EmoteManager,
+          SocketManager, ServerPerformanceMonitor
+Date    : 2026-07-25
+Companion document: perf-managers.txt
+
+VERIFICATION
+  VERIFIED DIRECTLY : M.1 (PK status inversion)
+  TRACED BUT NOT RE-VERIFIED : all others. Spot-check before fixing.
+
+SECTION 0 - FINDINGS FROM THE INITIAL SWEEP (folded in)
+================================================================================
+
+M.0a [HIGH] The main tick loop has no exception isolation
+     WorldManager.cs:332-395, with LandblockManager.cs:386-387
+
+     The entire `while (!pendingWorldStop)` loop in UpdateWorld has ZERO
+     try/catch, and LandblockManager.TickMultiThreadedWork runs a
+     Parallel.ForEach over landblock groups with no per-landblock guard.
+
+     FAILURE: any uncaught exception thrown by a queued player action
+     (teleport, enter-world, trade), by PlayerManager.Tick, or by
+     LandblockManager.Tick propagates out of UpdateWorld unhandled, killing the
+     WorldManager thread and - per .NET default unhandled-exception behaviour -
+     the whole process. Every connected player is disconnected with no recovery
+     and no log-and-continue path.
+
+     Note the pattern IS understood in this codebase: GameActionTalk.cs:50-61
+     carefully wraps command invocation in try/catch precisely because handlers
+     throw. It is simply not applied where it matters most.
+
+     This is one of three instances of the same defect; see bugs-network.txt
+     N.0a (the UDP receive callback) and bugs-entity-server.txt E.0d
+     (ActionQueue). Three independent audits converged on this, and it is the
+     single most consequential issue in the codebase.
+
+M.0b [MEDIUM] Allegiances dictionary raced between world and console threads
+     AllegianceManager.cs:24, 91, raced by AdminCommands.cs:4540-4628
+
+     `Allegiances` is a plain Dictionary, never locked. GetAllegiance() writes
+     to it (line 91) and is called on every player login via
+     PlayerManager.SwitchPlayerFromOfflineToOnline -> AllegianceManager.LoadPlayer,
+     on the main WorldManager tick thread.
+
+     But `fix-allegiances` - flagged CommandHandlerFlag.ConsoleInvoke, so it
+     runs ONLY on the separate server-console CommandThread per
+     CommandManager.cs:287 - and `show-allegiances` both call GetAllegiance()
+     in a loop and then `foreach (var allegiance in AllegianceManager.Allegiances.Values)`
+     (lines 4554, 4623) without .ToList().
+
+     FAILURE: running @fix-allegiances at the console while any player logs in
+     or out mutates and enumerates the same non-thread-safe dictionary from two
+     threads - which can throw "Collection was modified" mid-enumeration or, in
+     the worst case, corrupt the dictionary's internal state.
+
+M.0c [MEDIUM] List.Add inside Parallel.ForEach without a lock
+     DDDManager.cs:82
+
+     An unsynchronised List<uint>.Add is called from inside a Parallel.ForEach
+     over datDatabase.AllFiles. Concurrent writes to a non-thread-safe List can
+     drop entries, produce a torn internal state, or throw
+     IndexOutOfRangeException.
+
+M.0d [LOW] set-shutdown-interval has no effect on an in-progress shutdown
+     ServerManager.cs:99, with AdminShardCommands.cs:46-72
+
+     ShutdownServer() reads ShutdownInterval exactly once into the local
+     shutdownTime when the shutdown thread starts; the wait loop (line 106)
+     never re-reads it.
+
+     FAILURE: an admin running `@shutdown 300` and then
+     `@set-shutdown-interval 60` is told "Shutdown Interval has been set to 60"
+     while the server still shuts down on the original 300-second countdown -
+     misleading during an active incident.
+================================================================================
+
+
+SECTION A - HIGH SEVERITY
+================================================================================
+
+M.1  PK world conversion sets every OFFLINE player to NPK   [VERIFIED DIRECTLY]
+     PlayerManager.cs:831-835, 846-850, 865-869, 880-884
+
+     In UpdatePKStatusForAllPlayers, all four branches write NPK to offline
+     players - including the two "enable" branches:
+
+         case "pk_server":
+           if (enabled) {
+             foreach (var player in GetAllOnline())
+                 player.SetPlayerKillerStatus(PlayerKillerStatus.PK, true);   // correct
+             foreach (var player in GetAllOffline()) {
+                 player.SetProperty(PropertyInt.PlayerKillerStatus,
+                                    (int)PlayerKillerStatus.NPK);             // WRONG
+                 player.SetProperty(PropertyFloat.MinimumTimeSincePk, 0);
+             }
+
+     The pkl_server enable branch has the identical mismatch (online -> PKLite,
+     offline -> NPK).
+
+     FAILURE: an admin runs `/modifybool pk_server true` to convert the shard.
+     Everyone currently online becomes PK. Everyone currently logged out is
+     written NPK and stays NPK after they log back in. On a PK shard this
+     silently splits the population into two incompatible states, and because
+     it is written directly to the property it persists.
+
+     FIX: use PlayerKillerStatus.PK / PKLite in the respective enable branches.
+
+M.2  Unguarded IPlayer.Account deref breaks ALL character creation
+     PlayerManager.cs:194, 421, 457, 494, 903
+
+     Initialize (line 67) explicitly tolerates Account == null and still places
+     that character into offlinePlayers/playerNames, but five call sites
+     dereference Account without a guard.
+
+     FAILURE: a character biota whose auth-DB account row was deleted (manual
+     DB cleanup, failed account deletion, restored shard DB against a newer
+     auth DB). IsAccountAtMaxCharacterSlots (line 904) enumerates ALL offline
+     players, so it throws NullReferenceException on EVERY character-creation
+     attempt server-wide - one orphaned character blocks character creation for
+     everyone.
+
+     FIX: null-check Account at all five sites, or skip account-less players
+     during load.
+
+M.3  Unguarded FindByGuid result in house eviction
+     HouseManager.cs:454-461, 501, 513
+
+     HandleEviction calls PlayerManager.FindByGuid(playerGuid, out isOnline)
+     and never null-checks - unlike the sibling HandleRentPaid at line 390,
+     which does.
+
+     FAILURE: the owner's character is deleted but the house biota still has
+     HouseOwner set. HouseManager.Tick -> ProcessRent -> HandleEviction ->
+     NullReferenceException at player.HousePurchaseTimestamp, thrown inside a
+     GetHouse callback on the world-tick thread - which has no try/catch
+     (see bugs-managers.txt M.0a), so this kills the process.
+
+     FIX: mirror the null-check at line 390 and abort the eviction.
+
+M.4  SlumlordCallbacks dictionary raced between world and thread-pool threads
+     HouseManager.cs:42, 758-766, 771-782
+
+     SlumlordCallbacks is a plain Dictionary with no lock. RegisterCallback is
+     driven from HouseManager.Tick on the world thread, while
+     OnInitialInventoryLoadCompleted fires from SlumLord.cs:191 <- Container.cs:195
+     <- landblock object creation, which Landblock.Init (Landblock.cs:188) runs
+     on a Task.Run thread-pool thread.
+
+     FAILURE: concurrent Add/Remove corrupts the bucket chain - either an
+     infinite loop inside the dictionary or IndexOutOfRangeException. The file's
+     own comment at line 631 acknowledges this hazard, but only for
+     HandlePlayerDelete.
+
+     FIX: ConcurrentDictionary, or marshal callbacks via
+     WorldManager.EnqueueAction.
+
+M.5  Mutually-recursive emotes bypass the loop guard and kill the process
+     EmoteManager.cs:1607
+
+     The infinite-loop guard requires
+     `emoteSet.Quest == emote.Message && EmoteIsBranchingType(emote)` - it only
+     catches SELF-referential emote sets.
+
+     FAILURE: two Goto/InqQuest emote sets with DIFFERENT quest strings that
+     reference each other, with emote.Delay == 0, recurse synchronously
+     (ExecuteEmote -> ExecuteEmoteSet(nested: true) -> Enqueue -> DoEnqueue ->
+     ExecuteEmote), bypassing both the IsBusy check and the guard. Result is
+     StackOverflowException - uncatchable in .NET, kills the whole server.
+     Reachable from ordinary world content, so a content-authoring mistake
+     takes the server down.
+
+     FIX: make the `Nested > 75` abort unconditional rather than conditional on
+     the self-reference test.
+
+
+SECTION B - MEDIUM SEVERITY
+================================================================================
+
+M.6  Unseeded HouseType aborts HouseManager startup
+     HouseManager.cs:207, 51-54
+
+     TotalOwnedHousingByType[house.HouseType]++ only seeds Apartment, Cottage,
+     Villa and Mansion. HouseType.Undef (value 0) is a real case - House.cs:694
+     explicitly maps hook limits for Undef.
+
+     FAILURE: a slumlord whose house biota lacks HouseType throws
+     KeyNotFoundException inside BuildRentQueue, aborting
+     HouseManager.Initialize at startup.
+
+     FIX: seed all enum values, or use TryGetValue / GetValueOrDefault.
+
+M.7  House permanently lost from the rent queue on a dropped callback
+     HouseManager.cs:343-356
+
+     Tick performs RentQueue.Remove(nextEntry) and
+     DecrementTotalOwnedHousingByType BEFORE calling ProcessRent, which is
+     asynchronous (GetHouse -> RegisterCallback).
+
+     FAILURE: if the callback never runs - the house sits on an unloaded
+     landblock and House.Load's detached slumlord never raises
+     OnInitialInventoryLoadCompleted - the house is permanently absent from the
+     rent queue until restart. No rent is collected and no eviction occurs, and
+     the callback leaks in SlumlordCallbacks forever.
+
+     FIX: re-queue on callback timeout, or only remove once the callback
+     completes.
+
+M.8  Player can end up in NEITHER online nor offline dictionary
+     PlayerManager.cs:407-417, 444-453
+
+     Both switch methods remove from the source dictionary first, then
+     `return false` if the TryAdd to the destination fails.
+
+     FAILURE: the character is left in neither dictionary while playerNames
+     still holds a stale reference. It becomes invisible to
+     GetOnlinePlayer/GetOfflinePlayer - so it can never be saved or logged out -
+     yet FindByName still resolves it. Effectively a leaked, unsaveable player.
+
+     FIX: roll back the removal before returning false.
+
+M.9  Null-deref inside the log call that reports a null message
+     EmoteManager.cs:1783
+
+     The "message was null" warning formats source.Name / target.Name
+     unconditionally, two lines BEFORE the `source != null ? ... : ""` guards
+     that were clearly intended to protect it.
+
+     FAILURE: a weenie with a Tell/DirectBroadcast emote whose Message column
+     is NULL, fired from OnGeneration/HeartBeat (targetObject == null), throws
+     NullReferenceException inside the logging call itself - so the diagnostic
+     intended to report the problem becomes the crash.
+
+     FIX: use ?.Name in the log string.
+
+M.10 Empty emote action list latches IsBusy permanently
+     EmoteManager.cs:1603-1605
+
+     IsBusy = true is set, then emoteSet.PropertiesEmoteAction.ElementAt(emoteIdx)
+     runs with no bounds check.
+
+     FAILURE: a PropertiesEmote row with zero action rows throws
+     ArgumentOutOfRangeException with IsBusy latched true and Nested already
+     incremented. That world object can never run another emote for the
+     remainder of the server's uptime.
+
+     FIX: bail out - restoring Nested and IsBusy - when
+     PropertiesEmoteAction.Count == 0.
+
+M.11 GUID exhaustion check can be skipped, allocating outside the player range
+     GuidManager.cs:80, 240
+
+     Exhaustion is tested with `current == max`, but the constructor sets
+     `current = dbMax + 1`, which can be `max + 1`.
+
+     FAILURE: if a shard's highest player GUID ever equals ObjectGuid.PlayerMax,
+     current skips past the sentinel and allocation silently continues OUTSIDE
+     the player range (0x60000000+), where ObjectGuid.IsPlayer() returns false.
+     Players allocated there would be misclassified throughout the codebase.
+
+     FIX: use `>=`. Related: Current()/Min()/Max() at lines 100-113 and 261-274
+     read `current` outside the lock.
+
+
+SECTION C - LOW SEVERITY
+================================================================================
+
+M.12 Struct-vs-string comparison is always false
+     PropertyManager.cs:38
+
+     GetString("content_folder").Equals("/ace/Content") compares a
+     Property<string> STRUCT to a string via ValueType.Equals(object), which is
+     always false - the `.Item` accessor is missing.
+
+     FAILURE: inside a container the branch always fires, marking the entry
+     Modified and re-writing it to the shard DB on every startup.
+
+     FIX: .Item.Equals(...).
+
+M.13 ServerPerformanceMonitor.Reset() is a guaranteed no-op
+     ServerPerformanceMonitor.cs (Start/Reset)
+
+     Start() calls Reset() BEFORE setting IsRunning = true, and Reset() early-
+     returns on !IsRunning. A Stop()/Start() cycle therefore carries stale
+     statistics forward instead of clearing them.
+
+M.14 "Shortest" performance column is permanently zero
+     ACE.Common/Performance/TimedEventHistory.cs:23, 39
+
+     ShortestEvent is initialised to 0 and then tested with
+     `LastEvent < ShortestEvent`, which can never be true. The Shortest column
+     in /serverperformance always reads 0. (Filed here rather than under
+     ACE.Common because it was found tracing the Managers instrumentation; see
+     also bugs-common.txt.)
+
+
+SECTION D - INVESTIGATED, NOT A BUG
+================================================================================
+Recorded so a later pass does not re-investigate.
+
+D.1  PlayerHouse.RentDue is captured once in the constructor, so
+     `playerHouse.House = house` in ProcessRent/PayRent does NOT break
+     SortedSet ordering. The tiebreak on House.Guid also prevents
+     duplicate-collapse.
+D.2  PlayerManager.Tick:124 `first.Session.logOffRequestTime` - Player.Session
+     is { get; } and always assigned in the constructor, so there is no NRE
+     despite the defensive `?.` at line 140.
+D.3  WorldObject.cs:894 guards RecycleDynamicGuid with Guid.IsDynamic(), so
+     static and player GUIDs cannot leak into the dynamic pool.
+D.4  LandblockManager.ProcessPendingLandblockGroupAdditions:231-237 removes
+     merged groups highest-index-first, so the surviving index [0] stays valid.
+     No index skew.
+D.5  InboundMessageManager.DefineMessageHandlers:60 overwrites duplicate
+     opcodes, but a scan found no duplicate [GameMessage]/[GameAction] opcode
+     declarations to collide.
+D.6  ServerPerformanceMonitor.RestartCumulativeEvents / RegisterCumulativeEvents
+     touch cumulativeSeconds without the lock used by AddToCumulativeEvent, but
+     both are called outside the parallel landblock section in UpdateGameWorld.
+D.7  EventManager.IsEventStarted:122 `return !StopEvent(...)` looks inverted but
+     is correct - a successful stop means "not started".
+
+
+SECTION E - SUGGESTED PRIORITY
+================================================================================
+  1. M.2  Account null-check - one orphaned character blocks character creation
+          server-wide, and the fix is five null guards.
+  2. M.1  PK status inversion - silently corrupts persisted player state on a
+          shard-type change, and is invisible until players log back in.
+  3. M.5  Emote mutual recursion - uncatchable process kill reachable from
+          ordinary world content.
+  4. M.3, M.4 - the HouseManager NRE and the raced callback dictionary, both of
+          which land on the unprotected world-tick thread.
+  5. M.8, M.11 - state-integrity fixes (leaked player, GUID range escape).
+  6. Remaining medium and low items.
+
+================================================================================
+END OF REPORT
+================================================================================

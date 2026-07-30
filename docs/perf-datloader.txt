@@ -1,0 +1,256 @@
+================================================================================
+ACE.DatLoader - PERFORMANCE REPORT
+================================================================================
+Scope   : Source/ACE.DatLoader  (198 files, ~9,500 lines)
+Date    : 2026-07-25
+Companion document: bugs-datloader.txt (bugs / robustness)
+
+UNPROFILED. Everything below is reasoned from reading the code and tracing call
+paths, not from measurement. Validate before optimising.
+
+CALL-FREQUENCY MODEL (established by reading the call paths)
+  - Directory tree walk + eager table reads : startup only
+  - DatDatabase.ReadFromDat<T>              : FileCache hit in steady state
+  - Block-chain reads (DatReader)           : every cache MISS - i.e. the whole
+                                              startup walk, every landblock
+                                              load, and every DDD file
+  - Landblock load                          : during play, from parallel
+                                              landblock worker threads
+  - DxtUtil / texture export                : developer console commands only
+Findings are grouped by which of these they sit on.
+
+ALSO FILED AS CORRECTNESS DEFECTS (full detail in bugs-datloader.txt)
+  static streamMutex serialises all dat I/O across four separate FileStreams
+  DatDatabase.Iteration performs file I/O on every property access
+  FileCache is unbounded (~800k entries for cell.dat)
+================================================================================
+
+
+SECTION A - STARTUP COST
+================================================================================
+
+P.1  DDD patching reads AND recompresses every file in every dat
+     ACE.Server/Managers/DDDManager.cs:68-86
+
+     Gated by DDD.EnableDATPatching (default false) - but when enabled this is
+     essentially the entire startup cost. For each of ~900,000 files (cell.dat
+     ~800k, plus portal and language) it performs GetReaderForFile (a full
+     block-chain read with a byte[] allocation) and then Compress() at
+     CompressionLevel.SmallestSize - the slowest zlib setting - through two
+     MemoryStreams. PrependUncompressedFileSize adds a third copy via LINQ
+     Concat().ToArray().
+
+     The Parallel.ForEach around it gains nothing, because every read
+     serialises on the static streamMutex.
+
+     FIX: compute sizes and compressed blobs lazily on first DDD request (the
+     ConcurrentDictionary caches already exist); use Optimal or Fastest; take
+     buffers from ArrayPool; replace Concat with Buffer.BlockCopy.
+
+P.2  Block walk costs 2 stream calls and a byte[4] allocation PER SECTOR,
+     with 4x read amplification
+     ACE.DatLoader/DatReader.cs:26-68
+
+     Runs on every FileCache miss. Per sector: GetNextAddress allocates a fresh
+     byte[4] and does a 4-byte Read, then Read(blockSize-4), then Seek. The
+     Seek invalidates FileStream's 4 KB internal buffer, so each ~1 KB sector
+     costs a 4 KB pread from the OS.
+
+     For cell.dat's ~13,000 directory nodes at startup, plus every landblock
+     load during play, this is the hottest I/O path in the component.
+
+     FIX: issue one Read of the full blockSize into a pooled buffer and take
+     the next address from its first 4 bytes. Better still, switch to
+     RandomAccess.Read(SafeFileHandle, span, offset), which removes the shared
+     seek position entirely - that is also the cleanest way to delete
+     streamMutex and make parallel landblock loading genuinely parallel.
+
+P.3  The directory tree is walked twice, retained forever, and AllFiles is not
+     pre-sized
+     DatDatabase.cs:47-57, DatDirectory.cs:26-50
+
+     RootDirectory.Read() recurses the entire B-tree building DatDirectory and
+     DatDirectoryHeader objects; AddFilesToList then walks the same tree again.
+     AllFiles starts at default capacity, so populating 800,000 entries costs
+     roughly 20 grow/rehash cycles and ~1.6M re-inserts.
+
+     RootDirectory is never read after the constructor (grep-confirmed), yet
+     ~13,000 nodes - each holding a 248-byte Branches[0x3E] array - stay alive
+     for the life of the process.
+
+     FIX: populate AllFiles during Read (single pass), construct it with an
+     explicit capacity, and release the tree afterwards.
+
+
+SECTION B - LANDBLOCK-LOAD PATH (steady state, during play)
+================================================================================
+
+P.4  Derived physics geometry cached at the wrong granularity
+     ACE.Server/Physics/Common/EnvCell.cs:70-74 -> Common/CellStruct.cs:25-47
+
+     FileCache correctly caches the parsed Environment dat file, but every
+     physics EnvCell rebuilds a full CellStruct: new dictionaries plus
+     PolygonCache.Get(...), which ALWAYS allocates new Polygon(p, v) and only
+     dedupes when PolygonCache.Enabled is true. Both PolygonCache.Enabled and
+     BSPCache.Enabled are hardcoded false
+     (Physics/Entity/PolygonCache.cs:10, BSPCache.cs:10).
+
+     Dungeon cells share a small set of prefab environments, so the same
+     geometry is rebuilt hundreds of times per dungeon - and again after every
+     landblock unload/reload cycle.
+
+     FIX: a ConcurrentDictionary<(uint envId, ushort cellStructId), CellStruct>.
+     Alternatively, enable the two existing caches - though they are disabled,
+     so first confirm why.
+
+     *** ASSUMPTION FLAGGED - VERIFY BEFORE IMPLEMENTING ***
+     An earlier version of this entry asserted "the geometry is immutable and
+     safely shareable". That is NOT verified, and this doc set contains a
+     counterexample.
+
+     CellStruct (Physics/Common/CellStruct.cs:13-16) exposes ALL-PUBLIC MUTABLE
+     fields - List<Vector3> VertexArray, Dictionary<ushort, Polygon> Polygons
+     and PhysicsPolygons, List<Polygon> Portals - with no readonly and no
+     encapsulation. Nothing structurally prevents a consumer mutating a shared
+     instance.
+
+     And it demonstrably happens elsewhere in this codebase: bugs-datloader.txt
+     D.6 records Texture.GetBitmap MUTATING THE CACHED Palette obtained from
+     FileCache (`pal.Colors[entry.Key] = entry.Value;`), permanently poisoning
+     it for every later reader. So "dat-derived objects are immutable" is a
+     known-false generalisation here.
+
+     BEFORE SHARING CellStruct INSTANCES: audit every consumer of
+     VertexArray, Polygons, PhysicsPolygons and Portals for writes. If any
+     mutates, sharing converts a per-cell allocation into cross-cell state
+     corruption - a strictly worse outcome than the allocation being removed.
+
+P.5  First entry into a dungeon transitively loads the whole dungeon while
+     holding two locks
+     ACE.Server/Physics/Common/LScape.cs:145-164
+
+     LScape calls envCell.PostInit() INSIDE landblock.LandCellMutex. PostInit
+     -> build_visible_cells (EnvCell.cs:115-126) -> LScape.get_landcell for
+     every visible cell, recursively, each performing a cell.dat read behind
+     the global streamMutex.
+
+     One player stepping into a dungeon therefore stalls every other landblock
+     worker thread for the duration.
+
+     FIX: build visible cells outside the lock, or lazily on first use.
+
+P.6  Unpack helpers never pre-size collections despite knowing the count
+     ACE.DatLoader/UnpackableExtensions.cs (all ~20 methods)
+
+     Every method reads totalObjects and then Add()s into a default-capacity
+     collection - GfxObj.Surfaces/Polygons, CVertexArray.Vertices,
+     Animation.PartFrames, CellStruct.Polygons, CellLandblock.Terrain/Height,
+     and so on. For a large GfxObj or Environment that is ~log2(n)
+     reallocations plus copies plus garbage, directly on the landblock-load
+     path.
+
+     FIX: one central change - set `value.Capacity = (int)totalObjects` for
+     List<T> in the shared helpers. Note Dictionary.EnsureCapacity is
+     unavailable because ACE.DatLoader.csproj targets netstandard2.0;
+     retargeting to the server's TFM would enable it, along with better BCL
+     intrinsics generally. (The same helper file is the single highest-leverage
+     place for the validation fix in bugs-datloader.txt Section E - worth
+     doing both in one pass.)
+
+P.7  Missing-file misses are never cached and log expensively
+     DatDatabase.cs:105-108
+
+     GetReaderForFile's miss path is not negatively cached, so a repeatedly
+     requested absent id re-walks AllFiles and allocates a format string plus
+     an Enum.GetName on every call.
+
+     FIX: cache negative results, or log once per id.
+
+
+SECTION C - PARSER ALLOCATION
+================================================================================
+
+P.8  ReadUnicodeString is O(n^2) per string
+     BinaryReaderExtensions.cs:98-107
+
+     `thestring += Convert.ToChar(...)` allocates a new string per character.
+     Used by StringTableData (VarNames/Vars/Strings - thousands of strings,
+     some long) and NameFilterLanguageData. On the startup path for
+     CharacterTitles and any StringTable read.
+
+     FIX: Encoding.Unicode.GetString(reader.ReadBytes(len * 2)), or fill a
+     char[] and construct once.
+
+     (This is also listed as C.1 in bugs-datloader.txt, where the concern is
+     the unvalidated length turning the same code into an effective hang.)
+
+P.9  Texture decode allocates a List<int> PER PIXEL - and mutates the cache
+     FileTypes/Texture.cs:120-400
+
+     get565RGB allocates a List<int> for every pixel, and GetBitmap uses
+     SetPixel per pixel. COLD - reachable only from /exporttextures-style
+     developer commands, so the allocation itself is not worth fixing urgently.
+
+     *** CORRECTNESS BUG FOUND HERE, NOT A PERFORMANCE ISSUE ***
+     The INDEX16/P8 branch mutates the CACHED Palette obtained from FileCache:
+
+         pal.Colors[entry.Key] = entry.Value;
+
+     applying CustomPaletteColors directly to the shared cached instance. This
+     permanently poisons that palette for every subsequent reader in the
+     process. Fix: copy the palette before applying CustomPaletteColors.
+     This belongs with the findings in bugs-datloader.txt - it is recorded
+     there as well.
+
+P.10 ExtractCategorizedPortalContents does a syscall per file
+     DatDatabase.cs:113-133
+
+     Export tooling only, but it calls GetFileType twice per entry, performs a
+     Directory.Exists syscall per file (800,000 syscalls for cell.dat), and
+     builds a ToString() plus Path.Combine per file.
+
+     FIX: hoist created folders into a HashSet; call GetFileType once.
+
+
+SECTION D - LOOKS EXPENSIVE BUT IS COLD OR DEAD
+================================================================================
+Recorded so a later pass does not spend effort here.
+
+D.1  DxtUtil (all 442 lines) - reachable only via Texture.GetBitmap, i.e.
+     export commands. Not on any server path.
+D.2  Physics/Util/Environment.cs (LoadVertices over every polygon, mutating
+     cached dat objects) - the class is never constructed anywhere. Dead code.
+D.3  ImgTex / TexMerge / TerrainTex / LandSurf terrain texture merging -
+     client-side concerns; LandSurf.Instance is never assigned server-side.
+D.4  ObjCell.Get (Physics/Common/ObjCell.cs:201) allocates a new ObjCell and
+     discards it - but the method has no callers.
+D.5  PortalDatDatabase constructor's 14 eager table reads, and
+     DatManager.Initialize's four Iteration reads - small files, once each.
+D.6  DatFile.GetFileType - the reflection/LINQ implementation is commented out;
+     the live version is a switch. Fine as-is.
+D.7  The CellLandblock / EnvCell / LandblockInfo parsers themselves - small and
+     cached. Their real cost is the block read (P.2), not the parse.
+
+
+SECTION E - SUGGESTED PRIORITY
+================================================================================
+  1. P.2  Rewrite the block walk (single read per sector, pooled buffer,
+          ideally RandomAccess). Biggest single win, and it unblocks removing
+          streamMutex.
+  2. P.4  Cache CellStruct by (envId, cellStructId). Removes repeated geometry
+          rebuilds during dungeon play - the main steady-state cost.
+  3. P.6  Pre-size collections in UnpackableExtensions. One file, broad effect;
+          bundle with the validation fix from bugs-datloader.txt Section E.
+  4. P.3  Single-pass directory build, pre-sized AllFiles, release the tree.
+          Cuts startup time and ~13k retained objects.
+  5. P.5  Move visible-cell construction out of the lock.
+  6. P.1  Only if DDD patching is enabled on your shard - then it is item 1.
+  7. P.8, P.7, P.10 as cleanup.
+
+Note the strong overlap with bugs-datloader.txt: streamMutex, the block-walk
+rewrite and the UnpackableExtensions changes each fix a correctness problem and
+a performance problem simultaneously. Sequence them together.
+
+================================================================================
+END OF REPORT
+================================================================================

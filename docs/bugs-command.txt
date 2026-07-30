@@ -1,0 +1,315 @@
+================================================================================
+ACE.Server/Command - BUG REPORT
+================================================================================
+Scope   : Source/ACE.Server/Command  (27 files, ~20,400 lines)
+          CommandManager, CommandHandlerAttribute/Info, Handlers/ (Admin,
+          AdminShard, AdminStat, Developer, DeveloperContent, DeveloperLoot,
+          DeveloperDatabase, Player, Sentinel, Account, Debug, Help,
+          CharacterTransfer)
+Date    : 2026-07-25
+Companion document: perf-command.txt
+
+BRANCH SCOPE  (added 2026-07-27)
+  Command/Handlers/CharacterTransferCommands.cs EXISTS ONLY ON BRANCHES
+  `combined` AND `RetailCharacterImport`. It is NOT present on `master` or
+  `Claude1`, where the /restoreretailcharacter command does not exist at all.
+
+  Every finding below that cites CharacterTransferCommands.cs - including X.1,
+  the privilege escalation - therefore applies to `combined` and
+  `RetailCharacterImport` ONLY.
+
+  If you are on `master` and the file is missing, THAT IS NOT A FIX; the code
+  was simply never merged there. Conversely, do not assume `master` is safe
+  because the file is absent - the vulnerability arrives with the branch.
+
+  Re-verified 2026-07-27 on `combined` (dbe6c6da): line 28 still reads
+  AccessLevel.Player. Unchanged.
+
+VERIFICATION
+  VERIFIED DIRECTLY : X.1 (the privilege escalation) - confirmed end to end
+  TRACED BUT NOT RE-VERIFIED : all others. Spot-check before fixing.
+
+FINDINGS FROM THE INITIAL SWEEP (folded in)
+  These are two further instances of the X.5 pattern below - a parameter-count
+  guard that does not match the highest parameters[] index actually read.
+
+  X.0a  AdminCommands.cs:1257-1269 - `@adminhouse dump hid`
+        The guard `parameters.Length > 1` only guarantees 2 parameters, the
+        `if (parameters.Length < 2)` at line 1259 is dead code, and line 1265
+        unconditionally reads parameters[2]. Typing `@adminhouse dump hid`
+        with 2 params throws IndexOutOfRangeException. It is caught by
+        GameActionTalk.cs's outer try/catch and only logged, so the admin sees
+        a silent failure with no usage message.
+
+  X.0b  AdminCommands.cs:3788-3864 - `@qst bits on/off/show`
+        For `bits on` and `bits off` the guard is `parameters.Length < 3`
+        (lines 3790, 3824) but the code reads parameters[3] (3803, 3837) -
+        it needs < 4. For `bits show` the guard is `< 2` (3858) but it reads
+        parameters[2] (3864) - it needs < 3.
+        The sibling bestow/erase/stamp subcommands in the same method
+        (3689-3773) get this right, confirming these are copy-paste slips
+        rather than intent.
+
+*** THIS REPORT CONTAINS THE MOST SEVERE FINDING OF THE ENTIRE AUDIT ***
+Read Section A first.
+================================================================================
+
+
+SECTION A - CRITICAL: PRIVILEGE ESCALATION
+================================================================================
+
+X.1  Any player can grant themselves full server admin
+     Command/Handlers/CharacterTransferCommands.cs:28 and :151-156
+     [VERIFIED DIRECTLY - every link in the chain confirmed by reading]
+
+     THE CHAIN:
+
+     (1) The command is registered at AccessLevel.Player:
+
+           [CommandHandler("restoreretailcharacter", AccessLevel.Player,
+                           CommandHandlerFlag.RequiresWorld, 3, ...)]
+
+         Any logged-in player may invoke it. Confirmed at line 28.
+
+     (2) It copies every PropertyBool from an arbitrary retail biota,
+         filtering exactly ONE property:
+
+           foreach (var property in retailBiota.BiotaPropertiesBool)
+           {
+               if (property.Type == (int)PropertyBool.Attackable)
+                   continue;
+               player.SetProperty((PropertyBool)property.Type, property.Value);
+           }
+
+         Confirmed at lines 151-156. IsAdmin, IsArch, IsSentinel and
+         IsAdvocate are NOT filtered.
+
+     (3) Those exact PropertyBools back the permission properties:
+
+           WorldObjects/Player_Properties.cs:36-69
+             IsAdmin    => GetProperty(PropertyBool.IsAdmin) ?? false
+             IsSentinel => GetProperty(PropertyBool.IsSentinel) ?? false
+             IsArch     => GetProperty(PropertyBool.IsArch) ?? false
+             IsAdvocate => GetProperty(PropertyBool.IsAdvocate) ?? false
+
+     (4) Command authorisation reads them directly:
+
+           Command/CommandManager.cs:292-303
+             bool isAdmin = session.Player.IsAdmin;
+             ...
+             || commandInfo.Attribute.Access == AccessLevel.Admin
+                && !(isAdmin || isSUDOauthorized)
+                    return CommandHandlerResponse.NotAuthorized;
+
+     EXPLOIT: a player types
+
+         /restoreretailcharacter dt "+SomeRetailGM" Mychar
+
+     naming any retail character on one of the nine hard-coded shards whose
+     biota carries IsAdmin. They log in as the restored character and now hold
+     /createitem, /set-accountaccess, /delete and every other admin command.
+
+     Nothing ever clears these flags - Player.cs:152-181 only ever sets them
+     true. AdvocateQuest plus IsAdvocate alone self-elevates the session at
+     Player.cs:175-178.
+
+     FIX (do all three):
+       a. Whitelist the imported property types. Exclude every permission bool
+          and AdvocateQuest rather than blacklisting a single property.
+       b. Raise the command to AccessLevel.Admin.
+       c. Gate it behind a PropertyManager bool, disabled by default.
+
+X.2  Same command: no ownership proof, no enable gate, no rate limit
+     CharacterTransferCommands.cs:28-47, 269-331
+
+     Independently of X.1, any player can name ANY retail character on nine
+     hard-coded shards and receive its full inventory, wielded gear, levels,
+     skills and titles.
+
+         /restoreretailcharacter ff SomeFamousPlayer Mule
+
+     FIX: require an ownership token or admin approval, and gate behind a
+     server property.
+
+X.3  Same command mutates the SHARED CACHED weenie
+     CharacterTransferCommands.cs:76
+
+         human.PropertiesCreateList = null;
+
+     `human` is the object returned by
+     DatabaseManager.World.GetCachedWeenie("human") - the shared cache entry.
+
+     FAILURE: one invocation by any player strips the starter create-list for
+     EVERY character created server-wide until the cache is reloaded. It also
+     happens on the DB callback thread.
+
+     FIX: clone the weenie before mutating, or skip the create-list at the
+     character-creation call site.
+
+
+SECTION B - ACCESS LEVELS TOO LOW FOR EFFECT
+================================================================================
+
+X.4  Commands whose access level does not match their power
+     AdminStatCommands.cs:28   `allstats` is Advocate, but directly calls
+                               DeveloperDatabaseCommands.HandleDatabaseQueueInfo
+                               (declared Developer at
+                               DeveloperDatabaseCommands.cs:24) and dumps host
+                               and GC internals.
+     AdminStatCommands.cs:142  `serverperformance` is Advocate but can
+                               Start/Stop/Reset the server-wide performance
+                               monitor.
+     AdminCommands.cs:2938,3102 @god / @ungod are Sentinel - a volunteer
+                               moderator becomes invincible with max skills.
+
+     Advocate is reachable in-game (AdvocateFane.cs:131), so these are not
+     merely staff-only.
+
+     FIX: raise to Developer or Admin as appropriate.
+
+
+SECTION C - CRASHES FROM PLAUSIBLE INPUT
+================================================================================
+
+X.5  Parameter-count guards that do not match the highest index read
+     DeveloperLootCommands.cs:30   `testlootgen` declares parameterCount:1 but
+                                   reads parameters[1] with no length check.
+                                   Its sibling testlootgencorpse (line 103) HAS
+                                   the `parameters.Length < 2` guard -
+                                   confirmed copy-paste slip.
+                                   Trigger: `testlootgen 100`.
+     DeveloperCommands.cs:226-241  `echo` declares no parameterCount and
+                                   dereferences parameters[0] INSIDE ITS OWN
+                                   CATCH - so `@echo` with no args throws at
+                                   parameters[1] and the catch handler throws
+                                   again at line 241. Sibling playsound
+                                   (line 248) declares parameterCount:1.
+     AdminCommands.cs:3935-3937    `@qst fellow list <filter>` reads the filter
+                                   from parameters[1], which is literally
+                                   "list", and guards Length >= 2 instead of
+                                   >= 3. The non-fellow sibling at 3656-3658 is
+                                   correct. Result: filters all quests by
+                                   "list" and always reports "No quests found".
+
+X.6  Missing return after an error path leads to a null deref on the DB thread
+     AdminCommands.cs:4140-4145 (@rename, Envoy)
+
+     After reporting "cannot be found" the method does not return, so
+     DatabaseManager.Shard.RenameCharacter(null, ...) throws NRE on the
+     database thread.
+
+     REACHABLE because line 4134 GetCharacterStubByName(oldName) matches
+     exactly, while PlayerManager.GetOfflinePlayer (PlayerManager.cs:244) also
+     matches "+"+name - so `@rename Admin Guy, Bob` for a character stored as
+     "+Admin Guy" nulls both. Also line 4100 newName.First() throws on
+     `@rename Old Name,`.
+
+     FIX: return on null, null-check the stub, validate newName non-empty.
+
+X.7  Empty-string parameters reach handlers that index the first character
+     DeveloperCommands.cs:929
+
+     `paramValue[0]` runs before any emptiness check.
+     CommandManager.ParseCommand (CommandManager.cs:212-238) produces
+     empty-string parameters from `""`, so `@setvital hp ""` throws
+     IndexOutOfRangeException. This quoting trick reaches EVERY handler that
+     indexes a parameter's first character.
+
+     FIX: string.IsNullOrEmpty check first (TryParse already follows).
+
+X.8  Unvalidated numeric parsing
+     DeveloperCommands.cs:1584  float.Parse(parameters[0]) - `@teledist abc`
+                                throws, and `@teledist NaN` PARSES and
+                                teleports the player to a NaN position,
+                                corrupting physics state.
+                                AdminCommands.LastSpawnPos is also null-deref'd
+                                on a fresh server.
+     DeveloperCommands.cs:395   Convert.ToInt16
+     AdminCommands.cs:4399,4440,4467  bool/long/double.Parse (masked by a
+                                catch-all)
+     AccountCommands.cs:78      `accountget nosuchuser` NREs on a null account
+
+     FIX: TryParse throughout, plus float.IsFinite on any position value.
+
+
+SECTION D - THREADING
+================================================================================
+
+X.9  Shared state mutated from database callback threads, off the world tick
+     AdminCommands.cs:3591-3608 (@morph) calls PlayerManager.AddOfflinePlayer,
+       session.Characters.Add (a plain List, read by the world thread) and
+       session.LogOffPlayer() from the callback.
+     AdminCommands.cs:2947 (@god -> DoGodMode) rewrites attributes and vitals
+       and sends network messages from the save callback.
+     CharacterTransferCommands.cs:62-404 performs the ENTIRE import - GUID
+       allocation, TryEquipObject - on the callback thread. The code carries a
+       `// todo` admitting this.
+
+     FIX: marshal the callback body onto an ActionChain or world-thread
+     enqueue.
+
+
+SECTION E - LOW SEVERITY / HYGIENE
+================================================================================
+
+X.10 SentinelCommands.cs:486 and :497 both register "deaf".
+     CommandManager.Initialize (line 112) silently overwrites, so the 1-arg
+     form is dead code.
+X.11 Off-by-one dead guards masked by parameterCount:
+     AccountCommands.cs:145 (`< 1`, needs `< 2`), :187/193 (`<= 0` / `< 1`
+     duplicated). AdminCommands.cs:104-106 (@delete) prints "please identify
+     object" without returning.
+X.12 HelpCommands.cs:43, 56, 105-108 compare the [Flags] enum
+     CommandHandlerFlag with == and !=, so any future
+     ConsoleInvoke|RequiresWorld command would be exposed in
+     @acehelp/@acecommands to in-game users.
+X.13 PlayerCommands.cs:148 leaves a stray Console.WriteLine("OK") that any
+     multi-house player can spam into the server console.
+
+
+SECTION F - INVESTIGATED, NOT A BUG
+================================================================================
+A large number of handlers were checked and found correct. Recorded so a later
+pass does not repeat the work.
+
+  @teleloc (AdminCommands.cs:933-949 - the `i > 2 && Length < 8` break
+  correctly covers parameters[7]); @qst bestow/erase/stamp and the fellow
+  bestow/erase/stamp guards (3690-3760, 3968-4034); @adminhouse
+  dump name|account|dump_all|rent|payrent; @faction, @contract, @createinst,
+  @ci, @cisalvage, @world, @serverperformance argument handling; @boot, @ban,
+  @unban; getspellformula (`parameters?.Length != 2` guard); wave-export and
+  image-export; @home, @save, @crack, MoveTo, listplayers, databaseperftest
+  (all `parameters?.Length` guarded); the sudo path in
+  CommandManager.GetCommandHandler (parameters cannot be empty there);
+  testlootgencorpse; and PlayerCommands config, objsend, castmeter, reportbug,
+  pop, house-select (guards match, TryParse used).
+
+
+SECTION G - SUGGESTED PRIORITY
+================================================================================
+  1. X.1  FIX THIS FIRST, AHEAD OF EVERYTHING ELSE IN THE ENTIRE AUDIT.
+          It is a verified privilege escalation reachable by any authenticated
+          player, and it grants complete control of the server. If this
+          codebase is running anywhere with untrusted players, treat it as an
+          active incident: disable or remove the command immediately, then
+          audit existing characters for unexpected IsAdmin/IsArch/IsSentinel/
+          IsAdvocate properties, since the flags persist and nothing clears
+          them.
+  2. X.2, X.3 - the same command's other two defects. Fixing X.1 properly means
+          addressing all three together.
+  3. X.4  Access levels that do not match command power.
+  4. X.9  Callback-thread mutation of world state.
+  5. X.5, X.6, X.7, X.8 - the crash cluster. X.7 is notable because the
+          empty-string quoting trick generalises across many handlers, so a
+          sweep is better than individual fixes.
+  6. X.10-X.13 as hygiene.
+
+NOTE ON METHOD: X.5 confirms the pattern already seen across this audit -
+where one branch of a method guards correctly and an adjacent branch does not,
+it is a copy-paste slip rather than intent. A systematic sweep comparing every
+handler's parameterCount and length guards against the highest parameters[]
+index it actually reads would likely find several more.
+
+================================================================================
+END OF REPORT
+================================================================================

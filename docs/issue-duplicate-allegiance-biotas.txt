@@ -1,0 +1,299 @@
+================================================================================
+ROOT CAUSE ANALYSIS
+Duplicate allegiance biotas saved to the database on allegiance creation
+================================================================================
+Reported symptom : "Sometimes when a new allegiance is created, duplicate
+                    allegiance weenies are saved to the database."
+Date             : 2026-07-25
+Primary file     : Source/ACE.Server/Managers/AllegianceManager.cs
+Related          : bugs-managers.txt, bugs-database.txt, perf-worldobjects.txt
+
+STATUS: ROOT CAUSE IDENTIFIED. The mechanism is confirmed by direct reading of
+every link in the chain. This is a genuine check-then-act race, and - unlike a
+classic data race - IT DOES NOT REQUIRE TWO THREADS.
+
+--------------------------------------------------------------------------------
+VERIFICATION STATUS
+--------------------------------------------------------------------------------
+Unusually strong for this doc set, because the symptom was OBSERVED IN
+PRODUCTION rather than hypothesised. Every load-bearing claim below was read
+directly:
+
+  VERIFIED  AllegianceManager.GetAllegiance structure and ordering (lines 48-93)
+  VERIFIED  The reads use DatabaseManager.Shard.BaseDatabase (lines 61-62)
+  VERIFIED  SaveBiotaToDatabase -> DatabaseManager.Shard.SaveBiota
+            (Entity/OfflinePlayer.cs:57-64)
+  VERIFIED  SerializedShardDatabase.SaveBiota ENQUEUES onto a
+            BlockingCollection<Task> drained by a separate worker thread
+            (SerializedShardDatabase.cs:24, 52, 119-126)
+  VERIFIED  OnSwearAllegiance calls RemoveCache BEFORE GetAllegiance (line 324+)
+  VERIFIED  RemoveCache deletes the Players entries (lines 171-175)
+  VERIFIED  AddPlayers is what repopulates them (lines 154-166)
+  VERIFIED  The full caller list for GetAllegiance / LoadPlayer
+
+  CARRIED OVER (traced in an earlier audit, not re-verified here):
+            GetAllegianceID returns 0 rather than null when no row matches
+            (bugs-database.txt D.0e)
+            @fix-allegiances is CommandHandlerFlag.ConsoleInvoke and therefore
+            runs on the console thread (bugs-managers.txt M.0b)
+
+
+--------------------------------------------------------------------------------
+1. THE MECHANISM
+--------------------------------------------------------------------------------
+AllegianceManager.GetAllegiance() (AllegianceManager.cs:48-93) is an unguarded
+check-then-act:
+
+    if (Players.ContainsKey(monarch.Guid))                      // 1. cache check
+        return Players[monarch.Guid].Allegiance;
+
+    var allegianceID = DatabaseManager.Shard.BaseDatabase       // 2. SYNCHRONOUS read
+                         .GetAllegianceID(monarch.Guid.Full);
+    var biota = allegianceID != null
+                  ? DatabaseManager.Shard.BaseDatabase          // 3. SYNCHRONOUS read
+                      .GetBiota(allegianceID.Value)
+                  : null;
+    ...
+    if (biota == null)
+    {
+        allegiance = WorldObjectFactory
+            .CreateNewWorldObject("allegiance") as Allegiance;  // 4. NEW GUID ALLOCATED
+        allegiance.MonarchId = monarch.Guid.Full;
+        allegiance.Init(monarch.Guid);
+        allegiance.SaveBiotaToDatabase();                       // 5. QUEUED write
+    }
+
+    AddPlayers(allegiance);                                     // 6. cache populate
+    Allegiances[allegiance.Guid] = allegiance;                  // 7. cache populate
+
+THE ROOT CAUSE IS AN ORDERING ASYMMETRY BETWEEN THE CHECK AND THE WRITE.
+
+  The WRITE (step 5) goes through SerializedShardDatabase:
+
+      // Entity/OfflinePlayer.cs:57-64
+      public void SaveBiotaToDatabase(bool enqueueSave = true)
+      {
+          ...
+          if (enqueueSave)
+              DatabaseManager.Shard.SaveBiota(Biota, BiotaDatabaseLock, null);
+      }
+
+      // SerializedShardDatabase.cs:119-126
+      public void SaveBiota(...)
+      {
+          _queue.Add(new Task(() => { ... BaseDatabase.SaveBiota(...); ... }));
+      }
+
+    _queue is a BlockingCollection<Task> (line 24) drained by ONE worker thread
+    (line 52, `Task t = _queue.Take();`). SaveBiota RETURNS IMMEDIATELY. The row
+    does not exist in the database yet.
+
+  The CHECK (steps 2-3) goes through DatabaseManager.Shard.BASEDATABASE, which
+  BYPASSES that queue entirely and executes against MySQL synchronously on the
+  calling thread.
+
+  So the check can - and intermittently does - run BEFORE the write it is
+  supposed to observe.
+
+THE FAILING SEQUENCE:
+
+    t0  Call A: cache miss -> GetAllegianceID -> no row -> create allegiance
+        with GUID X -> ENQUEUE save(X) -> populate cache
+    t1  Cache is cleared for this monarch (see section 2)
+    t2  Call B: cache miss -> GetAllegianceID -> STILL NO ROW, because save(X)
+        is sitting in the queue -> create allegiance with GUID Y
+        -> ENQUEUE save(Y)
+    t3  DB worker drains the queue: writes X, then writes Y
+
+    Result: TWO allegiance biotas for one monarch.
+
+This is why the symptom is intermittent. The window is exactly the depth of the
+serialized DB queue at that moment - normally microseconds, but arbitrarily
+long under save load, during a landblock save cycle, or behind a slow query.
+That matches "sometimes" precisely.
+
+
+--------------------------------------------------------------------------------
+2. WHY THE CACHE DOES NOT PROTECT YOU
+--------------------------------------------------------------------------------
+The Players cache would ordinarily close the window at step 1. But the swear
+path DELIBERATELY CLEARS IT FIRST:
+
+    // AllegianceManager.cs:324-336, OnSwearAllegiance
+    if (vassal.Allegiance != null)
+        RemoveCache(vassal.Allegiance);      // <-- Players.Remove per member
+    var allegiance = GetAllegiance(vassal);  // <-- guaranteed cache miss
+
+    // AllegianceManager.cs:171-175
+    public static void RemoveCache(Allegiance allegiance)
+    {
+        foreach (var member in allegiance.Members)
+            Players.Remove(member.Key);
+    }
+
+OnBreakAllegiance does the same. So the two operations that CREATE OR RESHAPE an
+allegiance are exactly the operations that guarantee the cache-miss path is
+taken. The protection is removed at the precise moment it is needed.
+
+A SECOND, INDEPENDENT CACHE HOLE: line 75
+
+    if (allegiance.TotalMembers == 1)
+        return null;                          // returns BEFORE caching
+
+A one-member allegiance is never cached, so every subsequent call for that
+monarch re-runs both synchronous DB reads. This does not itself create a
+duplicate (the early return precedes the create block), but it removes any
+memoisation that would otherwise narrow the window, and it is a standing
+performance cost. Also filed as perf-worldobjects.txt Q.19.
+
+
+--------------------------------------------------------------------------------
+3. TRIGGER VECTORS
+--------------------------------------------------------------------------------
+VECTOR 1 - QUEUE LATENCY, SINGLE THREAD (the likely production cause)
+  Two allegiance-affecting operations for the same monarch within the DB queue
+  latency window. All of these run on the world thread and are therefore
+  serialised with respect to each other, but NOT with respect to the DB write:
+    - two players swearing to the same monarch in quick succession
+    - a swear immediately following a break
+    - a swear closely following a login that ran LoadPlayer
+  No concurrency is required. This is the vector that best explains an
+  intermittent symptom during normal play.
+
+VECTOR 2 - GENUINE CROSS-THREAD RACE
+  @fix-allegiances is CommandHandlerFlag.ConsoleInvoke, so it runs on the
+  server-console CommandThread, and it calls GetAllegiance in a loop
+  (AdminCommands.cs:4547). Meanwhile logins, swears and breaks run on the world
+  thread. Two threads can then be inside GetAllegiance for the same monarch
+  simultaneously - both missing the cache, both creating, both enqueueing.
+
+  This vector is worse than duplicate rows: Players and Allegiances are PLAIN
+  UNLOCKED Dictionary instances (AllegianceManager.cs:24, 29). Concurrent
+  Add/Remove can corrupt the bucket chains outright - a hang or an
+  IndexOutOfRangeException, not merely a wrong result. See bugs-managers.txt
+  M.0b.
+
+
+--------------------------------------------------------------------------------
+4. AGGRAVATING FACTORS
+--------------------------------------------------------------------------------
+A. GetAllegianceID returns 0, never null (ShardDatabase.cs:853-864)
+   Declared `uint? GetAllegianceID(...)`, but FirstOrDefault() on an
+   IQueryable<uint> yields 0 rather than null when no row matches. So the guard
+   at line 62
+
+       var biota = allegianceID != null ? ... GetBiota(allegianceID.Value) : null;
+
+   is ALWAYS TRUE, and GetBiota(0) always runs and always returns null. The
+   create branch is therefore reached through a path the author did not intend,
+   and the "no allegiance exists" and "lookup returned nothing" cases are
+   indistinguishable. Filed as bugs-database.txt D.0e.
+
+B. No database-level uniqueness constraint
+   Nothing prevents two allegiance biotas naming the same monarch. As with the
+   character-name TOCTOU in bugs-database.txt D.3, application-level checking
+   alone cannot make this safe.
+
+C. The read bypasses the serialization invariant by design
+   AllegianceManager is one of the known callers that reaches
+   DatabaseManager.Shard.BaseDatabase directly rather than going through the
+   serialized queue. bugs-database.txt D.0f flags this as the specific bypass
+   that undermines ShardDatabaseWithCaching's correctness assumption. This
+   issue is a concrete consequence of that bypass.
+
+
+--------------------------------------------------------------------------------
+5. HOW TO CONFIRM ON A LIVE SHARD
+--------------------------------------------------------------------------------
+Find existing duplicates (adjust table/column names to your schema - the
+monarch id is stored as a biota property, not a first-class column):
+
+    SELECT monarch_value, COUNT(*) AS n
+    FROM   <allegiance biota join to its monarch-id property>
+    GROUP  BY monarch_value
+    HAVING COUNT(*) > 1;
+
+To confirm the mechanism rather than just the symptom, add temporary logging in
+GetAllegiance immediately before the create block:
+
+    log.Warn($"Creating allegiance for monarch {monarch.Guid}: " +
+             $"GetAllegianceID returned {allegianceID}, biota null = {biota == null}");
+
+Duplicate creations for the same monarch within a short interval, each logging
+a NULL biota, confirm Vector 1. If two such log lines interleave from different
+thread ids, that is Vector 2.
+
+
+--------------------------------------------------------------------------------
+6. FIX
+--------------------------------------------------------------------------------
+Ordered by durability. Item 1 is the only one that is sufficient on its own.
+
+1. ADD A UNIQUE DATABASE CONSTRAINT on the allegiance biota's monarch id.
+   This is the only measure that holds regardless of thread count, cache state
+   or queue latency, because it does not depend on getting the application
+   ordering right. Handle the duplicate-key violation by re-reading the
+   existing row and using it.
+   Same argument as bugs-database.txt D.3 (character-name uniqueness): a
+   check-then-insert across an asynchronous boundary cannot be made safe in
+   application code alone.
+
+2. MAKE THE CHECK AND THE CREATE USE THE SAME ORDERING DOMAIN.
+   Either route the existence check through DatabaseManager.Shard rather than
+   BaseDatabase, or - better - perform check-and-create as a SINGLE operation
+   queued onto the serialized worker, so the DB thread orders them with respect
+   to each other. As written, the read and the write have no ordering
+   relationship at all, which is the root cause.
+
+3. SERIALISE GetAllegiance PER MONARCH.
+   A lock keyed on monarch guid around the check-through-cache-populate region,
+   and make Players and Allegiances ConcurrentDictionary.
+   NECESSARY for Vector 2 and for the dictionary-corruption risk, but NOT
+   SUFFICIENT on its own - it does not close the queue-latency window in
+   Vector 1, because the second call can legitimately acquire the lock after
+   the first has released it and still not see the row.
+
+4. FIX GetAllegianceID to return null rather than 0 (bugs-database.txt D.0e),
+   so the two cases stop being indistinguishable.
+
+5. CONSIDER CACHING THE NEGATIVE RESULT, or populating the cache BEFORE the
+   save completes, so the second caller sees the in-flight allegiance object
+   rather than re-deriving it from the database. Note this interacts with the
+   TotalMembers == 1 early return at line 75, which currently prevents any
+   caching for that case.
+
+DO NOT rely on item 3 alone. The instinctive fix here is "add a lock", and it
+would reduce the frequency enough to look like a fix while leaving Vector 1
+intact.
+
+
+--------------------------------------------------------------------------------
+7. CLEANING UP EXISTING DUPLICATES
+--------------------------------------------------------------------------------
+Duplicates already written will persist. Before deduplicating, note that
+GetAllegianceID uses FirstOrDefault, so which row "wins" today is not defined -
+players may already be associated with either. Determine for each duplicate set
+which biota holds the real member/officer/ban state (PropertiesAllegiance rows)
+before deleting the others, and take a backup first.
+
+@fix-allegiances exists and walks the allegiance structures, but note it runs
+on the console thread and calls the very method that causes this bug - so run
+it on a quiet shard, ideally with players offline, until fix item 3 is applied.
+
+
+--------------------------------------------------------------------------------
+8. RELATED FINDINGS IN THIS DOC SET
+--------------------------------------------------------------------------------
+  bugs-managers.txt M.0b   Allegiances/Players are unlocked Dictionaries raced
+                           between the world thread and the console thread
+  bugs-database.txt D.0e   GetAllegianceID returns 0, never null
+  bugs-database.txt D.0f   AllegianceManager bypasses the serialized queue
+  bugs-database.txt D.3    Character-name TOCTOU - the same class of defect,
+                           with the same "needs a DB constraint" conclusion
+  perf-worldobjects.txt Q.19  The uncached negative lookup, which re-runs a
+                           shard read plus a full-character LINQ scan
+  perf-worldobjects.txt Q.17/Q.18  Allegiance XP passup costs, same subsystem
+
+================================================================================
+END OF REPORT
+================================================================================

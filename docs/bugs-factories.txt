@@ -1,0 +1,701 @@
+================================================================================
+ACE.Server/Factories - BUG REPORT
+================================================================================
+Scope   : Source/ACE.Server/Factories  (116 files, ~69,900 lines)
+          LootGenerationFactory*, PlayerFactory, PlayerFactoryEx, WeenieFactory,
+          Tables/ (chance and loot tables), Entity/ (TreasureDeath,
+          TreasureRoll, ChanceTable)
+Date    : 2026-07-25
+Companion document: perf-factories.txt
+
+VERIFICATION
+  TRACED BUT NOT RE-VERIFIED : all findings below. Spot-check before fixing.
+
+FINDING FROM THE INITIAL SWEEP (folded in)
+
+F.0a [HIGH] Division by zero produces NaN and halts ALL loot generation
+     Tables/Cantrips/CantripChance.cs:268-284 (Rescale), driven from
+     ScaleCantripLevels at 239-266
+
+     Rescale computes `scalar = target / total` with no guard for total == 0,
+     and ScaleCantripLevels always calls it unconditionally.
+
+     REACHABLE IN PRACTICE: minor_cantrip_drop_rate, major_cantrip_drop_rate,
+     epic_cantrip_drop_rate and legendary_cantrip_drop_rate are live
+     PropertyManager double properties an admin can set at runtime. Setting all
+     four to 0 is a plausible way to disable cantrip drops entirely.
+
+     Then every entry's chance becomes 0, so total == 0, scalar becomes
+     Infinity, and `entry.chance * scalar` (0 * Infinity) yields NaN for every
+     table entry. ChanceTable<T>.Roll() (Entity/ChanceTable.cs:30-51) then
+     accumulates NaN in total, every `rng < total` comparison is false, and the
+     fallback `this.Last(i => i.chance > 0)` matches nothing - because NaN > 0
+     is also false - and throws InvalidOperationException. That crashes cantrip
+     rolling for EVERY loot generation on the shard.
+
+     The codebase guards this exact hazard elsewhere - LootGenerationFactory.cs:576-577
+     has `if (totalProbability == 0) return;` before dividing for clothing
+     colour selection - confirming this is an oversight rather than intent.
+
+     FIX: guard total == 0 in Rescale, mirroring the existing check.
+
+RNG CONTRACT (verified by the audit)
+  ACE.Common/ThreadSafeRandom.Next(int,int) calls random.Value.Next(min, max+1)
+  and is therefore INCLUSIVE OF BOTH BOUNDS. All 20 `Next(0, X.Count ...)` call
+  sites in Factories/ correctly use `- 1`, except PlayerFactoryEx.cs, which
+  uses a plain System.Random (exclusive) and is therefore also correct.
+  NO off-by-one RNG bugs were found. This was the primary hypothesis going in,
+  and it did not hold - worth recording so it is not re-investigated.
+================================================================================
+
+
+SECTION A - HIGH SEVERITY
+================================================================================
+
+F.1  Client-supplied chargen values used as raw dat indices with no validation
+     PlayerFactory.cs:35, 52, 66, 96, 100, 135, 358
+
+     Unvalidated indexing throughout:
+         HeritageGroups[(uint)info.Heritage]
+         heritageGroup.Genders[(int)info.Gender]
+         sex.HairStyleList[(int)info.Appearance.HairStyle]
+         sex.HairColorList[...]
+         sex.EyeColorList[...]
+         heritageGroup.Templates[info.TemplateOption]
+         StarterAreas[(int)startArea]
+
+     CharacterHandler.cs:46-133 performs NO bounds checks before calling.
+
+     FAILURE: a modified client sends Heritage = 99 -> KeyNotFoundException, or
+     HairStyle = 0xFFFF -> ArgumentOutOfRangeException. InboundMessageManager
+     swallows it, so the client receives NO response and hangs on the
+     character-creation screen.
+
+     Worse: GuidManager.NewPlayerGuid() at CharacterHandler.cs:119 has ALREADY
+     RUN, so every malformed packet permanently burns a player GUID - a cheap
+     remote resource-exhaustion vector against a finite range.
+
+     Note ValidateAttributeCredits runs at line 141, AFTER all the unchecked
+     indexing.
+
+     FIX: range-check Heritage, Gender, TemplateOption, StartArea and all
+     appearance fields against the dat list counts up front, and allocate the
+     GUID only after Create succeeds.
+
+
+SECTION B - MEDIUM SEVERITY
+================================================================================
+
+F.2  RollInterval returns negative values, inverting the burden bonus
+     Tables/QualityChance.cs:249
+
+     When LootQualityMod causes early table entries to be skipped by
+     `curChance >= LootQualityMod` (line 242), prevChance is taken from a
+     SKIPPED entry and can exceed rng.
+
+     FAILURE: tier 3, LootQualityMod = 0.9, chances [0.20, 0.50, 0.80, 1.00].
+     Entries 0-2 are skipped; i=3 is selected with prevChance = 0.80. With
+     rng = 0.05: interval = (0.05 - 0.80) / 0.20 = -3.75, so the method returns
+     (1/12) * (-3.75 + 3) = -0.0625.
+
+     MutateBurden (LootGenerationFactory.cs:652) then computes
+     burdenMod = 1 - (-0.0625 * 0.75) = 1.047 - so HIGH-QUALITY profiles
+     produce items HEAVIER than the base weenie. The `qualityInterval == 0.0f`
+     guard at line 643 does not catch negatives. Occurs on roughly 20% of rolls
+     against such profiles.
+
+     FIX: `prevChance = Math.Max(prevChance, LootQualityMod)` and clamp the
+     result to [0, 1].
+
+F.3  qualityMod acts as a cliff rather than a scale
+     Entity/ChanceTable.cs:44
+
+     `if (rng < total && total >= qualityMod)` skips any entry whose CUMULATIVE
+     total is below qualityMod.
+
+     FAILURE: GearRatingChance.cs:36 rolls [(false, 0.75), (true, 0.25)]. For
+     any profile with LootQualityMod > 0.75 the `false` outcome becomes
+     UNREACHABLE, so 100% of tier-8 items receive a gear rating - a
+     discontinuous jump from the intended 25%. The same applies at
+     EquipmentSetChance.cs:50 (0.66 -> 100% equipment sets) and
+     ArmorModVsTypeChance.cs:100.
+
+     FIX: scale the weights by qualityMod - as CantripChance.ScaleCantripLevels
+     does - instead of thresholding cumulative totals.
+
+F.4  Missing null check on GetSpellLevels aborts the whole corpse's loot
+     LootGenerationFactory_Spells.cs:102, 288
+
+     SpellLevelProgression.GetSpellLevels returns null for unregistered spells.
+     Line 102 does `spellLevels.Count != 8` and line 288
+     `cantripLevels.Count != 4` with no null guard - while every sibling call
+     site guards correctly (LootGenerationFactory_Caster.cs:110, _Gem.cs:82,
+     _Spells.cs:370).
+
+     FAILURE: adding a spell to ArmorSpells or SpellSelectionTable without
+     adding it to a progression list gives a NullReferenceException that aborts
+     the ENTIRE corpse's loot generation, not just that one spell. A content
+     edit therefore silently produces empty corpses.
+
+     FIX: `if (spellLevels == null || spellLevels.Count != 8) { log; continue; }`
+
+F.5  Inconsistent Tier - 1 bounds checking
+     LootGenerationFactory.cs:783 plus 8 further sites
+
+     UNCLAMPED: coinRanges[profile.Tier - 1]; QualityChance.cs:187;
+     LootGenerationFactory_Spells.cs:198; ArmorTypeChance.cs:125;
+     SpellLevelChance.cs:92; CantripChance.cs:85, 147; ScrollLevelChance.cs:60;
+     AetheriaChance.cs:57 (Tier - 5).
+     CLAMPED in the same codebase: LootGenerationFactory.cs:435, 715;
+     WorkmanshipChance.cs:85; GemMaterialChance.cs:94.
+
+     TreasureDeath.Tier is unvalidated world-DB data.
+
+     FAILURE: an imported treasure_death row with tier = 0 or 9 throws
+     ArgumentOutOfRangeException on every kill using that profile.
+
+     FIX: clamp Tier once at load, or apply Math.Clamp uniformly.
+
+F.6  Index -1 reachable through /lootgen
+     LootGenerationFactory_Aetheria.cs:29
+
+     AetheriaChance.Roll_ItemMaxLevel returns 0 when profile.Tier < 5, and then
+     IconOverlay_ItemMaxLevel[0 - 1] throws. Normal loot generation is safe
+     because TryRollMundaneAddon gates on tier, but MutateItem
+     (LootGenerationFactory.cs:1038-1041) calls MutateAetheria for whatever
+     tier the developer command supplies.
+
+     FAILURE: `/lootgen <aetheria wcid>` against a tier 1-4 profile throws
+     ArgumentOutOfRangeException. Same shape at _Clothing.cs:367 for cloaks.
+
+     FIX: return early when ItemMaxLevel <= 0.
+
+F.7  Unvalidated min/max amount from the database
+     LootGenerationFactory.cs:51, 65, 79
+
+     `ThreadSafeRandom.Next(profile.ItemMinAmount, profile.ItemMaxAmount)`
+     resolves to Random.Next(min, max+1), which throws when min > max.
+
+     FAILURE: a treasure profile with item_Min_Amount = 2 and
+     item_Max_Amount = 1 throws ArgumentOutOfRangeException - and because all
+     three category blocks share one try/finally with NO catch, the corpse
+     produces ZERO loot rather than skipping the one category.
+
+     FIX: `Next(min, Math.Max(min, max))`.
+
+
+SECTION C - LOW SEVERITY
+================================================================================
+
+F.8  Nullable comparison silently skips the legendary-cantrip level requirement
+     LootGenerationFactory_Spells.cs:306, 309
+     `wo.WieldDifficulty < 180` on an int?: when WieldDifficulty is null the
+     comparison is FALSE in C#, so an item with WieldRequirements == Level but
+     no difficulty set keeps a legendary cantrip with no level gate.
+     SetWieldLevelReq (_Clothing.cs:300-310) handles the equivalent case
+     explicitly.
+     FIX: `(wo.WieldDifficulty ?? 0) < 180`.
+
+F.9  Missing `> 0` guard clobbers cloak MaterialType
+     LootGenerationFactory_Clothing.cs:394
+     `wo.MaterialType = GetMaterialType(wo, profile.Tier)` runs
+     unconditionally, whereas MutateArmor:48, MutateCaster:56,
+     MutateMeleeWeapon:58 and MutateMissileWeapon:55 all guard
+     `if (materialType > 0)`. GetDefaultMaterialType
+     (LootGenerationFactory.cs:480-511) leaves material = MaterialType.Unknown
+     for any WeenieType/ItemType combination its switch does not cover.
+     FAILURE: a cloak weenie missing TsysMutationData has its authored
+     MaterialType overwritten with 0, breaking salvage and appraisal.
+
+F.10 Unbounded retry loop
+     LootGenerationFactory_Scroll.cs:19-24
+     `do { ... } while (spellId == SpellId.Undef)` has no attempt cap.
+     ScrollSpells.AddSpells (ScrollSpells.cs:389-400) continues on a missing or
+     malformed progression, leaving that pre-allocated row all-Undef. If a data
+     change ever made every row Undef at the rolled level index, this spins
+     forever on the loot thread with no logging. Compare RollEnchantments
+     (_Spells.cs:139), which caps at numEnchantments * 3.
+     FIX: cap attempts, log, return null.
+
+F.11 Shared non-thread-safe System.Random
+     PlayerFactoryEx.cs:21
+     `private static readonly Random rand = new Random()` is the only RNG in
+     Factories/ not using ThreadSafeRandom's ThreadLocal wrapper. Concurrent
+     RandomizeHeritage calls can interleave into Random's internal state.
+     FIX: switch to ThreadSafeRandom - remembering to use Count - 1, since it
+     is inclusive.
+
+F.12 RandomizeHeritage does not re-validate TemplateOption
+     PlayerFactoryEx.cs:84-96
+     It overwrites Heritage, Gender and appearance on a CharacterCreateInfo
+     unpacked from the hardcoded Gear Knight blob but leaves TemplateOption
+     alone. PlayerFactory.cs:135 then indexes
+     heritageGroup.Templates[TemplateOption] against the NEW heritage's list,
+     so any heritage with fewer templates than Gear Knight throws.
+     FIX: clamp to Templates.Count - 1 after randomising.
+
+
+SECTION D - INVESTIGATED, NOT A BUG
+================================================================================
+Recorded so a later pass does not repeat this work.
+
+N.1  ALL ChanceTable probability sums were scripted and verified across the
+     whole directory - every table sums to 1.0. JewelryWcids.cs:60 appears to
+     sum to 1.085 only because of a commented-out `crown, 0.085f` line; the
+     live 20 entries total exactly 1.0. TreasureProfile_Mundane, _MagicItem and
+     _Item are all clean.
+N.2  TryRollAetheria (LootGenerationFactory.cs:406-414): `Next(0, 1/rate)` with
+     a `< 0.02` test correctly yields 2% x rate, saturating at 100% for
+     rate >= 50. Correct, just unusually formulated.
+N.3  MutateCloak setting wo.Workmanship (float) rather than ItemWorkmanship
+     (int) - the Workmanship setter (WorldObject_Properties.cs:1589) delegates
+     to ItemWorkmanship, so they are equivalent.
+N.4  TryMutateGearRating:261 Next(0, 1); OlthoiPlay slag Next(1, slagChance);
+     TryCreateRare Next(1, t1_chance); GetDefaultMaterialType:481 Next(0, 4)
+     against 5-element rows - all correct under inclusive semantics.
+N.5  WorkmanshipChance.GetModifier:100 `workmanship.Value / 9.0f` is float
+     division, not integer.
+N.6  SpellSelectionTable.Roll(spellCode - 1) - GetSpellSelectionCode_Dynamic
+     returns 0 (guarded) through 20, and there are exactly 20 groups.
+N.7  QualityChance.RollTierChance:190 - NextInterval subtracts qualityMod,
+     correctly biasing toward success despite the "logic seems backwards"
+     comment in the source.
+N.8  CantripChance.ScaleNumCantrips with cantrip_drop_rate = 0 avoids the known
+     Rescale NaN, because `totalChance > 1.0f` is false on that path.
+N.9  EquipmentSetChance.cs:44 guards Tier < 6 while its sole caller
+     (_Clothing.cs:94) guards Tier > 6. Inconsistent, and the inner guard is
+     dead, but there is no behavioural defect; the file comment ("t7 and t8")
+     matches the caller.
+N.10 RollWeaponSpeedMod (_Weapon.cs:27-42): max quality 12 gives 0.675-0.725,
+     matching the documented range.
+N.11 MutateValue_Generic:715 correctly clamps tier; TreasureProfile_*.Roll
+     correctly range-check their profile index.
+N.12 LootGenerationFactory_Rare.cs:59-82 sequential cascading rarity checks are
+     intentional and match the documented wiki odds.
+N.13 CloakChance.cs:142 `Next(0, surgeSpells.Count)` without -1 is intentional:
+     the extra value is a reserved "no proc" sentinel, explicitly checked at
+     line 145.
+
+
+SECTION E - SUGGESTED PRIORITY
+================================================================================
+  1. F.1  Chargen validation. It is the only remotely reachable finding here,
+          it hangs the client with no error, and it permanently burns GUIDs
+          from a finite range on every malformed packet.
+  2. F.4  GetSpellLevels null guard - one content edit silently empties every
+          corpse, which would be very hard to diagnose in the field.
+  3. F.7  min > max amount - one bad DB row zeroes all loot for that profile.
+  4. F.5  Uniform tier clamping - same class, unvalidated DB data reaching an
+          array index.
+  5. F.2, F.3 - the quality-modifier maths. These do not crash; they silently
+          produce wrong loot (heavier items, guaranteed gear ratings), so they
+          will be reported as "loot feels wrong" rather than as bugs.
+  6. F.6, F.8-F.12 as follow-up.
+
+NOTE: F.5 and F.7 share a root cause - treasure_death is world-DB content that
+is trusted without validation. A single validation pass at load, rejecting or
+clamping out-of-range tiers and inverted min/max amounts, would close both.
+
+
+================================================================================
+================================================================================
+SECTION G - DEEP PASS: PER-TYPE FACTORIES, MUTATION ENGINE, TREASURE TABLES
+   A second, dedicated pass over the areas the first pass covered only shallowly
+   or skipped entirely: the 15 per-item-type Mutate* factories, the mutation
+   SCRIPT ENGINE (ACE.Server/Entity/Mutations/ - never previously audited), and
+   the algorithmic Tables/ files.
+   Run as two independent audits. Where both found the same defect it is marked
+   CORROBORATED, which is meaningful evidence.
+================================================================================
+================================================================================
+
+VERIFICATION FOR THIS SECTION
+  VERIFIED DIRECTLY BY ME : G.0 (the escalation), G.2, G.3, G.6, G.8
+  CORROBORATED BY TWO INDEPENDENT PASSES : G.1
+  TRACED BUT NOT RE-VERIFIED : all others.
+
+
+G.0  *** SEVERITY ESCALATION AFFECTING EVERY FINDING IN THIS DOCUMENT ***
+     LootGenerationFactory.cs:40-104, Creature_Death.cs:653
+     [VERIFIED DIRECTLY]
+
+     CreateRandomLootObjects wraps all three category loops in:
+
+         try { ... return loot; }
+         finally { /* body is ENTIRELY COMMENTED OUT */ }
+
+     There is NO CATCH. The try/finally is completely vestigial - it exists
+     only to wrap a commented-out performance counter and provides zero
+     protection.
+
+     The propagation chain, traced end to end:
+         LootGenerationFactory.CreateRandomLootObjects   (no catch)
+           -> Creature_Death.GenerateTreasure:653        (unguarded)
+             -> creature death handling
+               -> the landblock tick
+                 -> ActionQueue.RunActions, which per bugs-entity-server.txt
+                    E.0d has NO EXCEPTION ISOLATION
+
+     CONSEQUENCE: every throwing loot bug in this document does NOT merely
+     produce an empty corpse, as previously documented. It escapes into the
+     landblock tick and SKIPS EVERY REMAINING LANDBLOCK IN THAT GROUP for that
+     frame.
+
+     This re-rates F.0a (CantripChance NaN -> InvalidOperationException), F.4
+     (GetSpellLevels NRE), F.5 (tier index out of range), F.7 (min>max
+     ArgumentOutOfRangeException) and G.1/G.4/G.5 below. They are not
+     "loot is empty" bugs; they are "part of the world stops ticking" bugs.
+
+     FIX: a catch around the loop body in CreateRandomLootObjects that logs and
+     returns the partial loot list. That is a strictly better failure mode than
+     the current one, and it is a prerequisite for treating the rest of this
+     document as merely-cosmetic. Fixing E.0d independently is still correct.
+
+
+--- G: HIGH SEVERITY ---
+
+G.1  [CORROBORATED BY BOTH PASSES] Null mutation filter dereferenced at every
+     lootgen call site - and it is reachable by NORMAL PLAY
+     LootGenerationFactory_Melee.cs:38-47, _Caster.cs:31-52, _Missile.cs:37-44,
+     _Clothing.cs:135-137; engine at Entity/Mutations/MutationCache.cs:70-77
+
+     MutationCache.GetMutation() returns NULL when the embedded script resource
+     is missing - it logs and returns null. All five loot call sites then call
+     mutationFilter.TryMutate(...) immediately with no null check.
+
+     REACHABLE WITHOUT ANY BAD DATA: GetDamageScript (_Melee.cs:105)
+     concatenates MeleeWeaponSkill.GetScriptName_Combined(), which returns null
+     for any skill outside Heavy/Light/Finesse/TwoHanded
+     (Factories/Enum/MeleeWeaponSkill.cs:48-60). Only 22 of the possible
+     skill x weapon-type combinations ship as scripts - for example
+     heavy_mace_jitte.txt does not exist, only light_finesse_mace_jitte.txt.
+
+     So any world-DB weenie reachable through WeaponWcids whose WeaponSkill
+     disagrees with the table that mapped its wcid produces a null filter and
+     an NRE - which, per G.0, escapes into the landblock tick.
+
+     Note RecipeManager.cs:1489-1495 DOES null-check the same call, and
+     AssignArmorLevel (_Clothing.cs:122) DOES guard the null script name. The
+     correct pattern exists twice in-tree.
+
+     FIX: null-check the filter at each of the five sites (log and return), and
+     make GetDamageScript fail closed when the skill name is null.
+
+G.2  [VERIFIED DIRECTLY] Gems and dinnerware NEVER have their value mutated
+     _Gem.cs:63, _Dinnerware.cs:59, gated by Entity/MutateFilters.cs:10-31
+
+     Both call sites gate MutateValue behind
+     `wo.HasMutateFilter(MutateFilter.Value)`. MutateFilters registers EXACTLY
+     SIX filter ids - all armor (0x0E000012), shields (0x13) and weapons
+     (0x14, 0x15, 0x16, 0x1D). The source comment even asks
+     "only 6 mutate filter ids total in 16py?".
+
+     Gems and dinnerware have no entry, so TryGetValue misses and the check
+     returns false. They ALWAYS drop at base weenie value: tier, workmanship,
+     material and gem class contribute NOTHING.
+
+     ECONOMY IMPACT: a tier-8 diamond is worth exactly what a tier-1 one is.
+     MutateValue_Gem (_Gem.cs:108) is consequently dead code.
+
+     This is precisely why the equivalent check is COMMENTED OUT for
+     weapons/armor/jewelry with `// fixme: data`
+     (LootGenerationFactory.cs:101, _Melee.cs:91, _Jewelry.cs:70) - the same
+     gap was already known there and worked around.
+
+     FIX: comment out these two guards for consistency with the sibling
+     factories, or seed MutateFilter data for non-equipment types.
+
+G.3  [VERIFIED DIRECTLY] Dinnerware clobbers authored MaterialType
+     _Dinnerware.cs:36
+
+         wo.MaterialType = GetMaterialType(wo, profile.Tier);   // no > 0 guard
+
+     Every sibling guards this: _Melee:59, _Missile:53, _Caster:56,
+     _Jewelry:32, _Clothing:47 all use `if (materialType > 0)`. This is the
+     same shape as the known F.9 cloak defect.
+
+     GetDefaultMaterialType (LootGenerationFactory.cs:483-511) has NO BRANCH
+     for WeenieType.Generic + ItemType.Misc, so dinnerware returns
+     MaterialType.Unknown (0).
+
+     FAILURE: a tier-3 porcelain goblet whose weenie lacks TsysMutationData
+     loses its authored Porcelain, becomes Unknown - and then MutateColor
+     (line 537) SKIPS ENTIRELY because it requires MaterialType > 0, so the
+     item also loses its palette and icon roll, and salvages to nothing.
+
+G.4  Effect.TryMutate NREs when an arithmetic operator returns null
+     Entity/Mutations/Effect.cs:44-113, EffectArgumentOp.cs:344, 393, 442, 491
+
+     The + - * / operators return NULL on unhandled type combinations.
+     Effect.cs assigns that null to `result` and then
+     Quality.StoreValue(wo, result) dereferences it. Validate (Effect.cs:118-130)
+     deliberately does NOT check result.IsValid - the check is commented out at
+     lines 120-124.
+
+     FAILURE: a script line `FooBar += 5` where FooBar is not a known property
+     enum gives GetStatType = Undef -> EffectArgumentType.Invalid ->
+     ResolveValue leaves Type = Invalid -> `result + arg1` logs and returns
+     null -> NRE, on the same escape path as G.0.
+
+     FIX: bail out of TryMutate when any operator result is null, and
+     re-enable the result.IsValid check.
+
+G.5  Script parser crashes on truncated scripts AND caches partial parses
+     Entity/Mutations/MutationCache.cs:112-113, 135, 150, 227, 230-231, 33-41
+
+     `outcome.EffectLists.Last()` throws InvalidOperationException when a
+     "Tier chances" block has no "- Chance" line - exactly what a TRUNCATED
+     script produces. Line 227 NREs if an `X = 5` line precedes any
+     "- Chance"; lines 135/150 NRE if "- Chance" precedes any "Tier chances".
+
+     WORSE: every other parse error is only LOGGED, and the half-built
+     MutationFilter is STILL CACHED. So a single bad line permanently produces
+     silently wrong items - for example a mis-parsed Damage effect with
+     StatIdx = 0 - with no runtime signal at all.
+
+     MITIGATION: scripts are 95 .txt files embedded as ASSEMBLY RESOURCES
+     (ReadScript uses GetManifestResourceStream), not loose operator-supplied
+     files. So this is a shipped-content / patch-integrity concern rather than
+     an untrusted-input one - lower risk than it first appears, but the parser
+     is still unguarded.
+
+     FIX: wrap BuildMutation in try/catch, guard .Last() with Count > 0, and
+     track a hadErrors flag that makes the filter refuse to apply.
+
+G.6  [VERIFIED DIRECTLY] Script number parsing is CULTURE-SENSITIVE on worker
+     threads
+     Entity/Mutations/MutationCache.cs:123, 159, 251, 266, 274 (and 305, 313)
+
+     All script numeric parses use the culture-default float/decimal/double
+     TryParse overloads. I confirmed the ONLY InvariantCulture in the entire
+     Mutations directory is at line 558, for a hex parse.
+
+     Program.cs:56 sets Thread.CurrentThread.CurrentCulture for the MAIN THREAD
+     ONLY. .NET Core does not propagate that to landblock worker threads, and
+     there is no DefaultThreadCurrentCulture anywhere in the tree.
+
+     FAILURE: on a de-DE or fr-FR host, scripts compiled lazily on a worker
+     thread parse `Damage += 1.5` as 15, and `Tier chances: 0.05` as 5 - so the
+     mutation ALWAYS fires. Silent, host-dependent item corruption that would
+     be extremely hard to diagnose from gameplay.
+
+     FIX: CultureInfo.InvariantCulture on every TryParse, and set
+     CultureInfo.DefaultThreadCurrentCulture at startup.
+
+     (Same defect class as bugs-database.txt D.9, where culture-dependent float
+     FORMATTING corrupts SQL export. Worth fixing as one sweep.)
+
+G.7  SpellSelectionTable.Roll has no bounds check
+     Tables/SpellSelectionTable.cs:437
+         return spellSelectionGroup[spellCode - 1].Roll();
+     No validation - unlike TreasureProfile_Item/MagicItem/Mundane.Roll, which
+     all guard their profile index. Today spellCode comes from
+     GetSpellSelectionCode_Dynamic (0-20, with 0 filtered at _Spells.cs:125),
+     but the DOCUMENTED contract is `TsysMutationData >> 24` from the world DB.
+     Any reintroduction of that path, or a new branch returning > 20, is an
+     ArgumentOutOfRangeException per loot roll.
+     FIX: range-check and return SpellId.Undef.
+
+
+--- G: MEDIUM SEVERITY ---
+
+G.8  [VERIFIED DIRECTLY] AssignDivide is implemented as MULTIPLICATION
+     Entity/Mutations/Effect.cs:107-110
+
+         case MutationEffectType.AssignMultiply:
+             result = arg1 * arg2;
+             break;
+         case MutationEffectType.AssignDivide:
+             result = arg1 * arg2;      // <-- identical to the case above
+
+     Any script of the form `X = A / B` produces A * B. No shipped script
+     currently uses that form (all `/` uses are `/=`), so it is latent - but it
+     is a silent stat-INFLATION landmine for any new or patched script.
+
+G.9  Wrong DefaultMaterial row for thrown weapons
+     LootGenerationFactory.cs:506
+     WeenieType.Generic + ItemType.MissileWeapon reads DefaultMaterial[4],
+     which LootTables.cs:16 labels DINNERWARE (Granite/Ceramic/Porcelain/
+     Alabaster/Marble). Atlatl darts and throwing daggers therefore roll a
+     ceramic material with MaterialTable value mods of 0.0-1.8. Index [1]
+     (Missile: Oak/Teak/Mahogany/Pine/Ebony) is intended.
+
+G.10 Non-magical items keep authored ManaRate inconsistently
+     _Missile.cs:83, _Gem.cs:53, _Jewelry.cs:63 clear ManaRate = null in the
+     non-magical branch. _Melee.cs:82-88, _Caster.cs:85-91 and _Clothing.cs:87-91
+     do NOT. A non-magical tier-5 sword or breastplate therefore ships with a
+     negative ManaRate and a null ItemMaxMana.
+
+G.11 MutateCaster never calls MutateBurden
+     _Caster.cs:73 has only the comment `// burden?`, while _Melee.cs:71 and
+     _Missile.cs:72 both call MutateBurden(wo, profile, true). Casters are the
+     only weapon class that never receives the quality-based burden reduction -
+     a legendary-quality orb weighs exactly as much as a tier-1 one.
+
+G.12 TryCreateRare luck can make rares GUARANTEED
+     _Rare.cs:55, 59, with Corpse.cs:323-324
+     Line 55 clamps `t1_chance = Max(t1_chance - luck, 1)`, and line 59 rolls
+     `ThreadSafeRandom.Next(1, t1_chance) == 1` - which is ALWAYS TRUE when
+     t1_chance == 1 (the RNG is inclusive on both bounds).
+     Corpse.cs computes luck from a hardcoded t1_chance = 2500, while
+     TryCreateRare derives its own from the rare_drop_rate_percent property.
+     FAILURE: a server that LOWERS rare_drop_rate_percent (intending rarer
+     rares) with realTimeRaresAlt enabled gets luck >= t1_chance, and therefore
+     a tier-1 rare on EVERY eligible kill - the exact opposite of the intent.
+
+G.13 Item count from the world DB is unbounded
+     LootGenerationFactory.cs:51, 65, 79
+     numItems comes from ThreadSafeRandom.Next(profile.ItemMinAmount,
+     profile.ItemMaxAmount) with no upper clamp, and each iteration is a full
+     weenie instantiation plus mutation.
+     FAILURE: a treasure_death row with ItemMaxAmount = 1000000 (a typo, or
+     extra zeros) hangs a landblock worker for minutes and allocates a million
+     WorldObjects, most later discarded by container capacity.
+     FIX: clamp to a sane maximum with a warning.
+
+G.14 Wielded-treasure stack fields unvalidated - and an int overflow that
+     produces NEGATIVE-VALUE items
+     WorldObject_Equipment.cs:169-177, WorldObject_Properties.cs:3130-3140
+     With a negative StackSizeVariance, minStack exceeds maxStack and
+     Random.Next throws ArgumentOutOfRangeException DURING MONSTER SPAWN.
+     Separately, SetStackSize never clamps to MaxStackSize and computes
+     `Value = StackUnitValue * StackSize` in INT: a stack_size of 1,000,000 on
+     a 5,000-value item overflows to a NEGATIVE Value.
+     A negative-value item is a vendor-sale exploit - see the related
+     unchecked-uint accumulation in bugs-worldobjects.txt W.10.
+     FIX: clamp variance to [0,1], clamp stack to MaxStackSize, compute value
+     in long and saturate.
+
+G.15 Script-driven property writes are unbounded and untyped at the sink
+     Entity/Mutations/EffectArgument.cs:240-273, ToInt at :127
+     StoreValue writes whatever arrives: `(uint)result.ToInt()` for DataIDs
+     turns a negative into ~4.29e9 (an invalid ClothingBase/Icon DID sent to
+     clients); `(int)DoubleVal` casts of an out-of-range or NaN double yield
+     int.MinValue or 0 unchecked; PropertyFloat accepts Infinity/NaN produced
+     by Random(min,max) with min > max, or by repeated multiplies. Nothing
+     clamps Value, EncumbranceVal, ArmorLevel or StackSize.
+     FIX: clamp per-StatType ranges in StoreValue and reject non-finite
+     doubles.
+
+G.16 LootSwap can write NULL into a live static loot table
+     Entity/LootSwap.cs:105, Entity/LootParser.cs:244-249, 194, 263
+     Dev-only (/lootswap, AdminCommands.cs:4833), but LootParser.ParseChanceTable
+     returns (name, null) for an unrecognised table type - it only logs - and
+     UpdateTable does `field.SetValue(null, newTable)` unconditionally, writing
+     null into a static ChanceTable and NRE-ing all subsequent loot generation
+     until restart. Also LootParser.cs:194 `tables.Add` throws on a duplicate
+     table name, and the `line.Length == 2` terminator at :263 silently
+     mis-parses any table not closed by exactly `};`.
+     FIX: `if (newTable == null) continue;`
+
+G.17 ArmorModVsTypeChance.qualityLevels[0] is literally null
+     Tables/ArmorModVsTypeChance.cs:517, guarded only by `Tier < 2` at :529.
+     A TreasureDeath row with Tier = 0 gives index -1; Tier = 1 is currently
+     safe, but the null entry is a landmine if the guard is ever loosened.
+     Same class as the known F.5 tier-bounds set.
+
+G.18 ChanceTable.Roll's fallback throws on a degenerate table
+     Entity/ChanceTable.cs:50
+         return this.Last(i => i.chance > 0).result;
+     throws InvalidOperationException when the table is empty or all weights
+     are zero - which is EXACTLY the fallthrough case the line exists to
+     handle. VerifyTable only logs.
+     FIX: return default(T) or the first entry instead of Last(predicate).
+
+G.19 Gem count inconsistency, and "0 gems of Ruby"
+     _Clothing.cs:58 rolls Next(1, 6) for armor while _Melee:66, _Missile:60,
+     _Caster:63, _Jewelry:39 and _Dinnerware:44 all roll Next(1, 5).
+     Separately, GemCountChance.Roll returns 0 when the gem-code/tier pair has
+     no DB row (GemCountChance.cs:57), yet GemType is still assigned
+     unconditionally on the next line - producing items advertising "0 gems of
+     Ruby".
+
+
+--- G: LOW SEVERITY ---
+
+G.20 _Magic.cs:182 - TryMutate_ItemSkillLimit assigns
+     `wo.ItemSkillLevelLimit = wo.ItemSpellcraft + 20` BEFORE the type
+     dispatch, so the error branch at :206 returns false leaving
+     ItemSkillLevelLimit set with ItemSkillLimit unset. Currently unreachable
+     (RollItemSkillLimit gates the same conditions) but it feeds
+     CalculateArcaneLore:243, so any future divergence silently inflates
+     arcane lore.
+G.21 Tables/SpellLevelProgression.cs:8419 - AddSpells uses Dictionary.Add, so
+     one duplicated SpellId across the 739 lists throws ArgumentException
+     inside a STATIC CONSTRUCTOR, giving a TypeInitializationException that is
+     cached for the process lifetime and permanently disables loot generation.
+     All 101 currently-used spell ids were verified to resolve with no
+     duplicates, so this is latent today. Use TryAdd.
+G.22 Tables/WeaponTypeChance.cs:107-115 - Roll(int tier) IGNORES its tier
+     argument and always returns RetailChances; T1_T4_Chances, T5_T6_Chances
+     and weaponTiers are dead. Consequence: TwoHandedWeapon at 10% now drops in
+     Tier 1, where retail had none. Deliberate per the comment, but the dead
+     parameter and tables should be removed or the T1 case special-cased.
+G.23 _OlthoiPlay.cs:146 - when totalSlag rounds to 0 after timeScale scaling
+     (:143), the method returns null WITHOUT setting
+     player.OlthoiLootTimestamp = currentTime (:152), so a farmed player's
+     decay timer never advances on zero-yield kills.
+G.24 Entity/Mutations/MutationFilter.cs:16-21 and Mutation.cs:30 - one rng roll
+     is reused for every Mutation in a file, and one roll across all Outcomes,
+     so outcomes are perfectly CORRELATED rather than independent. Benign for
+     shipped scripts (tier chances are all 0/1 and no script has more than one
+     outcome group - verified) but wrong for any future script.
+
+
+--- G: INVESTIGATED, NOT A BUG ---
+ChanceTable zero-chance entries (unreachable - always preceded by a nonzero
+cumulative); CloakChance.Roll_ItemMaxLevel cannot return 0, so _Clothing.cs:367
+is safe UNLIKE the known Aetheria case F.6; RollNumEnchantments_* LootQualityMod
+direction (correct - NextInterval subtracts); RollSlag tier probabilities
+(exact); TryMutateGearRating Next(0,1); GemMaterialChance / GemClassChance
+clamps; HeritageChance / TreasureProfile_Item / _MagicItem / _Mundane bounds
+(all guarded, and all return Undef which RollWcid:122 handles);
+WorkmanshipChance.GetModifier null-propagation; MutateCaster_SpellDID ordering
+versus AssignMagic; MutateValue_Generic's only-raise clamp; RollItemSkillLimit
+double-roll for armor; ReadFromDat never returns null; MutationCache script
+coverage for two-handed weapons (both present); cantrip HashSet de-duplication;
+MaterialTable.GetValueMod defaults to 1.0; CasterSlotSpells null-safety;
+GetMaterialType tier clamping; MutationCache's ConcurrentDictionary plus
+per-call EffectArgument copies (Effect.cs:24-26) are genuinely THREAD-SAFE - no
+shared mutable state was found in any table, all statics are read-only after
+init, and ChanceTable.verified is a benign racy bool; recursion in
+GenerateWieldedTreasureSets always advances curIdx.
+
+--- G: COVERAGE ---
+Read fully: all 15 LootGenerationFactory_* files, LootGenerationFactory.cs, all
+of Entity/, all of Entity/Mutations/, and the algorithmic Tables/ files
+(ChanceTable, SpellLevelChance, CasterSlotSpells, GemCountChance,
+GemMaterialChance, GemClassChance, MaterialTable, WorkmanshipChance,
+CloakChance, ArmorTypeChance, ArmorModVsTypeChance, GearRatingChance,
+EquipmentSetChance, PetDeviceChance, ScrollLevelChance, AetheriaChance,
+WeaponTypeChance, TreasureItemTypeChances, TreasureProfile_*, HeritageChance,
+SpellSelectionTable).
+NOT covered: Tables/Wcids/* (~20 files) beyond the WeaponWcids entry points,
+Tables/Cantrips/* internals, LootStats.cs and test-only paths, and
+Enum/ (42,418 lines of generated wcid declarations - low risk by nature).
+
+
+--- G: SUGGESTED PRIORITY ---
+  1. G.0  Add a catch to CreateRandomLootObjects. Until this is done, every
+          other bug here can stop part of the world ticking. It is also the
+          smallest fix in the document.
+  2. G.1  Null-check the mutation filter at the five call sites. Reachable by
+          normal play, corroborated by two independent passes, and the correct
+          pattern already exists twice in-tree.
+  3. G.6  InvariantCulture on the script parser. Silent, host-dependent item
+          corruption is among the hardest classes of bug to diagnose in the
+          field. Bundle with bugs-database.txt D.9.
+  4. G.2  The gem/dinnerware value gate - a live economy defect where tier
+          contributes nothing to value.
+  5. G.14 The int overflow producing negative-value items (vendor exploit).
+  6. G.3, G.9, G.10, G.11 - the per-type mutation inconsistencies. All are the
+          same shape: one factory has a guard or a call that its siblings lack.
+          Fix as one sweep and diff the factories against each other.
+  7. G.4, G.5, G.15 - mutation engine robustness.
+  8. G.12, G.13, G.16, G.17, G.18, G.19 - remaining medium items.
+  9. G.7, G.8, G.20-G.24 - latent defects; cheap, and they prevent future
+          regressions rather than fixing current ones.
+
+================================================================================
+END OF REPORT
+================================================================================

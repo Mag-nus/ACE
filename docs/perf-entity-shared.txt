@@ -1,0 +1,330 @@
+================================================================================
+ACE.Entity (shared domain model) - PERFORMANCE REPORT
+================================================================================
+Scope   : Source/ACE.Entity  (287 files, ~55,200 lines)
+          Position, ObjectGuid, LandblockId, Models/ (Biota, Weenie,
+          PropertiesXXX and their extension methods), Adapter/, Enum/
+Date    : 2026-07-25
+Companion document: bugs-entity-shared.txt
+
+UNPROFILED. Static reading plus call-site counting. Timing figures are estimates
+from published .NET microbenchmark ranges - confirm with a profiler before
+acting.
+
+WHY THIS PROJECT MATTERS MOST
+  Every other project depends on these types, and they sit in the innermost
+  loops of physics, combat and networking. A cheap-looking helper here is
+  called millions of times per second. Conversely, most of the file count is
+  enum declarations with zero runtime cost.
+
+  THE SINGLE LARGEST PERFORMANCE FINDING IN THE ENTIRE AUDIT IS IN THIS
+  DOCUMENT (E.1).
+================================================================================
+
+
+SECTION A - THE CENTREPIECE: A LOCK ON EVERY PROPERTY READ
+================================================================================
+
+E.1  ReaderWriterLockSlim acquired on EVERY Biota property read
+     Models/BiotaExtensions.cs:18-187 (all eight GetProperty overloads)
+
+     Every overload shares one shape:
+
+         if (biota.PropertiesInt == null) return null;
+         rwLock.EnterReadLock();
+         try {
+             if (biota.PropertiesInt.TryGetValue(property, out var value))
+                 return value;
+             return null;
+         }
+         finally { rwLock.ExitReadLock(); }
+
+     CALL PATH: WorldObject_Properties.cs:41-89 ->
+     Biota.GetProperty(property, BiotaDatabaseLock). This is THE standard read
+     primitive for the entire server - 899 explicit GetProperty( call sites and
+     819 SetProperty( in ACE.Server, plus roughly 333 generated accessors in
+     WorldObject_Properties.cs that all funnel through it.
+
+     *** THE EPHEMERAL FAST PATH DOES NOT HELP ***   [VERIFIED DIRECTLY]
+     WorldObject_Properties.cs:69 probes ephemeralPropertyInts before falling
+     through to the lock. I checked the tagging density myself:
+
+         [Ephemeral]-tagged PropertyInt members :   9
+         Total PropertyInt members              : 404
+
+     and confirmed that ArmorLevel, Damage, WeaponTime, Tolerance and
+     ImbuedEffect - the properties combat and ticks actually read - carry NO
+     [Ephemeral] attribute. The probe is therefore a WASTED DICTIONARY LOOKUP
+     preceding the lock, not a mitigation.
+
+     COST: EnterReadLock/ExitReadLock is roughly 40-60ns uncontended -
+     thread-local recursion tracking, spin, interlocked CAS - against roughly
+     3-5ns for the Dictionary<enum,T> lookup it guards. That is a 10-15x
+     overhead on the server's single most common operation.
+
+     Supporting evidence the team already felt this: WorldObject_Tick.cs:24
+     caches HeartbeatInterval into a plain field specifically to stop
+     re-reading it per tick.
+
+     PER-MELEE-SWING ACQUISITION COUNTS
+     Derived by tracing Entity/DamageEvent.cs:163-368 (DoCalculateDamage) and
+     summing biota reads in each helper it fans out to: ~10 direct in
+     DoCalculateDamage; ~6-11 in GetEffectiveAttackSkill
+     (Player_Combat.cs:221-238); ~6-12 in GetEffectiveDefenseSkill
+     (Creature_Combat.cs:481-503); ~8-10 in GetBaseDamage (:400-433); ~15-20 in
+     the modifier block (:226-238); ~8 in the crit block (:249-288); ~9-15 in
+     the armor block (:290-330, at 3 reads per armor layer via
+     Monster_Melee.cs:491-530); ~12-18 in the resistance block (:331-366).
+
+         Player -> monster    ~70-110  read-lock acquisitions per swing
+         Player -> PLAYER    ~150-220
+         Monster -> player   ~120-180
+
+     Multi-strike weapons (Creature_Melee.cs:66+) multiply this 2-3x per
+     animation.
+
+     The player-versus-player figure is dominated by TWO PER-EQUIPPED-ITEM
+     LOOPS that acquire a lock per item across roughly 25 items:
+       Creature_Combat.cs:1293 - EquippedObjects.Values.Count(i =>
+                                 i.ImbuedEffect.HasFlag(...)), hit on EVERY
+                                 GetEffectiveDefenseSkill
+       Monster_Melee.cs:416
+     Both are also reported from the consuming side in perf-worldobjects.txt
+     O.2 - three audits converged on this pair.
+
+     FREQUENCY CEILING: the world ticks at 60Hz (WorldManager.cs:316,
+     `new RateLimiter(60, TimeSpan.FromSeconds(1))`), iterating every object in
+     every active landblock (Landblock.cs:408). Monster think and creature
+     physics run at 5Hz (Monster_Tick.cs:10, WorldObject_Tick.cs:206).
+
+     FIX: landblock groups tick in Parallel.ForEach (LandblockManager.cs:317,
+     379) but are ISOLATED BY DESIGN - cross-thread biota access is essentially
+     only the DB-save path. So: take the lock on WRITE and on the save-path
+     snapshot only; make reads lock-free over volatile-published dictionaries,
+     or use a Monitor on write with plain reads. Keep the existing
+     extension-method signatures so call sites are untouched.
+
+     BLAST RADIUS: VERY LARGE - every rwLock parameter is public API. This is
+     the highest-value and highest-risk change in the audit. Measure first.
+
+
+SECTION B - STRUCTURAL
+================================================================================
+
+E.2  WorldObject.Location is a property-dictionary access; writing it takes a
+     write lock and allocates
+     WorldObject_Properties.cs:2457 defines Location as
+     GetPosition(PositionType.Location).
+
+     Reads become cache-served after the first call (positionCache, line 774)
+     but still cost two dictionary probes - and Location is touched 5-10 TIMES
+     PER OBJECT PER FRAME (WorldObject_Tick.cs:316-327,
+     Monster_Navigation.cs:279-317).
+
+     Writes reach Models/BiotaExtensions.cs:344-360, which takes EnterWriteLock
+     and ALLOCATES a PropertiesPosition (line 352) per movement update.
+     Biota.GetPosition (lines 170-187) likewise allocates a fresh Position
+     inside the read lock.
+
+     FIX: hold Location as a direct field on WorldObject, syncing to the biota
+     dictionary only at save time.
+     BLAST RADIUS: moderate-to-large - Location is read everywhere, but the
+     property signature can stay.
+
+E.3  GetEnchantmentsTopLayerByStatModType sorts in order to take First()
+     Models/PropertiesEnchantmentRegistryExtensions.cs:165-233
+
+     Where -> group by SpellCategory ->
+     OrderByDescending(PowerLevel).ThenByDescending(Level8AuraSelfSpells.Contains(...))
+     .ThenByDescending(setSpells.Contains(...)) -> First() -> ToList().
+     Called from EnchantmentManager.cs:120, 128; there are 69
+     EnchantmentManager.Get*Mod call sites in combat.
+
+     COST: allocates a Lookup, an OrderedEnumerable chain, three comparers,
+     key-selector closures, a buffer and index array per group, and a List -
+     then discards all but one element per group. O(n log n) for an O(n) job,
+     with HashSet.Contains key selectors RE-EVALUATED DURING SORTING.
+
+     FIX: a single pass with Dictionary<SpellCategory, PropertiesEnchantmentRegistry>
+     keeping the running max via an inlined 3-way comparison. Semantics
+     preserved. BLAST RADIUS: local.
+
+     NOTE: bugs-entity-shared.txt S.3 reports this same registry MUTATES UNDER
+     A READ LOCK during the heartbeat. Fix the data race first; then optimise
+     here. perf-worldobjects.txt O.6 covers the caching layer above it.
+
+
+SECTION C - CHEAP, LOW-RISK WINS
+================================================================================
+
+E.4  ObjectGuid does not implement IEquatable<ObjectGuid>
+     ObjectGuid.cs:84-92 overrides only Equals(object). It is the key type for
+     the hottest collections in the server: Landblock.worldObjects
+     (Landblock.cs:76, looked up in GetObject at :1048 and :960),
+     Container.Inventory (Container.cs:133),
+     Creature_Equipment.EquippedObjects (:28), DamageHistory.TotalDamage (:30),
+     AllegianceManager.Players (:29).
+
+     COST: EqualityComparer<ObjectGuid>.Default falls back to
+     ObjectEqualityComparer<T>, which calls Equals(object) - boxing the key (24
+     bytes) plus an isinst/unbox per comparison. Recent JITs MAY elide the box
+     after devirtualisation; adding IEquatable removes the dependence on that
+     entirely.
+
+     FIX: `public readonly struct ObjectGuid : IEquatable<ObjectGuid>` with
+     `bool Equals(ObjectGuid other) => Full == other.Full;`
+     BLAST RADIUS: low, but recompiles everything.
+     (Also found independently in perf-entity-server.txt E.11.)
+
+E.5  Position copy constructor allocates a DISCARDED Tuple<bool,bool>
+     Position.cs:213-218
+
+     `Pos = pos.Pos` hits the setter (line 34) -> SetPosition (lines 37-47) ->
+     SetLandblock() + SetLandCell() + `return new Tuple<bool,bool>(...)` THAT
+     EVERY CALLER DISCARDS.
+
+     Each `new Position(existing)` costs a Position (48B) plus a Tuple (32B)
+     plus roughly 8 branches of boundary math that is a provable no-op when
+     copying an already-valid position.
+
+     These are genuine movement paths: Monster_Navigation.cs:378,
+     Creature_Missile.cs:101, PositionExtensions.cs:52, plus Motion.cs:66 (93
+     `new Motion(` sites, per movement broadcast), SpellProjectileInfo.cs:26,
+     29 per projectile, Creature_Death.cs:440 per corpse item.
+
+     FIX: assign the eight fields directly in the copy constructor; change
+     SetPosition to `out bool blockUpdate, out bool cellUpdate`.
+     BLAST RADIUS: small - SetPosition's return value has about 4 real
+     consumers.
+
+E.6  Property dictionaries typed as IDictionary<,> block inlining
+     Models/Biota.cs:20-28 types the property dictionaries as IDictionary<,>,
+     so TryGetValue is an interface call that cannot be inlined and that blocks
+     static devirtualisation of the comparer.
+     FIX: change to concrete Dictionary<,> - the Adapter and Database
+     converters already construct exactly that.
+     BLAST RADIUS: moderate (IWeenie.cs shares the shape).
+
+E.7  Property dictionaries created with zero capacity
+     BiotaExtensions.cs:201, 220, 239, 258, 277, 296, 315, 334
+     A biota accumulating ~40 ints rehashes at 3, 7, 17 and 37 - four
+     reallocations during spawn. Pre-size to about 16.
+     BLAST RADIUS: none.
+
+E.8  LandblockId.GetHashCode returns base.GetHashCode()
+     LandblockId.cs:114-117
+     ValueType.GetHashCode is a reflection-assisted FCALL (~20-40ns) versus
+     Raw.GetHashCode() (~1ns), and the type also lacks IEquatable. NO
+     Dictionary<LandblockId,...> exists in ACE.Server today, so this is LATENT
+     rather than hot - but it is a trap for anyone who adds one.
+     FIX: `=> (int)Landblock;` matching operator==, which compares only the top
+     16 bits.
+     BLAST RADIUS: none. NOTE bugs-entity-shared.txt S.6 reports the same line
+     as a CORRECTNESS defect (hashcode inconsistent with Equals) - one edit
+     fixes both.
+
+E.9  Enchantment registry is ICollection<T> over a Collection<T> wrapper,
+     queried with LINQ
+     PropertiesEnchantmentRegistryExtensions.cs:43-56 (HasEnchantment ->
+     Any(e => e.SpellId == spellId)), :59-73, :104-119.
+     Instantiated as `new Collection<...>` (WorldObject.cs:243,
+     BiotaConverter.cs:438), so enumeration passes through a wrapper AND a
+     boxed List<T>.Enumerator, plus a display-class allocation per call for the
+     captured lambda.
+     FIX: store as List<T>, iterate with for. BLAST RADIUS: moderate.
+
+E.10 WeenieConverter uses uncapacitied Collection<T> wrappers
+     Adapter/WeenieConverter.cs:60, 88, 96 - two allocations (wrapper plus
+     inner List) plus growth, versus the pre-sized `new List<T>(count)` used
+     correctly at lines 52, 68, 107. Called once per WorldObject creation
+     (WorldObject.cs:107), so hot during respawns and loot generation.
+     NOTE: NO O(n^2) IndexOf patterns exist in the Adapter; conversions are
+     clean single-pass copies. BLAST RADIUS: local.
+
+E.11 ObjectGuid is 8 bytes and re-derives Type in its constructor
+     ObjectGuid.cs:40-57 - three range comparisons and a stored 4-byte Type
+     field on every construction (126 sites, 69 in Physics/WorldObjects/
+     Entity/Network). Doubles dictionary entry size and copy cost.
+     FIX: drop the field; compute Type as a property. BLAST RADIUS: low.
+
+
+SECTION D - CHEAP WINS IN THE COMBAT FAN-OUT
+================================================================================
+Single-file, near-zero-risk edits that remove redundant lock acquisitions.
+(These live in ACE.Server but exist only because of E.1, so they belong here.)
+
+D.1  WorldObject_Properties.cs:1503 - VisualClothingPriority reads the
+     property, DISCARDS it, then reads it again.
+D.2  WorldObject_Properties.cs:1560-1590 - Workmanship reads ItemWorkmanship
+     THREE TIMES and performs a SetProperty (write lock plus
+     ChangesDetected = true) FROM INSIDE A GETTER.
+D.3  WorldObject_Weapon.cs:118-119 - WeaponDefense read three times across two
+     lines, on every attack.
+D.4  Monster_Awareness.cs:257, 261 - this.Tolerance re-read twice inside the
+     per-creature target-selection loop.
+D.5  PositionPack.cs:42 - a GetProperty(PropertyInt.Placement) lock acquisition
+     PER POSITION BROADCAST, plus a heap-allocated Origin (a class) and four
+     byte[]. GameMessageUpdatePosition.cs:17 already carries the comment
+     `// todo: avoid create intermediate object`.
+
+
+SECTION E - LOOKS EXPENSIVE BUT IS ACTUALLY COLD
+================================================================================
+E.1  EphemeralProperties.cs / SendOnLoginProperties.cs - heavy reflection
+     (GetFields, GetCustomAttributes, LINQ, anonymous types), but run once in a
+     static initialiser and cached into HashSets. Correctly done.
+E.2  Enum/AttributeExtensions.cs:5-12 - reflection per call, but callers are
+     CharacterOption.cs:189-190 (static init) and PropertyAttribute(2nd).cs:21,
+     whose only ACE.Server caller is Session.cs:307 on disconnect.
+E.3  HasFlag - 459 uses, 377 in physics and combat. JIT-intrinsified since
+     .NET Core 2.1; no boxing. NOT a finding.
+E.4  Position.DistanceTo / SquaredDistanceTo / Distance2D / GetOffset - about
+     52 call sites, and physics uses its own ACE.Server/Physics/Common/Position.
+     The sqrt-free variants already exist and are used correctly for range
+     checks (WorldObject_Networking.cs:1365, 1404).
+E.5  ACEPosition() (PositionExtensions.cs:329) - CORRECTION to an earlier
+     assumption: this is EVENT-DRIVEN (deaths, projectiles, magic), not
+     per-frame. The Physics<->Entity conversion is NOT a per-frame allocator.
+     The hot sync paths (WorldObject_Tick.cs:322-324,
+     Monster_Navigation.cs:311-313, WorldObject.cs:227-238) already
+     deliberately bypass the allocating Pos setter and assign PositionX/Y/Z
+     individually.
+E.6  Position.ToString() / ToLOCString() (lines 506-514) - about 70 call sites,
+     all admin commands, logging and error paths.
+E.7  Serialize (lines 325-377) - branch-per-field, bounded by network send
+     rate.
+E.8  Sphere.cs, Plane.cs, BSPNode.cs, Polygon.cs, SWVertex.cs, Frame.cs - ZERO
+     references from ACE.Server; physics has its own copies. Dead weight, not
+     a cost.
+E.9  LINQExtensions.cs - a hand-rolled allocation-free Sum. Fine.
+E.10 All of Enum/ apart from the two attribute-scanner files - pure
+     declarations, zero runtime cost.
+
+
+SECTION F - RECOMMENDED ORDER
+================================================================================
+  1. MEASURE FIRST. Given how concentrated the cost is in the two
+     equipped-item loops, the right first measurement is a PLAYER-VERSUS-PLAYER
+     MELEE EXCHANGE, not a general landblock trace. That scenario exercises the
+     ~150-220 acquisition path and both Creature_Combat.cs:1293 and
+     Monster_Melee.cs:416 simultaneously, on both sides.
+  2. The five cheap wins in Section D, plus E.4, E.7, E.8 and E.11 -
+     near-zero-risk, mostly one-liners, worth doing regardless of profiling.
+     E.8 also fixes a correctness bug.
+  3. E.3 (enchantment top-layer) - best effort-to-reward ratio after the lock,
+     and entirely local. Fix bugs-entity-shared.txt S.3 first.
+  4. E.1 (the lock) - dwarfs everything else in the audit, but carries the
+     largest blast radius. Do it behind unchanged extension-method signatures
+     so no call site moves.
+  5. E.2 (Location as a field) - the largest structural win on the physics
+     path. Attempt only after E.1 lands.
+
+FINAL NOTE: E.1 is the single largest performance finding in this entire audit -
+plausibly larger than everything in the other eleven perf reports combined,
+because it taxes every property read in the server. It is also the riskiest
+change. That combination is exactly why the measurement step above is listed
+first rather than as an afterthought.
+
+================================================================================
+END OF REPORT
+================================================================================

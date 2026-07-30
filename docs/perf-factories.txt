@@ -1,0 +1,301 @@
+================================================================================
+ACE.Server/Factories - PERFORMANCE REPORT
+================================================================================
+Scope   : Source/ACE.Server/Factories  (116 files, ~69,900 lines)
+Date    : 2026-07-25
+Companion document: bugs-factories.txt
+
+UNPROFILED. All costs are reasoned from reading the code, not measured.
+
+CALL PATH (established by reading)
+  Creature_Death.GenerateTreasure (WorldObjects/Creature_Death.cs:653)
+    -> LootGenerationFactory.CreateRandomLootObjects
+      -> three loops (Item / MagicItem / Mundane)
+        -> RollWcid -> CreateAndMutateWcid -> per-type Mutate*
+          -> AssignMagic -> AssignSpells -> MutateValue
+
+  Runs ON THE LANDBLOCK WORKER THREAD inside the parallel tick, roughly 3-10
+  items per corpse. Also reached from Creature_Equipment.cs:791 (per spawn) and
+  Corpse.cs:330 (rare roll).
+
+ANSWER TO THE PRIMARY QUESTION: THE DATA TABLES ARE CORRECTLY STATIC.
+  Every ChanceTable, List, Dictionary and HashSet in Tables/** is a
+  `static readonly` field or built in a static constructor. All of Tables/** was
+  scanned for construction inside methods; the only hits are
+  CantripChance.ApplyNumCantripsMod / ApplyCantripLevelsMod, which run at static
+  init and on property change. NO TABLE IS REBUILT PER ROLL.
+
+  This was the main hypothesis going in and it did not hold. Recorded so it is
+  not re-investigated.
+================================================================================
+
+
+SECTION A - REDUNDANT WORK PER GENERATED ITEM
+================================================================================
+
+G.1  The same spellbook is re-walked with FRESH Spell objects in 3-4 passes
+     LootGenerationFactory_Magic.cs:55 (GetMaxBaseMana), :149, :159
+     (GetMaxSpellPower); LootGenerationFactory.cs:739, 747 (MutateValue_Spells);
+     plus _Magic.cs:28 and _Caster.cs:~120
+
+     Each `new Server.Entity.Spell(id)` costs TWO objects - Spell plus
+     SpellFormula (Entity/Spell.cs:73-79) - a dat dictionary lookup, and a
+     GetCachedSpell call.
+
+     A magic item with 3 spells costs roughly 10-14 Spell allocations. At 5
+     magic items per corpse that is 60-70 short-lived object PAIRS per corpse,
+     all on the landblock tick thread - direct Gen0 pressure on the threads
+     least able to absorb it.
+
+     FIX: compute maxBaseMana, maxPower and levelSum ONCE in AssignSpells while
+     the spell list is already in hand, and stash them on TreasureRoll.
+     Alternatively widen the existing Entity/SpellLevelCache.cs to a
+     ConcurrentDictionary<int, (level, power, baseMana)> - the pattern already
+     exists in-tree and currently has exactly one caller.
+
+G.2  RollEnchantmentDifficulty does OrderBy().ToList() per magic item
+     LootGenerationFactory_Spells.cs:230-238
+
+     To compute "sum of levels excluding the maximum" it allocates a
+     List<Spell>, N Spell objects, an OrderedEnumerable plus its sort buffer,
+     and a second List.
+
+     FIX: one pass using SpellLevelCache.GetSpellLevel, tracking sum and max,
+     returning sum - max. Zero allocations, identical result.
+
+G.3  MutateColor allocates a filter list and a LINQ Sum for nearly every item
+     LootGenerationFactory.cs:569-575
+
+     Runs for all armor, clothing, weapons and gems that have a ClothingBase.
+     The dat read itself is cached (DatDatabase.cs:64-68), so that part is fine -
+     the cost is the per-item filter list and probability sum.
+
+     FIX: fold the ClothingSubPalEffects.ContainsKey filter and the probability
+     sum into a single loop, then re-scan for the rng pick. Or cache the
+     valid-palette cumulative array per (materialType, colorCode, clothingBase)
+     in a ConcurrentDictionary.
+
+G.4  Every wo.* property read takes a ReaderWriterLockSlim read lock
+     ACE.Entity/Models/BiotaExtensions.cs:94-106
+
+     TreasureRoll.HasArmorLevel(wo) (Entity/TreasureRoll.cs:65) is a
+     wo.ArmorLevel read, and it is called roughly TWELVE TIMES through a single
+     item's pipeline - RollSpells, RollItemSpells,
+     GetSpellSelectionCode_Dynamic, RollCantrip, GearRatingChance.Roll,
+     EquipmentSetChance.Roll, CreateAndMutateWcid - on top of the dozens of
+     get/set calls in MutationFilter.TryMutate.
+
+     FIX: cache hasArmorLevel as a field on TreasureRoll (it already caches
+     BaseArmorLevel at LootGenerationFactory.cs:278), refreshed once after
+     AssignArmorLevel.
+
+     See perf-entity-shared.txt for the underlying lock-per-property-read cost,
+     which affects the whole codebase, not just loot generation.
+
+G.5  ChanceTable.Roll is an O(n) scan with an ALLOCATING fallback
+     Entity/ChanceTable.cs:40-50
+
+     Called roughly 10-25 times per item. The largest tables are the
+     SpellSelectionTable groups (~30-50 entries) and the armor/weapon wcid
+     tables.
+
+     Worse, the fallback `this.Last(i => i.chance > 0)` boxes a List enumerator
+     and rescans - and it is reached whenever the `total >= qualityMod` guard
+     rejects every entry, which happens ROUTINELY on servers with
+     LootQualityMod > 0.
+
+     (bugs-factories.txt F.3 documents that this same guard is also a
+     correctness defect - it acts as a cliff rather than a scale. Fix both in
+     one edit.)
+
+     FIX: freeze each table into `float[] cumulative` plus `T[] results` on
+     first use - the existing `verified` flag gives you the hook - binary-search
+     the roll, and precompute the fallback result once.
+
+G.6  Mutation script names rebuilt as strings per weapon
+     LootGenerationFactory_Melee.cs:103-108 (two concatenations per melee
+     weapon), _Caster.cs:135, _Missile.cs similarly
+
+     Each allocates a ~50-70 character string which is then hashed for the
+     ConcurrentDictionary<string, MutationFilter> lookup
+     (Entity/Mutations/MutationCache.cs:22).
+
+     FIX: return interned const or static readonly names from a switch - the
+     pieces already come from switches at Enum/TreasureWeaponType.cs:88 and
+     Enum/MeleeWeaponSkill.cs:48 - or key the cache by an int id.
+
+G.7  GetMaterialType does two nested dictionary lookups plus two linear scans
+     per item
+     LootGenerationFactory.cs:437-465
+     Correctly cached at the database layer, but the material-base and
+     material-group probability lists are rescanned per item.
+     FIX: precompute cumulative arrays per (materialCode, tier) and
+     (materialId, tier) once at cache-build time, and binary-search.
+
+
+SECTION B - ADJACENT: LANDBLOCK LOAD
+================================================================================
+
+G.8  WorldObjectFactory.CreateNewWorldObjects is O(N x M) with per-iteration
+     closures
+     WorldObjectFactory.cs:280 (Where), :297
+     (`biotas.FirstOrDefault(b => b.Id == instance.Guid)` INSIDE the instance
+     loop), :320 (sourceObjects.FirstOrDefault per link)
+
+     Called at every landblock load (Entity/Landblock.cs:208). Dense landblocks
+     carry hundreds of instances, so this is N x M scans plus a closure and
+     delegate allocation per iteration.
+
+     FIX: build Dictionary<uint, Biota> and Dictionary<uint, LandblockInstance>
+     once before the loop.
+
+     This compounds with perf-database.txt Q.3, which shows landblock loading
+     already double-reads and discards biotas. Landblock load is the weakest
+     path in the server on current evidence.
+
+
+SECTION C - LOOKS EXPENSIVE BUT IS COLD OR CORRECTLY STATIC
+================================================================================
+C.1  ALL of Tables/** - SpellSelectionTable, TreasureProfile_*, ArmorWcids,
+     WeaponWcids, ScrollWcids, CantripChance, QualityChance, WorkmanshipChance,
+     GemMaterialChance, GemCountChance. Static constructors, dictionary and
+     HashSet lookups, O(1) indexing. GemCountChance's WorldDbContext query runs
+     once at type init.
+C.2  SpellLevelProgression - 8,400 lines of declarations, but a single
+     Dictionary<SpellId, List<SpellId>> lookup at runtime.
+C.3  LootGenerationFactory_Rare.TryCreateRare - the RareWCIDs[tier].ToList() at
+     line 86 and the O(n) GetRareTier only execute after a 1-in-2500 hit.
+C.4  LootStats.cs, LootGenerationFactory_Test.cs, MutateItem
+     (LootGenerationFactory.cs:936, /lootgen only), Entity/LootParser.cs,
+     Entity/LootSwap.cs (reflection and file parsing, admin-triggered),
+     PlayerFactory* (character creation).
+C.5  MutationCache script compilation (~2ms) is memoised in a
+     ConcurrentDictionary; dat reads via ReadFromDat are cached;
+     GetCachedWeenie / GetCachedSpell are ConcurrentDictionary hits.
+C.6  Enum.HasFlag in Entity/MutateFilters.cs:52 - a non-boxing intrinsic on
+     net10.0.
+
+
+SECTION D - AN OPEN DISAGREEMENT BETWEEN TWO AUDITS
+================================================================================
+Recorded honestly rather than resolved, because the two passes reached
+different conclusions and I have not verified either directly.
+
+  SITE: ACE.Database/WorldDatabaseWithEntityCache.cs:906, 980, 1055 -
+        GetCachedTreasureMaterialColors / ...MaterialBase / ...MaterialGroup
+        lazily initialise plain Dictionary fields with an unguarded null check,
+        while being called from parallel landblock threads.
+
+  THIS AUDIT flagged it as a concurrency concern.
+
+  THE DATABASE BUG AUDIT (bugs-database.txt, Section D "investigated, not a
+  bug", item E.7) concluded it is SAFE: the worst case is duplicated work,
+  because the field is assigned only after the table is fully built, and
+  reference assignment is atomic.
+
+  MY ASSESSMENT: the database audit's reasoning is probably right for the
+  common case - this is the standard benign lazy-init race, and duplicated
+  construction is the expected worst outcome. The nuance neither pass raised is
+  MEMORY ORDERING: without a barrier, a second thread can in principle observe
+  the assigned reference before the dictionary's contents are visible. On x86
+  and x64 the strong memory model makes this very unlikely; on ARM it is a real
+  possibility, and ARM server deployments are no longer exotic.
+
+  RECOMMENDATION: treat as low priority, but if touched, use Lazy<T> or
+  Volatile.Write rather than reasoning about it again.
+
+
+SECTION E - SUGGESTED PRIORITY
+================================================================================
+  1. G.1  Compute the spell aggregates once. Largest allocation source on the
+          loot path, and the caching pattern already exists in-tree.
+  2. G.5  Freeze ChanceTable into cumulative arrays - and fix the qualityMod
+          correctness defect (bugs-factories.txt F.3) in the same edit. The
+          allocating fallback fires routinely, not rarely.
+  3. G.4  Cache hasArmorLevel on TreasureRoll - removes ~12 lock acquisitions
+          per item for a one-field change.
+  4. G.8  Dictionary lookups in CreateNewWorldObjects. Sequence with
+          perf-database.txt Q.3 as one landblock-load work item.
+  5. G.2, G.3 - per-item LINQ and list allocation.
+  6. G.6, G.7 - string and scan overhead.
+  7. Section D only if you are deploying on ARM.
+
+HONEST FRAMING: loot generation is bursty rather than sustained - it fires on
+creature death, not every tick - so none of this is a steady-state drain. Its
+significance is that it allocates heavily ON THE LANDBLOCK WORKER THREADS,
+where GC pauses directly translate into physics and tick stalls for everyone on
+that landblock group. That is the reason to care, and it is why G.1 (60-70
+object pairs per corpse) ranks above the algorithmic items.
+
+
+================================================================================
+SECTION H - ADDITIONS FROM THE DEEP LOOT PASS
+   A second pass over the per-type factories and the mutation script engine
+   (ACE.Server/Entity/Mutations/) surfaced three further performance items.
+   Its correctness findings are in bugs-factories.txt Section G.
+================================================================================
+
+H.1  A FAILED script build is never cached, so it re-runs reflection on EVERY
+     loot roll
+     ACE.Server/Entity/Mutations/MutationCache.cs:33-41
+
+     GetMutation caches successful builds in a ConcurrentDictionary, but when
+     BuildMutation fails - a missing embedded resource - it returns null
+     WITHOUT caching that outcome.
+
+     CONSEQUENCE: every subsequent loot roll for that item type re-runs
+     assembly-resource reflection (GetManifestResourceStream) AND emits an
+     error log line. On a shard where one skill/weapon-type combination has no
+     shipped script - see bugs-factories.txt G.1, which shows this is reachable
+     by normal play - that is reflection plus a log write per affected kill,
+     forever.
+
+     FIX: cache the null result (or a sentinel) so the failure costs one
+     lookup. Note this is the PERFORMANCE half of G.1; the correctness half is
+     the unchecked NRE at the five call sites, and G.1 should be fixed first.
+
+H.2  Unbounded item count from world-DB content
+     LootGenerationFactory.cs:51, 65, 79
+
+     numItems comes from ThreadSafeRandom.Next(profile.ItemMinAmount,
+     profile.ItemMaxAmount) with NO UPPER CLAMP, and each iteration is a full
+     weenie instantiation plus the entire mutation chain.
+
+     A treasure_death row with ItemMaxAmount = 1000000 - a typo, or extra
+     zeros - hangs a landblock worker thread for minutes and allocates a
+     million WorldObjects, most of which are then discarded by container
+     capacity anyway.
+
+     This is filed as bugs-factories.txt G.13 as well, because it is
+     simultaneously a robustness defect and an availability risk. Clamping to a
+     sane maximum costs one line.
+
+H.3  MutationFilter re-rolls are correlated, not independent
+     ACE.Server/Entity/Mutations/MutationFilter.cs:16-21, Mutation.cs:30
+
+     One rng value is drawn and reused for every Mutation in a script file, and
+     one roll is reused across all Outcomes. This is not a performance defect
+     today - it is cheaper than rolling per outcome - but it is recorded here
+     because the obvious "optimisation" of caching rolls even harder would
+     entrench a statistical bug. Shipped scripts are unaffected (tier chances
+     are all 0/1 and no script has more than one outcome group, verified), but
+     any future script would get perfectly correlated outcomes.
+     See bugs-factories.txt G.24.
+
+
+A NOTE ON WHERE LOOT PERFORMANCE ACTUALLY MATTERS
+  Both loot passes reached the same conclusion and it is worth stating plainly:
+  loot generation is BURSTY, not sustained - it fires on creature death, not
+  every tick. None of it is a steady-state drain.
+
+  Its significance is entirely that it allocates heavily ON THE LANDBLOCK
+  WORKER THREADS, where GC pauses translate directly into physics and tick
+  stalls for every player on that landblock group. That is why G.1 (the 60-70
+  short-lived object pairs per corpse) outranks every algorithmic item in this
+  document, and why the memory-lifetime framing in perf-physics.txt Section M
+  applies here too: Gen0 churn on those threads is the thing to attack
+  structurally, not one allocation at a time.
+
+================================================================================
+END OF REPORT
+================================================================================

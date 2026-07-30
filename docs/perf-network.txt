@@ -1,0 +1,358 @@
+================================================================================
+ACE.Server/Network - PERFORMANCE REPORT
+================================================================================
+Scope   : Source/ACE.Server/Network  (426 files, ~18,650 lines)
+Date    : 2026-07-25
+Companion document: bugs-network.txt
+
+UNPROFILED. Static reading of call paths; costs are reasoned, not measured.
+
+CALL-FREQUENCY MODEL
+  NetworkManager.DoSessionWork   ~1000Hz (WorldManager outer loop)
+  NetworkSession.Update          per session per outer tick
+  Bundle flush                   min 5ms apart, so ~80% of Update calls no-op
+  GameMessage serialization      per message - and see P.1, sometimes PER
+                                 RECIPIENT
+  ConnectionListener.OnDataReceive  per inbound datagram, SERIALIZED per port
+
+SECTION 0 - FINDINGS FROM THE INITIAL SWEEP (folded in)
+================================================================================
+
+P.0a  Parallel.ForEach over a mostly-empty 1000-slot array, ~1000 times/second
+      NetworkManager.cs:359
+
+          Parallel.ForEach(sessionMap, ..., s => s?.TickOutbound());
+
+      sessionMap is a fixed-size array sized to MaximumAllowedSessions. The
+      SHIPPED config value (Config.js:15) is 1000, while the code default
+      (ACE.Common/NetworkSettings.cs:28) is 128.
+
+      With 5 players online this still partitions and dispatches 1000 slots,
+      roughly 1000 times per second, to perform 5 slots of real work.
+      Parallel.ForEach carries real per-invocation partitioning and
+      task-scheduling overhead.
+
+      FIX: maintain a compact collection of active sessions and iterate that
+      instead of the sparse fixed array; or fall back to a serial loop when the
+      active count is below a threshold, since parallelism is not worth the
+      scheduling overhead for a handful of sessions.
+
+      This is plausibly the single largest CPU win in the server.
+
+P.0b  Per-tick LINQ allocation and a slow null comparison
+      NetworkManager.cs:364
+          foreach (var session in sessionMap.Where(k => !Equals(null, k)))
+      Allocates an enumerator every tick and uses the static object.Equals
+      overload where `k != null` would do.
+
+P.0c  Full-array scans under lock on every login
+      NetworkManager.cs - GetSessionCount (~200),
+      GetAuthenticatedSessionCount (~213),
+      GetSessionEndpointTotalByAddressCount (~249)
+      Each performs a full 1000-element scan while holding the session lock,
+      on the login path. Running counters, or reuse of the compact
+      active-session collection from P.0a, removes them.
+
+P.0d  AcknowledgeSequence materialises the whole dictionary on every ACK
+      NetworkSession.cs:669
+          var removalList = cachedPackets.Keys.Where(x => x < sequence);
+      ConcurrentDictionary.Keys does NOT return a lazy view - it acquires all
+      internal locks and materialises a new List of EVERY key, on every ACK
+      packet received. With up to 120 seconds of cached packets per session
+      (cachedPacketRetentionTime) that is a large allocation plus a lock convoy
+      in a per-packet path.
+      FIX: iterate cachedPackets directly and TryRemove inside the loop,
+      avoiding both the snapshot and the full lock acquisition.
+
+P.0e  Serialisation allocations
+      Extensions.cs:17 (WriteString16L) - a GetEncoding(1252) lookup AND a
+        fresh byte[] for every string written to every game message, across 100
+        call sites. Because cp1252 is single-byte, encoded length always equals
+        data.Length, so a bounded stackalloc plus a cached static Encoding is
+        safe.
+      Extensions.cs:28, 33 (WritePackedDword) - `writer.Write(BitConverter.GetBytes(v))`
+        allocates purely to hand bytes to BinaryWriter, which already has
+        allocation-free Write(ushort) and Write(uint) overloads emitting the
+        identical little-endian bytes. The fix is to delete the allocation, not
+        to stackalloc.
+      Extensions.cs:51 (Pad) - `writer.Write(new byte[pad])` allocates 0-3
+        bytes on every WriteString16L and every Align, so it is very hot.
+        Prefer a static readonly zero array over stackalloc here: stackalloc is
+        only zeroed because Roslyn emits `localsinit` by default, so if anyone
+        ever adds [SkipLocalsInit] the padding would silently become
+        uninitialised stack memory written into outbound packets - an
+        information leak.
+      NetworkSession.cs:416 - `needSeq.ForEach(k => msReqData.Write(BitConverter.GetBytes(k), 0, 4))`
+        allocates up to 115 four-byte arrays per NAK. reqData itself escapes
+        into reqPacket.Data so it cannot be stack-allocated, but the loop
+        should write via BinaryPrimitives.WriteUInt32LittleEndian directly into
+        it.
+      ConnectionListener.cs:106 - the debug-only `new byte[dataSize]` copy is
+        redundant; BuildPacketString already accepts (startPosition,
+        bytesToOutput) and is called that way at NetworkSession.cs:773.
+      SessionConnectionData.cs:63-65 - a purely local `byte[8]` that never
+        escapes; a clean stackalloc candidate, but cold (once per session).
+
+      WHERE stackalloc MUST NOT BE USED: PacketHeaderOptional.cs:74 and
+      GameAction/Actions/GameActionSetCharacterOptions.cs:188 derive their
+      sizes from CLIENT-SUPPLIED packet data. A stackalloc on an
+      attacker-controlled length is a remotely triggerable StackOverflowException,
+      which in .NET is UNCATCHABLE and kills the process immediately.
+      MessageFragment.cs:88 escapes into ServerPacketFragment.Data.
+      NetworkSession.cs:756 already correctly uses ArrayPool.
+
+      BUILD CONSTRAINT: ACE.Server targets net10.0, but ACE.Common,
+      ACE.DatLoader and ACE.Entity target netstandard2.0 where Span<T> is not
+      in the framework. ACE.Common/Cryptography/Hash32.cs compiles only via a
+      transitive System.Memory pulled in by System.Text.Json, which is fragile.
+      Any Span work in ACE.DatLoader needs an explicit System.Memory reference
+      first.
+================================================================================
+
+
+SECTION A - O(N^2) SERIALIZATION ON ZONE ENTRY
+================================================================================
+
+P.1  The heaviest serializer is rebuilt PER OBSERVING PLAYER
+     WorldObjects/Player_Tracking.cs:62; WorldObject_Networking.cs:56, 223;
+     Creature_Networking.cs:34
+
+     Each observing player calls
+     `new GameMessageCreateObject(wo, Adminvision, Adminvision)` INDIVIDUALLY,
+     so SerializeCreateObject -> SerializeModelData -> CalculateObjDesc() runs
+     once per recipient. For creatures and players CalculateObjDesc does
+     EquippedObjects.Values.Where(...).ToList(), three OrderBy passes, and a
+     ClothingTable DAT lookup per equipped item.
+
+     When a player enters a crowded landblock that is O(N) heavy
+     serializations for the entering player plus O(N) on each observer, plus
+     roughly 10 more per creature via TrackEquippedObject - i.e. O(N^2)
+     DAT-backed serialization on zone entry. This is the classic "crowded town
+     lags on entry" shape.
+
+     FIX: build the message once per (object, adminvision) pair and share it.
+     Adminvision is false for essentially all players, so a single cached
+     GameMessageCreateObject covers the whole broadcast set. Cache
+     CalculateObjDesc() on the WorldObject and invalidate on
+     equip/unequip/barber.
+
+
+SECTION B - PER-RECIPIENT COST IN THE SEND PATH
+================================================================================
+
+P.2  Broadcast amplification lives at the FRAGMENT layer, not the message layer
+     MessageFragment.cs:87-91
+
+     Good news first: WorldObject_Networking.cs:1376/1409 and Landblock.cs:1212
+     correctly share ONE GameMessage across all recipients.
+
+     But at flush time, each session's SendBundle calls CreateServerFragment,
+     which does `Message.Data.Seek(...)` plus `new byte[dataToSend]` plus
+     `Read(...)` - a FULL BYTE COPY of the payload per recipient. 100 players x
+     100 recipients x 60Hz UpdatePosition is roughly 600,000 byte[68]
+     allocations per second.
+
+     *** CORRECTNESS HAZARD IN THE SAME LINE ***
+     SendBundle runs under Parallel.ForEach (NetworkManager.cs:349), so
+     multiple threads Seek the SAME SHARED MemoryStream concurrently. That is a
+     data race, not merely a performance issue - two threads can interleave
+     Seek and Read and produce corrupted fragments. This is recorded in
+     bugs-network.txt as well.
+
+     FIX: have ServerPacketFragment reference
+     (Message.Data.GetBuffer(), offset, len) instead of owning a copy.
+     CreateReadyToSendPacket already only BlockCopys out of it. This removes
+     the race AND the copy in one change.
+
+P.3  Payload Hash32 recomputed per recipient
+     ServerPacketFragment.cs:26
+
+     Hash32.Calculate(Data, Data.Length) is an O(size) scan over IDENTICAL
+     bytes for every recipient of a shared message. Only the HEADER hash
+     differs per recipient (the sequence number).
+
+     FIX: compute the payload hash once per fragment slice on the GameMessage
+     and reuse it.
+
+
+SECTION C - PER-TICK OVERHEAD
+================================================================================
+
+P.4  12 locks and ~16 DateTime.UtcNow per session per 1kHz tick
+     NetworkSession.cs:182-249
+
+     WorldManager sleeps 1ms, so DoSessionWork runs ~1000Hz - but bundles only
+     flush every 5ms, so at least 80% of these ticks do nothing useful.
+
+     Per call: one prune check, 4 UtcNow in the InvalidQueue branch, one per
+     each of the other 11 groups, and 12 lock acquire/release pairs on
+     currentBundleLocks. At 200 sessions that is roughly 3.2 million UtcNow
+     reads and 2.4 million lock operations per second.
+
+     FIX: snapshot `var now = DateTime.UtcNow` once, and early-return the whole
+     group loop when `now < nextSend && now < nextAck && now < nextResync`
+     (still calling FlushPackets()).
+
+P.5  ArrayPool rent is 8x oversized and returned with clearArray: true
+     NetworkSession.cs:756, 798
+
+     Rent size is `20 + Data.Length + Fragments.Count * 464`, but a finished
+     packet is bounded at 484 bytes (MaxPacketSize 464 + 20 header). An
+     8-fragment bundle requests 3732, rents 4096, and then Return(buffer, true)
+     ZEROES 4096 BYTES PER PACKET SENT.
+
+     FIX: rent a fixed 484 and Return(buffer) without clearing - nothing
+     sensitive persists in a pool the same process owns.
+
+P.6  Every property-update message allocates a byte[] under a global lock
+     Sequence/SequenceManager.cs:152-188; UIntSequence.cs, UShortSequence.cs,
+     ByteSequence.cs (CurrentBytes / NextBytes)
+
+     GetSequence takes `lock (sequenceList)`, and every accessor returns a
+     freshly allocated 1/2/4-byte array via BitConverter.GetBytes or
+     `new byte[]{...}`.
+
+     PositionPack (Structure/PositionPack.cs:44-53) allocates FOUR of these per
+     UpdatePosition. GameMessageUpdateMotion, GameMessageVectorUpdate and all
+     GameMessagePublicUpdateProperty* allocate 1-2 each.
+
+     FIX: add WriteCurrentSequence(BinaryWriter, ...) overloads that write the
+     scalar directly; retain the byte[] API only for legacy callers.
+
+P.7  Unguarded packetLog.DebugFormat on the hottest paths
+     42 instances in NetworkSession.cs, 3 in MessageFragment.cs
+
+     log4net checks IsDebugEnabled INSIDE the method, but arguments are
+     evaluated at the call site regardless. Value-type arguments box (heap
+     allocation), and calls with 4+ arguments bind to params object[] and
+     allocate an array.
+
+     Worst by frequency: NetworkSession.cs:130 and :154 (per message PER
+     RECIPIENT, boxing message.Opcode); MessageFragment.cs:49 (3 boxes per
+     message per recipient); MessageFragment.cs:66, :99 (per fragment per
+     recipient); NetworkSession.cs:825/848/876/884 (per fragment);
+     :274/437/485/493/499/516/523/535/540 (per datagram or fragment inbound).
+
+     FIX: wrap in `if (packetLog.IsDebugEnabled)`. The pattern already exists
+     in the same file at lines 172, 423 and 739 - so this is inconsistency, not
+     a missing idiom.
+
+P.8  cachedPackets retains every sent packet for 120 seconds
+     NetworkSession.cs:72, 731
+
+     Each retained ServerPacket holds its Fragments list and their byte[]
+     payloads. At ~20 packets/sec/session that is ~2,400 packets - over 1 MB
+     per session - surviving into gen2. At 200 players that is 200 MB+ of
+     long-lived garbage churning the GC. AcknowledgeSequence trims it only when
+     acks arrive.
+
+     FIX: cap the cache by COUNT as well as age. Retail NAK windows are small -
+     MaxNumNakSeqIds is 115 - so retaining 2,400 packets serves no purpose.
+
+P.9  EnqueueBroadcast allocates a LINQ pipeline plus a List per broadcast
+     Physics/Common/ObjectMaint.cs:717, called from
+     WorldObject_Networking.cs:1394, 1420
+
+     `KnownPlayers.Values.Select(...).OfType<Player>().ToList()` allocates a
+     list plus two enumerators under a read lock, for EVERY movement, motion
+     and effect broadcast. EnqueueBroadcast(params GameMessage[]) adds a params
+     array per call.
+
+     FIX: expose a foreach-friendly enumeration or a pooled reusable buffer,
+     and add a single-message non-params overload.
+     (Also reported from the Entity side - see perf-entity-server.txt.)
+
+P.10 O(n*m) fragment removal and LINQ in SendBundle
+     NetworkSession.cs:842, 867, 902
+
+     Per packet iteration: a fresh List<MessageFragment> removeList, then
+     `fragments.RemoveAll(x => removeList.Contains(x))` - a closure allocation
+     plus an O(n*m) linear scan - and `fragments.FirstOrDefault()` instead of
+     `fragments[0]`. Small n normally, but this runs per packet per session per
+     flush.
+
+     FIX: iterate backwards over fragments and RemoveAt; drop removeList
+     entirely.
+
+
+SECTION D - INBOUND PATH
+================================================================================
+
+P.11 Inbound datagram processing is fully serialized per port
+     ConnectionListener.cs:74-121; ClientPacket.cs:29-31
+
+     One shared buffer per listener means BeginReceiveFrom is only re-armed
+     AFTER NetworkManager.ProcessPacket - including CRC search and fragment
+     reassembly - returns. Inbound throughput is therefore single-threaded per
+     port.
+
+     Per datagram it allocates two IPEndPoints (lines 75, 93), a ClientPacket,
+     a MemoryStream, a BinaryReader, and one ClientPacketFragment plus byte[]
+     per fragment.
+
+     FIX: multiple in-flight receive buffers (a SocketAsyncEventArgs pool) so
+     unpacking overlaps receiving; pool ClientPacket and fragment objects.
+
+P.12 CryptoSystem.Search can walk 256 ISAAC iterations per inbound packet
+     ACE.Common/Cryptography/CryptoSystem.cs:29-47
+
+     On the in-order path CurrentKey == x hits immediately, but any reordering
+     makes the loop generate and HashSet.Add up to `256 - xors.Count` keys.
+     Under packet loss this becomes the dominant per-datagram cost - and it
+     runs on the single serialized receive thread (P.11), so it stalls ALL
+     inbound traffic on that port.
+
+     Worth instrumenting before optimising. See also bugs-common.txt C.3, which
+     describes how this same loop can saturate permanently.
+
+
+SECTION E - LOOKS EXPENSIVE BUT IS COLD
+================================================================================
+E.1  Structure/AppraiseInfo.cs (866 lines) - built only from Player.cs:270,
+     282, 290, 342, i.e. a player-initiated Assess. Its 7 dictionary copies,
+     SortedDictionary rebuilds (line 792) and PackableHashTable writes are
+     per-click, not per-tick.
+E.2  InboundMessageManager.DefineMessageHandlers / DefineActionHandlers - full
+     assembly reflection scan, but once at startup.
+E.3  Extensions.BuildPacketString and the StringBuilder blocks in
+     SendPacketRaw / OnDataReceive - already correctly guarded by
+     IsDebugEnabled.
+E.4  DoRequestForRetransmission (NetworkSession.cs:387) - List, MemoryStream,
+     per-element BitConverter.GetBytes and a Select/Aggregate string build, but
+     rate-limited to once per second per session and only on loss.
+E.5  PruneCachedPackets (line 251) - LINQ over .Values with TryRemove during
+     enumeration, but only every 5 seconds.
+E.6  NetworkManager.GetUniqueSessionEndpointCount /
+     GetSessionEndpointTotalByAddressCount - full 1000-slot scans, login path
+     only.
+E.7  NetworkStatistics - plain Interlocked.Increment, correctly cheap.
+E.8  PacketHeader.CalculateHash32 / PacketFragmentHeader.Pack - already
+     stackalloc plus BinaryPrimitives, no allocation. Leave alone.
+
+
+SECTION F - SUGGESTED PRIORITY
+================================================================================
+  1. P.2  Offset-based fragments. Fixes a genuine THREAD-SAFETY BUG and removes
+          the largest per-recipient allocation at the same time. Highest value
+          in this document for that reason.
+  2. P.1  Share GameMessageCreateObject across observers and cache
+          CalculateObjDesc. This is the O(N^2)-on-zone-entry fix.
+  3. P.4  Early-return in NetworkSession.Update. Trivial change, removes
+          millions of UtcNow reads and lock operations per second.
+  4. P.7  Guard the 45 unguarded debug log calls. Mechanical, and the correct
+          pattern is already in the same file.
+  5. P.5  Right-size the ArrayPool rent and stop zeroing 4 KB per packet.
+  6. P.3, P.6, P.8, P.10 - remaining per-recipient and per-packet allocation.
+  7. P.11 Overlapped receive. Larger change; do it after measuring whether the
+          serialized receive path is actually a bottleneck at your player
+          count.
+  8. P.12 Instrument first; optimise only if the loss path proves hot.
+
+CROSS-CUTTING NOTE: P.1, P.2 and P.3 are all the same underlying problem -
+work that should happen once per message is happening once per recipient. In a
+crowded landblock that is the difference between O(N) and O(N^2). Fixing them
+together is substantially more valuable than any one alone.
+
+================================================================================
+END OF REPORT
+================================================================================

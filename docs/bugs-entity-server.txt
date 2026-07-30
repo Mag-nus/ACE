@@ -1,0 +1,373 @@
+================================================================================
+ACE.Server/Entity - BUG REPORT
+================================================================================
+Scope   : Source/ACE.Server/Entity  (143 files, ~32,900 lines)
+          Landblock, Actions/ (ActionChain/ActionQueue/DelayManager), combat
+          value objects (DamageEvent, DamageHistory, AttackList, BaseDamageMod,
+          BodyPartTable), Fellowship, ExperienceSystem, Proficiency,
+          GeneratorProfile, HouseList, AllegianceNode, ChanceTable.
+          NOTE: this is ACE.Server/Entity - not the shared ACE.Entity project
+          (see bugs-entity-shared.txt), and not ACE.Server/WorldObjects.
+Date    : 2026-07-25
+Companion document: perf-entity-server.txt
+
+VERIFICATION
+  TRACED BUT NOT RE-VERIFIED : all findings below. Spot-check before fixing.
+
+SECTION 0 - FINDINGS FROM THE INITIAL SWEEP (folded in)
+================================================================================
+
+E.0a [MEDIUM] Integer division and uint underflow corrupt kill-credit tracking
+     AttackList.cs:59-62
+
+         var scalar = 1.0f - healAmount / missingHealth;
+
+     Both operands are int, so the division TRUNCATES before being subtracted
+     from 1.0f. For any partial heal - the overwhelmingly common case - the
+     result is 0, so scalar is always exactly 1.0 and heals never scale down
+     attacker damage credit as intended. The feature silently does nothing.
+
+     Worse, on an overheal where healAmount > missingHealth*2 (for example
+     healing 250 when only 100 was missing), the integer division yields 2 or
+     more, making scalar negative. The next line does
+
+         Damagers[damager] *= (uint)Math.Round(scalar);
+
+     and casting a negative float to uint wraps to 4294967295, multiplying the
+     tracked damage by that value and corrupting kill-credit and loot-rights
+     attribution for that attacker.
+
+     (See also E.5 below - DamageHistory.cs:143-145 has a closely related uint
+     underflow in the same subsystem.)
+
+E.0b [MEDIUM] Double-destroy on duplicate removal calls
+     Landblock.cs:940-983 (RemoveWorldObjectInternal)
+
+     The actual dictionary removal is deferred to pendingRemovals - a List, not
+     deduplicated - but the real side effects run SYNCHRONOUSLY and
+     unconditionally on every call: wo.EnqueueActionBroadcast(p =>
+     p.RemoveTrackedObject(...)) and wo.PhysicsObj.DestroyObject(). They are
+     gated only by worldObjects.TryGetValue, which still succeeds on a second
+     call because the dictionary entry is not actually removed until
+     ProcessPendingWorldObjectAdditionsAndRemovals() runs later.
+
+     FAILURE: if two independent code paths - for example a pickup in
+     Player_Inventory.cs and a missile hit in ProjectileCollisionHelper.cs -
+     call RemoveWorldObject for the same GUID within the same tick, then
+     DestroyObject() and the client broadcast both fire twice for one object.
+
+E.0c [MEDIUM] Missing null check on Adjacents, inconsistent with the whole file
+     Landblock.cs:1314-1315 (SetFogColor), 1330-1331 (SendEnvironSound)
+
+     `foreach (var lb in Adjacents)` with no null guard - unlike EVERY other
+     consumer of Adjacents in the same file: GetObject (line 1055), SetActive
+     (1121), GetWieldedObject (1097) and EnqueueBroadcast (1236) all check
+     `!= null`. That consistent defensive pattern strongly implies entries can
+     be null, and these two methods will throw NullReferenceException when that
+     happens.
+
+E.0d [HIGH] ActionQueue has no exception isolation
+     Actions/ActionQueue.cs:18-56
+
+     Neither ActionQueue.RunActions() - which calls result.Act() on every
+     queued action - nor DelayManager.RunActions, nor any caller up through
+     Landblock.TickMultiThreadedWork (Landblock.cs:445), wraps action execution
+     in try/catch. LandblockManager.TickMultiThreadedWork
+     (LandblockManager.cs:386-387) then ticks every landblock in a group via a
+     plain foreach inside a Parallel.ForEach lambda with no per-landblock
+     guard.
+
+     FAILURE: an unhandled exception thrown by any single queued action - for
+     example an NRE on a WorldObject destroyed mid-chain - propagates out and
+     skips ticking every REMAINING landblock in that same group for that cycle,
+     not just the offending one.
+
+     This is the third instance of the exception-isolation defect; see
+     bugs-network.txt N.0a and bugs-managers.txt M.0a. Note E.8 below documents
+     a worse variant in DelayManager, where the dequeued actions are lost
+     entirely rather than merely skipped.
+
+E.0e [MEDIUM] Unsynchronised Fellowship dictionary across parallel threads
+     Fellowship.cs:40 (and 108, 157, 217, 313, 346, 771)
+
+     FellowshipMembers is a plain (non-concurrent)
+     Dictionary<uint, WeakReference<Player>>, mutated via Add/Remove/TryAdd
+     from AddConfirmedMember, RemoveFellowshipMember, QuitFellowship and
+     ProcessDropList, and enumerated in GetFellowshipMembers() from many
+     gameplay paths (XP grants, deaths, level-ups).
+
+     FAILURE: fellows can be on landblocks owned by different LandblockGroups
+     that are ticked in parallel, so a member joining or leaving on one thread
+     while another thread iterates for XP splitting can corrupt the dictionary
+     or throw "collection was modified".
+================================================================================
+
+
+SECTION A - HIGH SEVERITY
+================================================================================
+
+E.1  ulong underflow makes an un-XP'd item report maximum level
+     ExperienceSystem.cs:72 (FixedPlusBase)
+
+         if (gainedXP >= baseXP && gainedXP < baseXP * 3) level = 1;
+         else level = (int)Math.Floor((double)(gainedXP - baseXP) / baseXP);
+
+     FAILURE: a freshly created set item has ItemTotalXp = 0. With
+     gainedXP = 0 and baseXP = 1000, the else branch computes 0UL - 1000UL,
+     which wraps to ~1.8e19; divided by 1000 that is an out-of-range (int)
+     cast, producing garbage, int.MinValue, or a clamp to maxLevel. Reached
+     via WorldObject_Set.cs:68 - an appraisal path, so simply inspecting the
+     item triggers it.
+
+     FIX: `if (gainedXP < baseXP) return 0;` before the switch.
+
+E.2  Infinite loop hangs the calling thread when baseXP == 0
+     ExperienceSystem.cs:58-64 (ScalesWithLevel)
+
+     levelXP starts at 0, so `while (remainXP >= levelXP)` is always true and
+     `levelXP *= 2` keeps it at 0. level++ spins until int wraps and never
+     exits.
+
+     FAILURE: any weenie with ItemBaseXp = 0 and ItemXpStyle = 2 hangs
+     whichever thread evaluates ItemLevel (WorldObject_Set.cs:68). A single
+     content-authoring mistake in a weenie permanently pegs a landblock worker
+     or the world thread. The same field at line 50 gives a divide-by-zero ->
+     Infinity -> undefined int cast.
+
+     FIX: `if (baseXP == 0) return 0;` at method entry.
+     RELATED: lines 29-33 double levelXP per level with no overflow check, so
+     maxLevel >= 64 silently wraps.
+
+E.3  Double Destroy() on the same object in GeneratorProfile.Reset()
+     GeneratorProfile.cs:581-584
+
+     When wo.Container == Generator and TryRemoveFromInventory succeeds,
+     wo.Destroy() is called at line 581 - and then execution falls through to
+     the unconditional wo.Destroy() at line 584.
+
+     FAILURE: a chest or container generator (RegenLocationType.Contain) reset
+     by generator regeneration or by /reset destroys each held item twice,
+     producing a double landblock removal and a DOUBLE GUID RELEASE. The
+     recycled GUID can then be handed out to two live objects simultaneously -
+     object identity corruption that will manifest far from this code.
+
+     FIX: `else wo.Destroy();`
+
+
+SECTION B - MEDIUM SEVERITY
+================================================================================
+
+E.4  Generator permanently stuck, never respawns
+     GeneratorProfile.cs:558-559
+
+     NotifyGenerator returns early when adjWhenCreate != adjEventType WITHOUT
+     removing the entry from Spawned - and line 561 is the only Spawned.Remove
+     in the entire codebase.
+
+     FAILURE: a profile with WhenCreate = Death whose object is picked up or
+     destroyed keeps a dead entry forever. CurrentCreate (line 70) counts it,
+     so IsMaxed stays true and that spawn point never produces another object
+     for the remaining uptime.
+
+     FIX: remove from Spawned whenever the object is confirmed gone; gate only
+     the NextAvailable delay on the event match.
+
+E.5  uint underflow wipes damage history on an overheal
+     DamageHistory.cs:143-145
+
+         missingHealth = maxHealth - (currentHealth - healAmount)   // all uint
+
+     FAILURE: callers pass unclamped heal amounts (Hotspot.cs:206,
+     EnchantmentManager.cs:1297). If healAmount > currentHealth the inner
+     subtraction wraps to ~4e9 and missingHealth wraps again, so scalar is
+     garbage or negative and every TotalDamage entry goes negative or zero.
+     GetTopDamager() (line 64) then returns the wrong player or none - kill
+     credit and corpse looting rights are lost. Only missingHealth == 0 is
+     guarded.
+
+     FIX: compute in long and clamp scalar to [0,1].
+
+E.6  A player can hold membership in two fellowships simultaneously
+     Fellowship.cs:151-158 and :750
+
+     AddConfirmedMember re-checks MaxFellows but never re-checks
+     player.Fellowship != null - that check exists only in AddFellowshipMember
+     (line 108), i.e. BEFORE the confirmation popup.
+
+     FAILURE: P is invited by fellowship A, leaving a popup pending. P then
+     creates or joins fellowship B. P clicks Yes on the stale popup:
+     A.FellowshipMembers.TryAdd(P) succeeds and P.Fellowship = A. B's
+     GetFellowshipMembers() only tests `player.Fellowship != null` (line 750),
+     not `== this`, so P remains in BOTH rosters and receives XP from both.
+
+     FIX: reject when player.Fellowship != null in AddConfirmedMember, and test
+     `player.Fellowship == this` at line 750.
+
+E.7  DivideByZeroException in SplitXp
+     Fellowship.cs:513
+
+     `(long)amount / fellowshipMembers.Count` with no count check - unlike
+     SplitLuminance, which guards at line 585.
+
+     FAILURE: GetFellowshipMembers() drops any member whose Session or
+     Session.Player is null, so a quest turn-in landing in the same tick as the
+     last fellow's logout throws out of the quest-completion path.
+
+     FIX: `if (fellowshipMembers.Count == 0) return;` after line 506.
+     Lines 545-549 have the same shape: a levelXPSum of 0 yields NaN, then
+     (ulong)Math.Round(NaN).
+
+E.8  One throwing action silently loses every remaining delayed action
+     Actions/DelayManager.cs:47-53
+
+     Actions are removed from delayHeap under lock (line 38) BEFORE
+     action.Act() runs unguarded at line 49.
+
+     FAILURE: one throwing continuation aborts the foreach, and every action
+     already dequeued behind it is gone - unlike ActionQueue, they cannot be
+     retried because they no longer exist anywhere. Every delayed game action
+     for that tick is silently dropped: respawns, attack follow-ups, portal
+     recalls.
+
+     FIX: wrap each Act() in try/catch and log.
+     NOTE: checkNeeded (lines 17-21) is set false and never re-set, so the
+     outer while is dead code.
+
+E.9  Unguarded null deref on a one-sided conditional branch
+     Actions/ConditionalAction.cs:29-31 (also RunOnFinish:20-21)
+
+     Act() dereferences TrueChain.FirstElement.Actor and
+     FalseChain.FirstElement.Actor with no null checks.
+
+     FAILURE: ActionChain.AddBranch(actor, cond, trueBranch, null) - the
+     natural spelling of "do X only if cond" - compiles and enqueues fine, then
+     throws NRE inside ActionQueue.RunActions, taking down the rest of that
+     actor's queue.
+
+     FIX: null-check both chains and fall through to the continuation.
+
+E.10 Start() mutates the SortedSet sort key
+     Actions/DelayAction.cs:26-28
+
+     EndTime is the CompareTo key, yet DelayManager.EnqueueAction:67 calls
+     Start() on every enqueue.
+
+     FAILURE: re-enqueuing an ActionChain held in a field (there are 165
+     EnqueueChain() sites) re-runs Start() on a DelayAction already inside
+     delayHeap. The second Add compares equal (same sequence) and is silently
+     dropped, and the in-place key mutation breaks the tree ordering so
+     delayHeap.Remove(min) at line 38 can fail - leaving the action in the set
+     while it is also in toAct, so it re-fires every tick forever.
+
+     FIX: guard against a double Start(), or make DelayAction single-use.
+
+E.11 HouseList: KeyNotFoundException plus an unsynchronised static cache
+     HouseList.cs:88, 104, 115
+
+     Available is populated with exactly four HouseType keys (lines 78-81), but
+     line 88 and the Available[houseType] indexers at 106/117/128 accept
+     whatever house.HouseType or `slumLord.House?.HouseType ?? houseToRemove.HouseType`
+     yields - and HouseType.Undef (from a null slumLord.House on an unloaded
+     landblock) throws.
+
+     Separately, AddToAvailable/RemoveFromAvailable are called from player
+     house purchase and abandon on landblock threads (Player_House.cs:516, 664)
+     while GetAvailableLocations:97 LINQ-enumerates the same lists with no
+     lock - "Collection was modified", plus a double DB rebuild race at line 95.
+
+     FIX: TryGetValue plus a lock (or ConcurrentDictionary) around the static
+     state.
+
+E.12 Null deref on a deleted or offline vassal
+     AllegianceNode.cs:191-200
+
+     Player => PlayerManager.FindByGuid(PlayerGuid) can return null, but
+     OnLevelUp dereferences Player.Level at line 191 and
+     i.Player.ExistedBeforeAllegianceXpChanges inside the Where at line 194
+     with no guard.
+
+     FAILURE: a character deleted while its node is still in the cached tree
+     makes EVERY level-up by its patron throw. ShowInfo:183 and
+     TotalFollowers/Walk on a node whose Vassals is still null pre-BuildChain
+     share the shape.
+
+     FIX: null-check Player and skip.
+
+
+SECTION C - LOW / MEDIUM
+================================================================================
+
+E.13 MinDamage is not clamped, so damage can go negative
+     BaseDamageMod.cs:33
+
+     MaxDamage is explicitly clamped to the sign of the base (lines 24-27);
+     MinDamage is not.
+
+     FAILURE: Variance * VarianceMod > 1 - reachable via a stacked variance
+     enchantment (lines 50, 58) - makes MinDamage negative, so
+     DamageEvent.cs:431 can roll a negative BaseDamage and therefore negative
+     Damage. Player_Combat.cs:160 then does (uint)Math.Round(damageEvent.Damage),
+     which wraps to ~4e9 in the client notification - the player sees a
+     four-billion damage hit.
+
+     FIX: Math.Max(0, ...) mirroring MaxDamage.
+
+
+SECTION D - INVESTIGATED, NOT A BUG
+================================================================================
+Recorded so a later pass does not re-investigate.
+
+N.1  DamageEvent.cs:202/259 `chance > ThreadSafeRandom.Next(0f,1f)` - the FLOAT
+     overload is [min,max), so CriticalChance = 1.0f (guaranteed crit on
+     logout) and EvasionChance = 1.0f both behave correctly. Note this differs
+     from the INT overload, which is inclusive - see bugs-common.txt.
+N.2  DamageEvent.cs:287 crit path recomputing DamageRatingMod from
+     DamageRatingBaseMod - correctly excludes recklessness and re-applies
+     PkDamageMod.
+N.3  DamageEvent.cs:341 clamps creature ResistanceMod at 0 while line 336
+     (player) does not - traced Player.GetResistanceMod, which already clamps
+     internally.
+N.4  Proficiency.cs:90 (uint)Math.Round(totalXPGranted / 1.1f) - only reachable
+     when totalXPGranted <= remainingXP < 10k, so no overflow.
+N.5  AttributeFormula.cs:57 guards formula.X == 0 but not formula.Z (the
+     divisor at 67-68). Dat-file-driven, so a data-corruption path only -
+     noted rather than reported.
+N.6  BodyPartTable.cs:61-72 - Enumerable.Sum accumulates float in double while
+     the loop accumulates in float, so rng can land in the gap and return
+     Undefined, giving a phantom evade at DamageEvent.cs:481. Real but
+     vanishingly rare; Quadrant.GetIndex defaults to 0, so no index-out-of-range.
+N.7  Fellowship.cs:395 ThreadSafeRandom.Next(0, Count-1) - the int overload is
+     inclusive; correct.
+N.8  Fellowship.cs:92 uses a 600-second re-recruit window while the broadcast
+     at line 436 says 15 minutes - cosmetic mismatch, not a fault.
+N.9  GeneratorProfile.ProcessQueue:194-226 - index/RemoveAt interleaving is
+     correct and terminates.
+N.10 DamageHistory.BuildTotalDamage:209-237 - AddInternal's silent drop at line
+     114 is unreachable because guids is seeded from the same Log.
+N.11 LoopAction.cs - re-entry goes through EnqueueAction and
+     ActionQueue.RunActions snapshots Queue.Count, so a true-forever condition
+     cannot spin within a single tick.
+
+
+SECTION E - SUGGESTED PRIORITY
+================================================================================
+  1. E.2  baseXP == 0 infinite loop - a content data error hangs a server
+          thread outright. One guard clause.
+  2. E.3  Double Destroy / double GUID release - object identity corruption is
+          the worst failure mode in this list, and the fix is one `else`.
+  3. E.1  ulong underflow on item level - trivially triggered by appraising a
+          new set item.
+  4. E.5  DamageHistory underflow - silently reassigns kill credit and loot
+          rights.
+  5. E.6  Dual fellowship membership - a duplicate-XP exploit reachable by
+          ordinary players through normal UI actions.
+  6. E.8, E.9, E.10 - the Actions/ cluster. All three cause silently lost or
+          infinitely repeating game actions; fix them together.
+  7. E.4, E.7, E.11, E.12, E.13 as remaining work.
+
+NOTE: E.1 and E.2 are both in ExperienceSystem and both reachable from the same
+appraisal path (WorldObject_Set.cs:68). Fix them in one pass.
+
+================================================================================
+END OF REPORT
+================================================================================

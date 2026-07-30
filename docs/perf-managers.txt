@@ -1,0 +1,310 @@
+================================================================================
+ACE.Server/Managers - PERFORMANCE REPORT
+================================================================================
+Scope   : Source/ACE.Server/Managers  (15 files, ~9,400 lines)
+Date    : 2026-07-25
+Companion document: bugs-managers.txt
+
+UNPROFILED. Reasoned from reading call paths and weighting by call frequency,
+not from measurement. Validate against the in-tree ServerPerformanceMonitor
+counters before optimising.
+
+*** IMPORTANT FINDING ABOUT THIS CHECKOUT ***   [VERIFIED DIRECTLY]
+  Source/ACE.Server/Config.js:51 sets
+
+      "ServerPerformanceMonitorAutoStart": true
+
+  while Config.js.example ships it as false (line 54). So on THIS checkout the
+  performance monitor is running by default, and every finding below about
+  monitor overhead is live rather than hypothetical. If you are not actively
+  reading /serverperformance, setting this back to false is the single cheapest
+  change in this document.
+
+CALL-FREQUENCY MODEL (established by reading WorldManager.UpdateWorld)
+  OUTER  ~1000Hz  - the while loop; it only Thread.Sleep(1)s when the
+                    rate-limited game world did not update. Hosts
+                    PlayerManager.Tick, InboundMessageQueue.RunActions,
+                    ActionQueue.RunActions, DelayManager.RunActions,
+                    NetworkManager.DoSessionWork, ServerPerformanceMonitor.Tick
+  WORLD   30-60Hz  - inside UpdateGameWorld: LandblockManager.Tick,
+                    HouseManager.Tick
+  STARTUP once
+Anything on OUTER runs roughly 20x more often than anything on WORLD. That
+distinction drives the ordering below.
+
+SECTION 0 - FINDINGS FROM THE INITIAL SWEEP (folded in)
+================================================================================
+
+P.0a  THE STRUCTURAL MULTIPLIER - why everything on the outer loop matters
+      WorldManager.cs:391-392
+
+          if (!gameWorldUpdated)
+              Thread.Sleep(sessionCount == 0 ? 10 : 1);
+
+      The game world updates at 30-60Hz (rate-limited inside UpdateGameWorld),
+      but the OUTER loop spins at up to ~1000Hz whenever any player is
+      connected. Everything not behind the rate limiter - most importantly
+      NetworkManager.DoSessionWork, PlayerManager.Tick,
+      InboundMessageQueue.RunActions, ActionQueue.RunActions,
+      DelayManager.RunActions and ServerPerformanceMonitor.Tick - therefore
+      runs roughly 1000 times per second.
+
+      This multiplier is the reason findings P.1-P.6 in this report are ranked
+      as highly as they are, and it is a prerequisite for interpreting the rest
+      of the document.
+
+P.0b  Full LINQ sort of every landblock group, every frame
+      LandblockManager.cs:375
+
+          var partitioner = Partitioner.Create(
+              landblockGroups.OrderByDescending(r => r.Count)
+                             .ThenByDescending(r => r.TickMultiThreadedWorkTracker.AverageAmount));
+
+      Allocates and sorts on every frame, and the identical pattern is repeated
+      in TickPhysics. Group ordering changes slowly.
+      FIX: recompute the ordering on a cadence, or only when group membership
+      actually changes, rather than once per frame. The
+      landblockGroups.Sum(...) tick-efficiency calculations immediately
+      following are further per-frame LINQ.
+
+P.0c  Time.GetUnixTime() called once per LANDBLOCK instead of once per tick
+      LandblockManager.cs:387
+
+          foreach (var landblock in landblockGroup)
+              landblock.TickMultiThreadedWork(Time.GetUnixTime());
+
+      GetUnixTime hits DateTime.UtcNow (ACE.Common/Time.cs:9-11) once PER
+      LANDBLOCK rather than being hoisted out of the loop.
+
+      Beyond the cost this is a subtle CORRECTNESS smell: landblocks within a
+      single tick observe DIFFERENT timestamps, whereas the codebase elsewhere
+      deliberately treats Timers.PortalYearTicks as a stable per-frame value.
+      FIX: hoist to a single call per tick and pass the value down.
+
+P.0d  Per-frame Stopwatch allocation inside the parallel body
+      LandblockManager.cs:384 - a `new Stopwatch()` allocated per landblock
+      group per frame. FIX: make it a LandblockGroup field.
+================================================================================
+
+
+SECTION A - INSTRUMENTATION OVERHEAD (OUTER, ~1000Hz)
+================================================================================
+
+P.1  Triple redundant Stopwatch per instrumented phase
+     ServerPerformanceMonitor.cs:213-231, driven from WorldManager.cs:361-386
+
+     monitors5m, monitors1h and monitors24h are three separate RateMonitor
+     objects, each with its own Stopwatch, all timing the IDENTICAL interval.
+     With 6 Restart/RegisterEventEnd pairs per outer tick that is
+     12 calls x 3 = 36 QueryPerformanceCounter reads plus 18
+     TimeSpan.TotalSeconds conversions per tick - roughly 36,000 QPC reads per
+     second.
+
+     FIX: use one Stopwatch, measure once, and feed the same elapsed double
+     into all three TimedEventHistory objects. A straight 3x reduction with no
+     behavioural change.
+
+P.2  ServerPerformanceMonitor.Tick polls DateTime.UtcNow three times per tick
+     ServerPerformanceMonitor.cs:148-186 (called from WorldManager.cs:386)
+
+     Up to 3,000 UtcNow calls per second purely to ask whether a 5-minute,
+     1-hour or 24-hour window has expired.
+
+     FIX: one UtcNow (or Environment.TickCount64) per call, or gate the whole
+     method behind a 1Hz RateLimiter.
+
+P.3  Instrumentation call sites are not cheaply disabled
+     WorldObject_Tick.cs:290, 372; Player_Tick.cs; Landblock.cs:438, 453, 473,
+     493, 515, 558
+
+     Only the INSIDE of AddToCumulativeEvent checks IsRunning. The stopwatch
+     work at the call sites runs unconditionally: 7 Restart+Elapsed pairs per
+     landblock per frame, plus the Landblock Monitor5m/1h
+     Restart/Resume/RegisterEventEnd across all three phases, plus a
+     DateTime.UtcNow per landblock per frame near Landblock.cs:617.
+
+     FIX: hoist `if (ServerPerformanceMonitor.IsRunningCumulative)` to the call
+     sites so a disabled monitor costs zero rather than "cheap".
+
+P.4  Shared lock in AddToCumulativeEvent contended by parallel landblock threads
+     ServerPerformanceMonitor.cs:250 - `lock (cumulative5m[i])`
+
+     Callers include WorldObject_Tick.cs:373 and Player_Tick.cs:324, 528 -
+     once per moving object per frame - plus 8 per landblock
+     (Landblock.cs:446-613). Every landblock-group worker thread contends on
+     the same lock object per event type, 30-60 times per second, multiplied by
+     every moving object.
+
+     FIX: Interlocked.Add into a fixed-point long, or [ThreadStatic]
+     accumulators summed in RegisterCumulativeEvents.
+
+
+SECTION B - OUTER-LOOP WORK THAT NEED NOT RUN AT 1000Hz
+================================================================================
+
+P.5  DelayManager allocates and locks every outer tick even when idle
+     ACE.Server/Entity/Actions/DelayManager.cs
+
+     A `new List<DelayAction>()` is allocated BEFORE the lock, and
+     `lock (delayHeap)` is taken, even when the heap is empty - roughly 1,000
+     allocations and 1,000 lock acquisitions per second at idle.
+
+     FIX: early-return on an empty count; reuse a cached list field.
+
+P.6  PlayerManager.Tick reads the clock twice per outer tick for queues that
+     are almost always empty
+     PlayerManager.cs:111, 114
+
+     Line 111 reads DateTime.UtcNow for a ONE-HOUR DB-save check; line 114
+     calls Time.GetUnixTime(), another UtcNow. Both unconditional - about 2,000
+     UtcNow calls per second to service an hourly timer.
+
+     FIX: test `playersPendingLogoff.Count == 0 && playersPendingFinalLogoff.Count == 0`
+     first and only then read the clock; drive the hourly save from a
+     RateLimiter or a next-due timestamp rather than polling at 1000Hz.
+
+
+SECTION C - O(SHARD SIZE) SCANS
+================================================================================
+
+P.7  Name lookups linear-scan every player despite an existing name index
+     PlayerManager.cs:244, 365
+
+     `offlinePlayers.Values.FirstOrDefault(...)` and
+     `onlinePlayers.Values.FirstOrDefault(...)` perform two OrdinalIgnoreCase
+     string comparisons per entry over up to tens of thousands of offline
+     players, while holding the read lock - even though playerNames (line 36)
+     already answers this in O(1), as FindByName (line 521) demonstrates.
+
+     Also: FindAllByMonarch (lines 597-598) scans all online plus all offline
+     players; IsAccountAtMaxCharacterSlots (lines 903-904) scans both
+     dictionaries when playerAccounts is already indexed by account.
+
+     Not per-tick - these run on chat, tell, login and admin paths - but each
+     call is O(shard size) while holding a lock.
+
+     FIX: route all name lookups through playerNames; index the monarch and
+     account lookups.
+
+P.8  EmoteManager.GetEmoteSet runs a LINQ chain for every idle creature
+     heartbeat
+     WorldObjects/Managers/EmoteManager.cs:1520-1553
+
+     Reached from Creature_Tick.cs:35 -> HeartBeat() (line 1904) ->
+     ExecuteEmoteSet for every non-awake creature roughly every 5 seconds. It
+     allocates up to 6 chained Where closures/iterators plus an OrderBy sort,
+     and calls GetCurrentMotionState plus RNG - even for the majority of
+     creatures that have no HeartBeat emote set at all. Cost scales with the
+     total number of emote rows on the weenie, not with active content.
+
+     FIX: precompute a per-weenie category set or bitmask on the biota and
+     early-out when HeartBeat is absent; replace the chain with one hand-rolled
+     loop.
+
+P.9  Quest lookups are linear string scans
+     CharacterExtensions.cs:365; QuestManager.cs:141, 150, 426
+
+     `FirstOrDefault(q => q.QuestName.Equals(..., OrdinalIgnoreCase))` over the
+     whole registry under a ReaderWriterLockSlim. QuestManager has ~15 GetQuest
+     call sites, most preceded by GetQuestName (line 494, a Substring
+     allocation). Runs per emote and per interaction, and the registries grow
+     unbounded with kill-task entries.
+
+     FIX: a name-keyed dictionary.
+
+P.10 PropertyManager getters do three hash lookups where one suffices
+     PropertyManager.cs:101-102, 152-153, 202-203
+
+     `ContainsKey(key)` followed by two indexer reads (.Item, .Description).
+     Called from per-movement and per-heartbeat code: Player_Tick.cs:90, 190;
+     Landblock.cs:301, 303, 322, 907.
+
+     FIX: a single TryGetValue. (Property<T> is a struct, so there is no heap
+     allocation here - that part is fine.)
+
+
+SECTION D - PER-FRAME AND STARTUP
+================================================================================
+
+P.11 Per-frame allocations in the LandblockManager tick methods (WORLD)
+     LandblockManager.cs:306, 321, 337, 383, 399
+
+     `new ConcurrentBag<WorldObject>()` every frame (line 306); `new Stopwatch()`
+     INSIDE the parallel body at lines 321 and 383, i.e. per landblock group
+     per frame; `landblockGroups.Sum(...)` LINQ per frame at lines 337 and 399.
+
+     FIX: reuse a pooled bag or thread-local lists; make the inner Stopwatch a
+     LandblockGroup field; replace Sum with a for loop; and skip the efficiency
+     calculation entirely when the monitor is off.
+
+P.12 HouseManager startup is O(n^2) over slumlords (STARTUP)
+     HouseManager.cs:173, 106-123, 215, 223
+
+     `RentQueue.Any(...)` is a linear scan executed once per slumlord biota
+     inside BuildRentQueue; RemoveRentQueue (line 215) is likewise a
+     RemoveWhere. And QueryMultiHouse (line 223) re-issues
+     GetBiotasByType(SlumLord) - the same query BuildRentQueue just ran at
+     line 116.
+
+     Startup-only, but minutes of it on a large shard.
+
+     FIX: a HashSet<uint> of house instances; pass the already-fetched list
+     into QueryMultiHouse.
+
+P.13 Minor, same family
+     WorldObject_Generators.cs:405-409 calls IsEventAvailable, IsEventEnabled
+     and IsEventStarted back to back - three dictionary lookups, each preceded
+     by GetEventName (EventManager.cs:169, a Substring allocation), plus a
+     Time.GetUnixTime(), per generator per update. One lookup would do.
+
+
+SECTION E - LOOKS EXPENSIVE BUT IS ACTUALLY COLD
+================================================================================
+Recorded so a later pass does not spend effort here.
+
+E.1  HouseManager.Tick - rate-limited to once per minute (line 47), and then
+     only peeks the head of a SortedSet ordered by rent due. Cost is
+     proportional to rent ACTUALLY DUE, not to total houses. Correctly
+     structured; the 30-60Hz GetSecondsToWaitBeforeNextEvent check is a single
+     QPC read.
+E.2  LandblockManager.ProcessPendingLandblockGroupAdditions - called 3x per
+     world tick, but returns at line 195 before touching the write lock when
+     nothing is pending. The O(n^2) group merge inside runs only on landblock
+     load.
+E.3  PlayerManager.GetAllOnline / GetAllPlayers / BroadcastToChannel* -
+     allocate lists and run LINQ, but only on chat, admin, world open/close and
+     shutdown paths.
+E.4  GuidManager.Alloc (lines 202-254, 76-94) - takes a lock and touches a
+     Queue/LinkedList, but is O(1) and runs only per object creation. The
+     expensive sequence-gap enumeration is constructor-only.
+E.5  ServerManager - no tick at all; entirely shutdown-driven.
+E.6  PropertyManager DB resync - a 5-minute System.Timers.Timer on its own
+     thread (lines 41-44), off the world thread.
+E.7  ServerPerformanceMonitor.RegisterCumulativeEvents - 13 x 3 struct updates
+     per world tick; negligible beside P.1.
+E.8  EventManager, DDDManager, RecipeManager - lookup and startup driven, no
+     per-tick work.
+
+
+SECTION F - SUGGESTED PRIORITY
+================================================================================
+  0. Set ServerPerformanceMonitorAutoStart back to false in Config.js unless
+     you are actively using it. Costs nothing and removes most of Section A.
+  1. P.1  One Stopwatch instead of three. Straight 3x on the most frequent
+          instrumentation path.
+  2. P.3  Guard the instrumentation call sites so a disabled monitor is free.
+  3. P.5, P.6 - stop doing idle work 1,000 times a second.
+  4. P.4  Interlocked or thread-local accumulators instead of a shared lock
+          contended by every landblock worker.
+  5. P.7  Route name lookups through the existing playerNames index.
+  6. P.8  Early-out for creatures with no HeartBeat emote set.
+  7. P.11, P.9, P.10, P.12, P.13 as follow-up.
+
+Measure with the ServerPerformanceMonitor counters
+(DoSessionWork_TickOutbound, UpdateGameWorld_Entire, PlayerManager_Tick) before
+and after - noting the irony that P.1-P.4 are about the cost of those very
+counters.
+
+================================================================================
+END OF REPORT
+================================================================================

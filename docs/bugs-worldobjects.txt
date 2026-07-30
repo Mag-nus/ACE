@@ -1,0 +1,359 @@
+================================================================================
+ACE.Server/WorldObjects - BUG REPORT
+================================================================================
+Scope   : Source/ACE.Server/WorldObjects  (145 files, ~62,500 lines)
+          WorldObject base, Player_* partials (Inventory, Trade, Commerce,
+          Crafting, House, Magic, Death), Creature_*, Container, Vendor,
+          Corpse, Chest, item overrides, Managers/EnchantmentManager
+Date    : 2026-07-25
+Companion document: perf-worldobjects.txt
+
+VERIFICATION
+  TRACED BUT NOT RE-VERIFIED : all findings below. Spot-check before fixing.
+
+SECTION 0 - FINDINGS FROM THE INITIAL SWEEP (folded in)
+================================================================================
+
+W.0a [HIGH] Silent item loss in trade finalisation
+     Player_Trade.cs:261-265
+
+     Both sides' escrowed items are handed off with
+     TryCreateInInventoryWithNetworking(wo) - and THE RETURN VALUE IS
+     DISCARDED.
+
+     Compare the near-identical sibling path at Player_Inventory.cs:3342-3356
+     (GiveObjectRequest), which explicitly checks the same call, retries adding
+     the item back to the sender on failure, and logs
+     "Item ... lost from GiveObjectToPlayer failure" if that also fails.
+
+     TryAddToInventory (Container.cs:499-556) can legitimately fail on slot or
+     burden state. Escrow removal happens synchronously, but the create-on-
+     destination is DEFERRED 0.5 SECONDS via an action chain (line 258). If the
+     destination's inventory state changes in that window, the item is removed
+     from the source, never lands on the destination, and there is no fallback,
+     no error to either player, and no log identifying which item vanished.
+
+     This is a direct asymmetry against the codebase's own established
+     defensive pattern, in its single most sensitive dupe/loss surface. It is
+     the canonical example of the non-atomic-transfer theme that dominates this
+     report.
+
+W.0b [MEDIUM] Burden check bypass for direct side-pack placement
+     Container.cs:501-509 - carries the authors' own comment
+     `// bug: should be root owner`
+
+     TryAddToInventory applies the encumbrance check only when
+     `this is Player player && burdenCheck`. When an item is routed directly
+     into a side-pack container, `this` is the Container sub-object rather than
+     the Player, so the check silently no-ops.
+
+     FAILURE: a client request targeting a side-pack's container GUID directly
+     bypasses the carry-capacity limit entirely. Acknowledged by the original
+     authors and still unfixed.
+
+W.0c [LOW] TryConsumeFromInventoryWithNetworking can under-consume and still
+     report success
+     Player_Inventory.cs:149-166
+
+     The loop sums removeNum across matching stacks and breaks once
+     leftReq <= 0, but falls through to an UNCONDITIONAL `return true` even if
+     it exhausted all matching stacks before satisfying `amount`.
+
+     Currently only reachable via Player_Commerce.cs:349 (alt-currency vendor
+     spend, pre-validated upstream), so not exploitable today - but any future
+     caller trusting `true` to mean "the full amount was spent" will be wrong.
+
+W.0d [LOW] Equipped-item give-back leaves the receiving player bugged
+     Player_Inventory.cs:3336-3340
+
+     Developers document this inline: "Player A equips weapon, gives weapon
+     (while equipped) to player B. Player B then gives weapon back to A. Player
+     B is now bugged." Root cause noted as
+     Player_Tracking.RemoveTrackedEquippedObject() using GameMessageDeleteObject
+     instead of GameMessagePickupEvent. Still present - a live, reproducible
+     client-desync bug in the give path.
+
+W.0e [INFO] Overly conservative trade burden check (not exploitable)
+     Player_Trade.cs:362-383
+
+     VerifyTrade_Inventory evaluates CanAddToInventory(partner_items) against
+     each player's PRE-ESCROW encumbrance, double-counting weight that is about
+     to leave. This can only cause false "too encumbered" rejections, never a
+     dupe. Listed for completeness because it sits inside the trade state
+     machine being audited.
+
+THEME: this subsystem holds the item and currency economy. The dominant defect
+class is a NON-ATOMIC TRANSFER - an operation that removes from a source and
+adds to a destination without checking both, and without rollback. Nine of the
+fourteen findings below are that shape.
+================================================================================
+
+
+SECTION A - HIGH SEVERITY (duplication / loss)
+================================================================================
+
+W.1  Missing return lets an item exist in two containers at once (DUPLICATION)
+     Player_Inventory.cs:1302-1306
+
+     In DoHandleActionPutItemInContainer, when BOTH
+     itemRootOwner.TryRemoveFromInventory AND TryDequipObject fail, the code
+     sends error messages and then FALLS THROUGH to
+     container.TryAddToInventory(item, ...) at line 1320.
+
+     FAILURE: move an item from a landblock chest or pack whose Inventory
+     removal fails - a guid found via a side-pack path TryRemoveFromInventory
+     cannot resolve, or a Creature-owned item that is not equipped. The item is
+     now present in TWO containers' Inventory dictionaries. The player sees and
+     can act on both references until a save or reload arbitrates.
+
+     Every sibling failure path in this method returns false; this one does
+     not.
+
+     FIX: `return false;` inside that block.
+
+W.2  Duplicate GUIDs in a client-supplied list are counted multiple times
+     (house purchase)
+     Player_House.cs:731-781, 335-345; Network/Structure/HousePayment.cs:102-134
+
+     VerifyPurchase builds sentItems by calling GetInventoryItem per id with NO
+     DE-DUPLICATION - even though HasItems documents "requires: no duplicate
+     individual items in list".
+
+     FAILURE: send the same 15,000-pyreal stack guid twice for a 30,000
+     purchase and verification passes. GetConsumeItems_Inner then emits two
+     consume entries for that one guid; TryConsumePurchaseItems (line 692)
+     consumes the whole stack on entry 1, fails to find it on entry 2, and
+     returns false - so HandleActionBuyHouse returns BEFORE SetHouseOwner. The
+     player loses 15,000 pyreals and receives nothing.
+
+     FIX: item_ids.Distinct() (and de-duplicate by guid in GetInventoryItems),
+     plus consume atomically or roll back.
+
+
+SECTION B - MEDIUM SEVERITY
+================================================================================
+
+W.3  Failed removals are still processed by the vendor (DUPLICATION)
+     Player_Commerce.cs:199-209
+
+     sellList is passed whole to vendor.ProcessItemsForPurchase even for
+     entries where both TryRemoveFromInventoryWithNetworking and
+     TryDequipObjectWithNetworking failed - only a warning is logged.
+
+     FAILURE: the vendor sets item.ContainerId = vendor.Guid, adds it to
+     UniqueItemsForSale and calls RemoveBiotaFromDatabase() (or Destroy()s it)
+     WHILE the object is still in the player's Inventory. The player is paid,
+     keeps the live object, and can re-buy the same item from the vendor.
+
+     FIX: build a soldItems list of successfully removed items and pass that.
+
+W.4  Partial-stack sells sell the entire stack (ITEM LOSS)
+     Player_Commerce.cs:255-265, 199-205
+
+     sellItem.Amount is validated (Amount > StackSize is rejected) and then
+     NEVER USED: the payout uses GetBuyCost(item) - the full stack Value - and
+     the removal removes the whole object.
+
+     FAILURE: sell 1 of a 100-stack and all 100 leave the inventory.
+
+     FIX: split the stack for Amount (as RemoveItemForGive does) before
+     removal and payout.
+
+W.5  Salvage consumes the source, then discards the result of bag creation
+     Player_Crafting.cs:176-181
+
+     TryConsumeFromInventoryWithNetworking(item) destroys the source items;
+     the later TryCreateInInventoryWithNetworking(salvageBag) return value is
+     IGNORED and the bag is never Destroy()ed on failure.
+
+     FAILURE: salvage a stack of 100 low-workmanship items (1 slot) with a full
+     main pack and full side packs. One slot is freed, three bags are produced,
+     two silently vanish - plus leaked GUIDs.
+
+     FIX: check the result; on failure drop the bag to the landblock or destroy
+     it explicitly.
+
+W.6  Stack merge destroys the source before adjusting the target, no rollback
+     Player_Inventory.cs:3096-3118 (and mirror at 3144-3156)
+
+     In the full-consume branch, sourceStack is removed and Destroy()ed, THEN
+     AdjustStack(targetStack, amount, ...) runs. If that returns false - for
+     example MaxStackSize data changed under the earlier check, or the target
+     moved - the method simply returns false and the merged items are gone.
+
+     The partial branch has the mirror problem: source decremented, then the
+     target increase can fail.
+
+     FIX: adjust the target first, or restore the source on failure.
+
+W.7  IOU turn-in has no space pre-check and ignores the removal result
+     Player_Inventory.cs:3526-3529 (HandleIOUTurnIn)
+
+     RemoveItemForGive(iouToTurnIn, ..., destroy: true) result is discarded,
+     and TryCreateInInventoryWithNetworking(item) result only gates chat
+     messages.
+
+     FAILURE: turn in an IOU at burden cap or with full packs - the IOU is
+     destroyed, the reward object is created but never added and never
+     destroyed (item loss plus GUID leak). If instead the removal fails, the
+     player keeps the IOU AND receives the reward (duplication).
+
+     FIX: ItemsToReceive pre-check, verify removal succeeded, destroy the
+     reward on add failure.
+
+W.8  Any close marks a corpse looted, bypassing rare and PK protection
+     Corpse.cs:159, 233
+
+     Close() unconditionally sets IsLooted = true, and HasPermission returns
+     true for EVERYONE when IsLooted - checked BEFORE the CorpseGeneratedRare
+     and PkLevel == PK checks.
+
+     FAILURE: kill a level-100+ monster that generated a rare, open the corpse,
+     close it (or walk away) - and any nearby player can now loot the rare.
+     Likewise a PK victim's corpse opens to the world after the killer's first
+     close.
+
+     FIX: restore the commented-out logic so only the victim or killer sets
+     IsLooted, and check rare/PK before the IsLooted shortcut.
+
+W.9  Rent payment moves items with no rollback
+     Player_House.cs:391-402, 451-456
+
+     TryMoveItemForRent removes the item from the player and then calls
+     slumlord.TryAddToInventory(item); on failure the item belongs to NOBODY -
+     removed, not added, not destroyed. TrySplitItemForRent has already
+     decremented the player's stack and destroys the new stack on add failure,
+     so the player is charged and the slumlord receives nothing.
+
+     FIX: re-add to the player's inventory on failure in both paths.
+
+W.10 Unchecked uint accumulation of purchase price
+     Vendor.cs:535-543, with Entity/ItemsToReceive.cs:93, 101
+
+     totalPrice += cost over all purchased stacks can wrap past 2^32 - the code
+     carries its own `// detect rollover?` TODO. The same request path
+     multiplies client-supplied ItemProfile.Amount by unit encumbrance in int
+     arithmetic with no overflow guard.
+
+     FAILURE: buying enough high-value stackable merchandise in one transaction
+     (free slots x max stack x unit value >= 4.29e9) wraps the price to a
+     trivial value, and the pre-validated burden check is likewise unreliable.
+     The free-slot count bounds the classic mass case, so this is currently
+     bounded rather than trivially exploitable - but it is one content change
+     away from being exploitable.
+
+     FIX: accumulate in ulong or checked; reject amounts above a sane cap.
+
+
+SECTION C - LOW / MEDIUM
+================================================================================
+
+W.11 A running success flag is used as a per-item guard
+     Container.cs:588-604, 610-629
+
+     In ClearInventory / ClearUnmanagedInventory, after the FIRST failed
+     TryRemoveFromInventory every subsequent item is removed from the container
+     but never Destroy()ed, because the destroy is gated on
+     `if (success) item.Destroy();`. Chest resets (Chest.Reset ->
+     ClearUnmanagedInventory) hit this.
+
+     FAILURE: orphaned world objects with freed container links, plus leaked
+     GUIDs.
+
+     FIX: `if (TryRemoveFromInventory(itemGuid, out var item, forceSave))
+     item.Destroy(); else success = false;`
+
+W.12 isWeaponSpell not passed on the enchantment stacking path
+     Managers/EnchantmentManager.cs:170
+
+     The initial-entry path (line 144) passes isWeaponSpell, but the stacking
+     path passes only (spell, caster, weapon, equip), so isWeaponSpell defaults
+     to false and line 222 applies AugmentationIncreasedSpellDuration to
+     weapon and proc-cast spells.
+
+     FAILURE: cast a wand's built-in buff when another spell of that category
+     is already present, and the item spell lasts 40-80% longer than it should -
+     and differs from the first cast.
+
+     FIX: pass isWeaponSpell through.
+
+W.13 Stack decremented before the replacement object is created
+     Player_Inventory.cs:2544-2560, 3557-3577
+
+     In HandleActionStackableSplitTo3D the source is adjusted at 2544; if
+     WorldObjectFactory.CreateNewWorldObject returns null at 2552 the method
+     returns without restoring the stack. The drop-failure path immediately
+     below DOES restore, confirming the intent. RemoveItemForGive's split
+     branch has the identical ordering.
+
+     FIX: create the new stack first (as HandleActionStackableSplitToContainer
+     does), or restore on null.
+
+W.14 Corpse loot insertion results discarded
+     Creature_Death.cs:657, 680, 702, 724
+
+     corpse.TryAddToInventory(wo) is unchecked in all four treasure paths. If
+     the corpse's 120-item / 10-container capacity is exceeded - a large
+     PropertiesCreateList plus wielded treasure - the object is silently
+     orphaned rather than dropped to the landblock or destroyed.
+
+     FIX: check the result and Destroy() or place on the landblock.
+
+
+SECTION D - INVESTIGATED, NOT A BUG
+================================================================================
+Several of these look alarming and are not. Recorded to prevent re-investigation.
+
+V.1  Chest.cs:203-206 `public override void Close(Player player) { Close(player); }`
+     looks like infinite recursion, but C# member lookup EXCLUDES the
+     overridden base declaration, so the call binds to
+     Close(Player, bool tryReset = true). Verified with a minimal dotnet repro.
+     No stack overflow.
+V.2  Creature_Death.cs:34, 96 - double-death and double-loot are guarded by
+     onDeathEntered / dieEntered.
+V.3  Container.cs:922-955 MergeAllStackables - container EncumbranceVal and
+     Value net out correctly, because the emptied source's own values are zero
+     at removal time.
+V.4  Player_Magic.cs:80, 1014 - casterItem is always resolved from the player's
+     own inventory or equipment in Player_Use.cs:40. No cross-player item
+     casting.
+V.5  AugmentationDevice.cs:130 ignoring the consume result looked like an
+     aug-gem duplication, but Confirmation.cs:96 re-resolves the gem in
+     MyInventory before ActOnUse(player, true).
+V.6  Player_Inventory.cs:2445-2462 - the split adds the new stack before
+     decrementing the source, but StackSize <= amount is re-validated
+     immediately before at 2381, so AdjustStack cannot fail there.
+V.7  Player_Commerce.cs:335-361 SpendCurrency returning null into AddRange
+     (Player_Death.cs:515) is unreachable - CoinValue is pre-checked and
+     numCoinsDropped > 0 is guarded.
+V.8  Corpse.cs:188-197 - decay timer and fellowship loot-share checks behave as
+     documented.
+V.9  WorldObject.cs:837 Destroy() is idempotent via IsDestroyed, and the
+     container/creature cascade is correct.
+
+
+SECTION E - SUGGESTED PRIORITY
+================================================================================
+  1. W.1  One missing `return false` that produces an item in two containers.
+          Smallest fix, worst class of outcome.
+  2. W.3  Vendor duplication - the player keeps the item AND the money.
+  3. W.8  Corpse rare/PK protection bypass - trivially reachable by normal
+          play, and it silently transfers other players' loot rights.
+  4. W.2  House purchase - a player can lose a large pyreal sum with no
+          recourse.
+  5. W.4, W.5, W.7, W.9 - the remaining non-atomic transfer paths. Fix them as
+          one work item: every one of them is "removed from source, add to
+          destination unchecked, no rollback", and the correct pattern already
+          exists in-tree at Player_Inventory.cs:3342-3356.
+  6. W.6, W.13 - operation ordering in stack split/merge.
+  7. W.10, W.11, W.12, W.14 as follow-up.
+
+STRUCTURAL RECOMMENDATION: rather than fixing these one at a time, introduce a
+single helper that performs a checked transfer with rollback and route the
+transfer sites through it. The codebase already demonstrates the correct
+pattern in exactly one place (GiveObjectRequest); every finding above is a site
+that did not use it.
+
+================================================================================
+END OF REPORT
+================================================================================

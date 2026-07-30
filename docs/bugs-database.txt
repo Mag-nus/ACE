@@ -1,0 +1,352 @@
+================================================================================
+ACE.Database - BUG REPORT
+================================================================================
+Scope   : Source/ACE.Database  (139 files, ~20,000 lines)
+          EF Core over MySQL/MariaDB: AuthenticationDatabase, WorldDatabase
+          (+WithEntityCache), ShardDatabase (+WithCaching), SerializedShardDatabase,
+          ShardConfigDatabase, DatabaseManager, CharacterNames, Adapter/,
+          Extensions/, Models/, OfflineTools/, SQLFormatters/
+Date    : 2026-07-25
+Companion document: perf-database.txt
+
+VERIFICATION
+  VERIFIED DIRECTLY : D.6 (SQL escaping)
+  TRACED BUT NOT RE-VERIFIED : all others. Spot-check before fixing.
+
+SECTION 0 - FINDINGS FROM THE INITIAL SWEEP (folded in)
+================================================================================
+
+D.0a [MEDIUM] Failed player saves never trigger the protective boot
+     SerializedShardDatabase.cs:46-77, especially 54-64
+
+     Every method - for example SaveBiota at lines 119-126 - queues a Task
+     whose lambda calls callback?.Invoke(result) only AFTER the DB call
+     returns. If anything inside BaseDatabase.SaveBiota throws unexpectedly
+     (not just the SaveChanges retry it already handles), DoWork's
+     `catch (Exception ex)` logs and swallows it - and the callback is NEVER
+     INVOKED.
+
+     FAILURE: WorldObject_Database.cs:64-74 relies on that callback to set
+     player.BiotaSaveFailed = true, which triggers a protective boot. So a
+     failed player save is silently logged, the player is never booted, and
+     play continues on state that is not persisting - data loss and desync
+     instead of the intended safeguard.
+
+D.0b [MEDIUM] NullReferenceException in GetDynamicObjectsByLandblock
+     ShardDatabase.cs:546-556, dereference at 551
+
+     GetBiota(result.ObjectId) is not null-checked before
+     `biota.BiotaPropertiesIID.FirstOrDefault(...)`. The
+     BiotaPropertiesPosition rows are queried first and GetBiota runs
+     afterwards in a second, separate query, so a biota deleted between the two
+     - an item picked up or destroyed mid-landblock-load - makes GetBiota
+     return null per its own explicit null return at lines 230-231, crashing
+     with an NRE.
+
+     The sibling GetStaticObjectsByLandblock (lines 506-529) never dereferences
+     the null, so the correct handling is present in the same file.
+
+D.0c [MEDIUM] Undisposed DbContext across the character path
+     ShardDatabase.cs:609-666, 707-746, 866-947
+
+     GetCharacterList, GetCharacterStubByName, GetCharacterStubByGuid,
+     SaveCharacter and RenameCharacter all do `var context = new ShardDbContext();`
+     with no `using` and no Dispose.
+
+     In GetCharacterList (line 611), even when every result is already cached
+     in CharacterContexts and the fresh context is never used again, it is
+     simply dropped - never disposed, and never explicitly closed even for
+     contexts that ARE stored, since ConditionalWeakTable never disposes values
+     when keys are collected. Every character list or lookup leaks a DB
+     connection reclaimed only by GC finalisation rather than returned promptly
+     to the pool.
+
+D.0d [PERFORMANCE] GetCharacterList issues 8xN redundant queries
+     ShardDatabase.cs:622-643
+     For each UNCACHED character in the loop it re-runs the entire original
+     account-filtered query through eight separate .Include(...).Load() calls.
+     Three new characters produces 24 round trips instead of 8, directly on the
+     login path. Full treatment in perf-database.txt.
+
+D.0e [LOW] GetAllegianceID violates its own nullable contract
+     ShardDatabase.cs:853-864
+     Declared `uint? GetAllegianceID(...)`, but query.FirstOrDefault() on an
+     IQueryable<uint> returns 0 - not null - when no row matches. Caller
+     AllegianceManager.cs:61-62 checks `allegianceID != null` to decide whether
+     to look up a biota, so that check is ALWAYS true and a useless
+     GetBiota(0) runs even when no allegiance exists. Currently masked only
+     because GetBiota(0) also returns null.
+
+D.0f [DESIGN RISK] Reused DbContext depends on an easily-violated invariant
+     ShardDatabaseWithCaching.cs:90-110, 137-195
+     GetBiota returns the exact cached EF entity reference to every caller, and
+     SaveBiota reuses the ShardDbContext captured at first cache-insertion
+     indefinitely across arbitrarily separated future saves (line 151,
+     cachedBiota.Context).
+
+     Correctness depends entirely on all access being funnelled through the
+     single-threaded SerializedShardDatabase queue. Any bypass - and
+     AllegianceManager.cs:61 ALREADY accesses BaseDatabase directly -
+     reintroduces concurrent DbContext use, which EF Core does not support.
+================================================================================
+
+
+SECTION A - HIGH SEVERITY
+================================================================================
+
+D.1  Pending saves are DISCARDED on unsafe shutdown
+     SerializedShardDatabase.cs:40-48
+
+         while (!_queue.IsAddingCompleted)
+
+     IsAddingCompleted becomes true the instant Stop() calls CompleteAdding(),
+     regardless of how many items remain queued. The correct property for
+     "drained" is IsCompleted.
+
+     FAILURE: ServerManager.cs:217 drains the queue on a graceful shutdown, so
+     the normal path is fine. But Program.cs:364 (OnProcessExit, logged as
+     "Unsafe server shutdown detected") calls DatabaseManager.Stop() with a
+     full queue - and every pending biota and character save is thrown away
+     rather than flushed. This is exactly the scenario where you most need the
+     saves to land.
+
+     FIX: while (!_queue.IsCompleted).
+
+D.2  Lost updates: UpdateAccount writes every column from a detached entity
+     AuthenticationDatabase.cs:117-125
+
+     context.Entry(account).State = Modified on an AsNoTracking object with no
+     concurrency token writes ALL columns, not just changed ones.
+
+     FAILURE: an admin runs `/ban bob 1 0 0` (SentinelCommands.cs:403) at T0
+     using a freshly loaded Account. Bob's own session loaded its Account at
+     T0-2s and calls UpdateLastLogin (AccountExtensions.cs:106) at T0+1s. The
+     stale row overwrites BanExpireTime and BannedByAccountId back to NULL -
+     the ban silently vanishes. The same window erases a /passwd change.
+
+     FIX: re-load and update within one context, or add a rowversion token or
+     targeted ExecuteUpdate.
+
+D.3  Character-name uniqueness is TOCTOU with no database constraint
+     ShardDatabase.cs:583-595, Models/Shard/ShardDbContext.cs:986
+
+     IsCharacterNameAvailable is a separate queued task from the insert
+     (CharacterHandler.cs:147 -> AddCharacterInParallel), and character_name_idx
+     is a NON-UNIQUE index.
+
+     FAILURE: two players submitting "Frostfell" within the same second both
+     receive true and both insert, producing two live characters with identical
+     names. That breaks /tell, friends, squelch and allegiance lookups, all of
+     which resolve by name. AddStarterCharactersInParallel
+     (ShardDatabase.cs:783-802) has the same shape - it checks all names, then
+     inserts.
+
+     FIX: add a unique index on character.name for non-deleted rows and handle
+     the duplicate-key error.
+
+D.4  scrollsBySpellID is an unsynchronised Dictionary written from parallel
+     landblock threads
+     WorldDatabaseWithEntityCache.cs:134, 226-248
+
+     After /clearcache weenie sets weenieSpecificCachesPopulated = false (line
+     90), GetScrollWeenie begins writing scrollsBySpellID[spellID] (line 243)
+     from LootGenerationFactory_Scroll.cs:27 - which runs inside the
+     Parallel.ForEach over landblock groups (LandblockManager.cs:317).
+
+     FAILURE: concurrent inserts during a resize corrupt the bucket chain,
+     giving either lost entries or a spinning read - 100% CPU pegged on a
+     landblock thread. The sibling caches in the same file already use
+     ConcurrentDictionary.
+
+     FIX: ConcurrentDictionary.
+
+D.5  SQL export escapes ' but not backslash - injection on re-import
+     SQLFormatters/SQLWriter.cs:80-86   [VERIFIED DIRECTLY]
+
+         return "'" + input.Replace("'", "''") + "'";
+
+     Only the single quote is escaped. Player-controlled strings reach this
+     directly: BiotaSQLWriter.cs:233 writes book pages and inscriptions, and
+     CharacterSQLWriter writes character names.
+
+     FAILURE: a book page ending in a backslash yields '...\', which MySQL
+     reads as an escaped quote - so the remainder of the exported file becomes
+     executable SQL. An item named
+         x\', 1); DROP TABLE biota;--
+     turns an admin's /exportsql followed by a re-import into arbitrary SQL
+     execution. The attacker is any player who can name an item or write a
+     book; the trigger is an admin performing a routine content export.
+
+     FIX: also escape backslash, NUL and control characters, or emit X'...'
+     hex literals.
+
+
+SECTION B - MEDIUM SEVERITY
+================================================================================
+
+D.6  ClearWeenieCache does not evict the derived caches
+     WorldDatabaseWithEntityCache.cs:85-91
+
+     It clears weenieCache and weenieClassNameToClassIdCache but leaves
+     weenieCacheByType and scrollsBySpellID populated.
+
+     FAILURE: after deleting a wcid from the world DB and running
+     /clearcache weenie, GetRandomWeeniesOfType (line 172) still finds the
+     stale type list, calls GetCachedWeenie(deletedWcid), and appends NULL to
+     the result list - producing an NRE inside loot generation. GetScrollWeenie
+     likewise keeps returning the pre-reload object.
+
+     FIX: clear both collections. ClearCachedWeenie should also drop the
+     class-name mapping.
+
+D.7  Quest cache keyed case-sensitively against a case-insensitive database
+     WorldDatabaseWithEntityCache.cs:712-729
+
+     GetCachedQuest caches under the raw questName, while MySQL's default
+     collation matches case-insensitively.
+
+     FAILURE: an emote caches "bobsquest"; an admin imports BobsQuest.json, and
+     ClearCachedQuest("BobsQuest") (DeveloperContentCommands.cs:588) removes
+     nothing. Players keep the old MaxSolves/MinDelta until restart, and the
+     admin has no indication the reload did not take.
+
+     FIX: normalise keys with ToLowerInvariant() on both paths, as cachedEvents
+     already does.
+
+D.8  FixNullFields rewrites text inside string literals
+     SQLFormatters/SQLWriter.cs:93-105
+
+     The blind Replace(", ,", ", NULL,") and Replace(", )", ", NULL)") run over
+     the entire generated line, including inside quoted values.
+
+     FAILURE: an inscription reading "To Ann, , and Bob" exports as
+     'To Ann, NULL, and Bob'. Silent data corruption on any export/import
+     round-trip.
+
+     FIX: build the line as a field list and null-fill per field before
+     joining.
+
+D.9  Culture-dependent float formatting corrupts exports on non-English hosts
+     SQLFormatters/World/LandblockInstanceWriter.cs:52-58,
+     HousePortalSQLWriter.cs:32 (also SpellSQLWriter, TreasureDeathSQLWriter,
+     RecipeSQLWriter - none reference InvariantCulture)
+
+     FAILURE: on a de-DE or fr-FR host, /exportsql landblock emits 12,5 instead
+     of 12.5. The INSERT gains phantom columns and either fails outright or
+     silently shifts values on import. BiotaSQLWriter.cs:224 already does this
+     correctly, so the fix pattern is in-tree.
+
+     FIX: format with CultureInfo.InvariantCulture everywhere.
+
+D.10 Float export truncated to three decimals
+     SQLFormatters/World/WeenieSQLWriter.cs:263
+
+     ToString("0.###") silently rounds every weenie_properties_float.
+     WeaponOffense 1.0625 becomes 1.063, and any value below 0.0005 - a small
+     Probability or regen rate - exports as 0. Round-tripping content through
+     /exportsql permanently alters item stats.
+
+     FIX: use the full round-trippable format used by the shard writer.
+
+D.11 NaN guard covers rotation but not origin
+     Adapter/BiotaUpdater.cs:120-128, Adapter/BiotaConverter.cs:530-538
+
+     The comment states EF cannot store NaN, yet only AnglesW/X/Y/Z are
+     sanitised.
+
+     FAILURE: a physics glitch producing PositionX = NaN makes SaveChanges
+     throw `Unknown column 'NaN' in 'field list'`. Because the save is retried
+     every heartbeat, that object - often a player - never persists again for
+     the rest of the session.
+
+     FIX: apply the same check to OriginX/Y/Z and fall back to the last valid
+     position.
+
+D.12 New ReaderWriterLockSlim per call defeats the lock and leaks
+     OfflineTools/Shard/BiotaGuidConsolidator.cs:197, 285
+
+     A fresh lock instance is handed to SaveBiota on every iteration, so inside
+     the phase-1 Parallel.ForEach it provides no mutual exclusion whatsoever
+     against concurrent access to the same biota. Each instance is also an
+     undisposed IDisposable - thousands leaked per run.
+
+     FIX: pass the biota's real lock, or one shared lock.
+
+D.13 Purge reports success after a failed SaveChanges
+     ShardDatabaseOfflineTools.cs:136-143
+
+     The exception is logged, but charactersPurged/possessionsPurged were
+     already incremented. PurgeOrphanedBiotasInParallel (line 373) then reports
+     the purged counts, so the operator sees a clean total while nothing was
+     actually deleted.
+
+     FIX: reset the counters, or rethrow, in the catch.
+
+
+SECTION C - LOW SEVERITY
+================================================================================
+
+D.14 Double NRE in GetListofBannedAccounts
+     AuthenticationDatabase.cs:161-178
+     Line 172 dereferences account.BannedByAccountId.Value (nullable - console
+     bans leave it NULL) and then GetAccountById(...).AccountName (null if the
+     banning admin's account was since deleted). /banlist throws instead of
+     listing.
+     Related: UpdateAccountAccessLevel (line 132) uses .First(), so the
+     `if (account == null) return false` below it is dead code and a bad
+     account id throws InvalidOperationException instead of returning false.
+
+
+SECTION D - INVESTIGATED, NOT A BUG
+================================================================================
+Recorded so a later pass does not re-investigate.
+
+E.1  ShardDatabaseOfflineTools.cs:457/495 ToDictionary(i => i.ObjectId, ...) -
+     safe: the PK is (ObjectId, Type) and the query filters a single Type.
+E.2  ShardDatabase.cs:84-126, 139-159 hand-built SQL - parameters are uint and
+     dbName comes from the config file only. The manually opened connection and
+     reader are released by the DbContext using block. NOT an injection path
+     (unlike D.5, which is).
+E.3  ShardDatabaseOfflineTools.cs:363 `id >= 0x50000000` vs
+     ObjectGuid.PlayerMin 0x50000001 - wider by one unusable guid. Harmless.
+E.4  CharacterNames.cs:251 static Random - only reached via
+     AddStarterCharactersInParallel, on the single serialised shard thread.
+E.5  ACE.Common/ThreadSafeRandom - ThreadLocal<Random>, correct.
+E.6  BCrypt path - work factor clamped to 4-31 and BCryptProvider.Verify used
+     for comparison. Only the legacy SHA512 migration branch
+     (AccountExtensions.cs:46) uses ==, and it compares hashes, not secrets.
+E.7  cookbookCache / recipeCache locking, and the lazy cachedTreasureMaterialBase
+     /Color/Groups init - worst case is duplicated work; the field is assigned
+     only after the table is fully built.
+E.8  BiotaUpdater / BiotaConverter IndexOf-based ordering - the entity types are
+     plain classes (reference equality), so the indices are correct. O(n^2) but
+     not incorrect; see perf-database.txt.
+E.9  Extensions/QueryableExtensions.ToSql - the enumerator is never advanced, so
+     no reader or connection is opened.
+
+
+SECTION E - SUGGESTED PRIORITY
+================================================================================
+  1. D.1  IsAddingCompleted -> IsCompleted. One word, and it is the difference
+          between flushing and discarding every pending save on an unsafe
+          shutdown.
+  2. D.5  SQL escaping. Player-controlled text becomes executable SQL when an
+          admin exports and re-imports content.
+  3. D.4  scrollsBySpellID -> ConcurrentDictionary. Matches the sibling caches
+          in the same file.
+  4. D.3  Unique index on character.name. Requires a schema migration, so plan
+          it, but the current state allows duplicate live characters.
+  5. D.2  Account lost updates - silently un-bans players.
+  6. D.11 NaN origin guard - one player permanently ceasing to persist is
+          severe and hard to diagnose.
+  7. D.6, D.7 cache eviction correctness; D.8-D.10 export fidelity; then the
+          remaining items.
+
+NOTE ON THE SQLFormatters CLUSTER: D.5, D.8, D.9 and D.10 are all in the export
+writers and all corrupt content round-trips in different ways. If content
+export/import is part of your workflow, treat them as a single work item rather
+than four separate fixes.
+
+================================================================================
+END OF REPORT
+================================================================================

@@ -1,0 +1,218 @@
+================================================================================
+ACE.Server/Command - PERFORMANCE REPORT
+================================================================================
+Scope   : Source/ACE.Server/Command  (27 files, ~20,400 lines)
+Date    : 2026-07-25
+Companion document: bugs-command.txt
+
+UNPROFILED. Static analysis of call paths.
+
+THE HEADLINE
+  Command dispatch and startup are FINE - genuinely, measurably fine, and this
+  report says so rather than inventing findings. The real risk is entirely
+  different: in-game @commands execute INLINE ON THE WORLD THREAD, so an
+  expensive admin command freezes the tick for every player on the shard.
+
+THE MECHANISM (established by reading the call path)
+  InboundMessageManager.HandleGameAction
+    (Network/Managers/InboundMessageManager.cs:122-137)
+  queues into NetworkManager.InboundMessageQueue, drained by
+  WorldManager.UpdateWorld(). GameActionTalk.Handle
+    (Network/GameAction/Actions/GameActionTalk.cs:69, 86)
+  then calls commandHandler.Handler.Invoke(session, parameters) SYNCHRONOUSLY.
+
+  Every millisecond a handler spends is a millisecond the entire world tick is
+  stalled for everyone.
+
+  CONSOLE commands are safe - they run on the dedicated "Command Manager"
+  thread (CommandManager.cs:120). CommandHandlerFlag.ConsoleInvoke is therefore
+  the de-facto guard: CommandManager.cs:250 rejects those from a session,
+  keeping them off the world thread.
+
+  Findings are ordered by whether the expensive work ESCAPES that guard.
+================================================================================
+
+
+SECTION A - EXPENSIVE WORK ON THE WORLD THREAD
+================================================================================
+
+C.1  Content import and export run on the world thread
+     Handlers/DeveloperContentCommands.cs:228 (import-sql), :221
+     (import-sql-folders), :73 (import-json), :1913 and :2163 (export-*-folders)
+
+     All are CommandHandlerFlag.None, so a Developer typing
+     `/import-sql weenie all` IN-GAME triggers ImportSQLWeenie (line 283),
+     which enumerates and parses thousands of .sql files and performs DB writes
+     - entirely inside the tick.
+
+     COST: seconds to minutes of complete server freeze. Every player is
+     disconnected or frozen for the duration.
+
+     FIX: mark these ConsoleInvoke, or dispatch to Task.Run with results
+     marshalled back.
+
+     Note this compounds with perf-adapter.txt R.1 - the import path also opens
+     one DB context and round-trip PER FILE with no batching, which is what
+     makes the freeze long rather than brief.
+
+C.2  show-allegiances walks every character ever created
+     Handlers/AdminCommands.cs:4614-4628
+
+     CommandHandlerFlag.None, so it runs on the world thread. It calls
+     PlayerManager.GetAllPlayers() - copying the full offline plus online set,
+     i.e. every character on the shard - then AllegianceManager.GetAllegiance
+     per player, building allegiance graphs.
+
+     On a mature shard that is tens of thousands of iterations mid-tick.
+
+     Its sibling fix-allegiances (line 4540) does the same work and IS
+     correctly marked ConsoleInvoke - so the correct flag is known and was
+     simply not applied here.
+
+     FIX: add ConsoleInvoke to show-allegiances.
+
+C.3  serverstatus / allstats are Advocate-level and block on DB round-trips
+     Handlers/AdminStatCommands.cs:28, 45
+
+     Note the access level: ADVOCATE - the lowest staff tier - combined with
+     CommandHandlerFlag.None.
+
+     Lines 71-72 issue GetAccountCount() and GetEstimatedBiotaCount() as
+     BLOCKING calls on the world thread. Lines 78-105 iterate every loaded
+     landblock and every object via GetAllWorldObjectsForDiagnostics(). The
+     same pattern appears at lines 202-250 (landblockstats), which performs the
+     object walk TWICE over two top-10 sets.
+
+     The object walk is bounded (loaded landblocks, not all 65,025), but the
+     blocking DB queries are bounded only by shard latency - a slow query
+     stalls the tick for exactly that long.
+
+     FIX: cache the DB counts with a short TTL; raise the access level.
+     bugs-command.txt X.4 separately flags the access level as a SECURITY
+     issue, so one change addresses both.
+
+
+SECTION B - CONSOLE-THREAD WORK (bounded blast radius)
+================================================================================
+
+C.4  verify-melee-rares is an N+1 query storm
+     Handlers/DeveloperFixCommands.cs:1719
+
+     Two multi-join LINQ-to-EF queries over the whole Biota table (lines 1809,
+     1834, 1856), materialised to dictionaries, and then A FRESH SUB-QUERY PER
+     RARE inside the loop (line 1902 onward, repeated at 2154 and 2329) - one
+     round-trip per row.
+
+     `ctx.Database.SetCommandTimeout(TimeSpan.FromMinutes(5))` at line 1806
+     tells you the author knew.
+
+     MITIGATED: it is ConsoleInvoke, so it stalls the command thread and
+     hammers the database rather than freezing the world tick.
+
+     FIX: project the container and wielder joins into the outer query.
+
+C.5  String concatenation in the rare-scan loop
+     Handlers/DeveloperFixCommands.cs, ~60 sites between lines 1901 and 2476
+
+     `logline += $"..."` executed per problem row. With thousands of rares that
+     is O(n^2) allocation. Everywhere else in the codebase StringBuilder is
+     used correctly (AdminStatCommands.cs).
+
+     FIX: StringBuilder per iteration.
+
+C.6  loadalllandblocks - behaving as documented, no change needed
+     Handlers/DeveloperCommands.cs:483-500
+     Loads all 65,025 landblocks, but is correctly wrapped in Task.Run, and the
+     command description openly states it will crash the server. Recorded so it
+     is not "fixed" by mistake.
+
+
+SECTION C - CHECKED AND NEGLIGIBLE
+================================================================================
+Recorded explicitly, because the obvious hypotheses going in (linear command
+scan, per-call reflection) turned out to be wrong.
+
+N.1  DISPATCH: GetCommandHandler (CommandManager.cs:228) is a single
+     Dictionary.TryGetValue on an OrdinalIgnoreCase dictionary. No scan, no
+     per-call reflection - delegates are bound once at startup. The
+     command.ToLower() at line 236 allocates one string per invocation, which
+     is irrelevant at interactive rates. NOT a finding.
+N.2  STARTUP: Initialize (CommandManager.cs:96) runs exactly once, from
+     Program.cs:333 - one pass over roughly 1,200 types calling GetMethods(),
+     registering 331 commands. Tens of milliseconds, against a startup that
+     already loads every player biota from the database. NOT a finding.
+N.3  acecommands / acehelp - LINQ with orderby over 331 entries
+     (HelpCommands.cs:107). Trivial.
+N.4  ParseCommand / StuffRawIntoParameters allocate a Regex per call
+     (CommandManager.cs:176) - irrelevant at interactive rates.
+N.5  listplayers, listpositions, contract dumps (DeveloperCommands.cs:455, 709,
+     1281) use += concatenation, but N is in the tens.
+N.6  NO command registers recurring per-tick work. The three ActionChain uses
+     (CharacterCommands.cs:95, DeveloperCommands.cs:3119, PlayerCommands.cs:143)
+     are all one-shot AddDelayForOneTick deferrals.
+
+
+SECTION D - CORRECTION TO THIS AUDIT
+================================================================================
+*** A claim made during this audit was checked and is WRONG. Recorded so it is
+not propagated. ***
+
+  CLAIM: PlayerManager.GetAllOffline() (Managers/PlayerManager.cs:297-310)
+         fills a local `results` list and then returns null, so every
+         GetAllOffline / GetAllPlayers caller would NullReferenceException -
+         which would make finding C.2's cost theoretical.
+
+  VERIFIED FALSE. I read the method directly. It correctly returns `results`
+  at line 312:
+
+      public static List<OfflinePlayer> GetAllOffline()
+      {
+          var results = new List<OfflinePlayer>();
+          playersLock.EnterReadLock();
+          try {
+              foreach (var player in offlinePlayers.Values)
+                  results.Add(player);
+          }
+          finally { playersLock.ExitReadLock(); }
+          return results;
+      }
+
+  C.2 therefore stands at full severity - the walk really does execute.
+
+
+SECTION E - ONE NON-PERFORMANCE NOTE SURFACED EN ROUTE
+================================================================================
+E.1  commandHandlers is a plain Dictionary mutated AT RUNTIME by the mod system
+     (Mods/ModHelpers.cs:77, 138) while the world thread reads it via
+     GetCommandHandler. System.Collections.Concurrent is imported at
+     CommandManager.cs:2 but never used.
+
+     A mod registering or unregistering a command while a player types one is a
+     concurrent read/write on a non-thread-safe Dictionary - which can corrupt
+     the bucket chain rather than merely throwing. Belongs with the concurrency
+     findings in bugs-command.txt; recorded here because it was found during
+     the performance pass.
+
+
+SECTION F - SUGGESTED PRIORITY
+================================================================================
+  1. C.1  Move content import/export off the world thread. It is the only
+          finding here that can freeze a live shard for minutes.
+  2. C.2  Add ConsoleInvoke to show-allegiances - a one-flag change, and the
+          correct flag is already on its sibling.
+  3. C.3  Cache the DB counts and raise the access level. Coordinate with
+          bugs-command.txt X.4, which flags the same access level as a security
+          problem.
+  4. E.1  ConcurrentDictionary for commandHandlers (correctness, not
+          performance).
+  5. C.4, C.5 - console-thread work. Real, but bounded blast radius.
+
+HONEST SUMMARY: this subsystem has no per-invocation performance problem worth
+fixing. Its risk is architectural - that arbitrarily expensive handlers execute
+synchronously on the world thread, gated only by a flag that several commands
+simply do not set. The fix is to audit CommandHandlerFlag across all 331
+commands rather than to optimise any individual handler.
+
+================================================================================
+END OF REPORT
+================================================================================
