@@ -9,19 +9,11 @@ Scope   : Source/ACE.Entity  (287 files, ~55,200 lines)
 Date    : 2026-07-25
 Companion document: perf-entity-shared.txt
 
-STATUS  : 2 of the findings below are FIXED on master/Claude1 (S.1, S.2) by
-          commit 5385d19d "Bug fixes 1 (#4470)", 2026-07-29. BOTH ARE STILL
-          LIVE ON `combined`, which does not have that commit merged.
+STATUS  : open findings only. Numbering is non-contiguous because resolved
+          findings have been removed.
 
 VERIFICATION
-  FIXED UPSTREAM, RE-VERIFIED 2026-07-27 : S.1, S.2
-  TRACED BUT NOT RE-VERIFIED : all other findings. Spot-check before fixing.
-
-  NOTE: S.1 and S.2 COMPOUNDED EACH OTHER - both are in the book-page path. The
-  off-by-one index (S.1) misdirected page edits, while the shared page objects
-  (S.2) meant an edit that did land was written into the world-cache weenie and
-  seen by every book of that class. Fixing only one would have left book editing
-  still visibly broken, which is worth remembering when triaging `combined`.
+  TRACED BUT NOT RE-VERIFIED : all findings below. Spot-check before fixing.
 
 FIRST AUDIT OF THIS PROJECT. It had never been reviewed. Much of it is enum
 declarations with no runtime behaviour; the findings concentrate in Position,
@@ -35,52 +27,6 @@ surfaces far from its cause.
 SECTION A - HIGH SEVERITY
 ================================================================================
 
-S.1  [** FIXED on master/Claude1 in 5385d19d, 2026-07-29 **]
-     AddPage returns a 1-based index into a 0-based list
-     Models/PropertiesBookPageDataExtensions.cs:71
-
-     STATUS: fixed upstream in "Bug fixes 1 (#4470)", applying the recommended
-     one-line change verbatim: `index = value.Count - 1;` (line 68).
-     STILL PRESENT ON `combined` - that branch does not have the fix merged.
-
-         value.Add(page);
-         index = value.Count;      // should be value.Count - 1
-
-     FAILURE: a player writes in a book. Book.AddPage
-     (WorldObjects/Book.cs:121) passes this out-parameter straight to
-     GameEventBookAddPageResponse (Player_Book.cs:88). Adding the FIRST page
-     reports index 1, but the only valid index is 0 - so the client then edits
-     or reads a page that does not exist (GetPage returns null) and the write
-     is silently dropped.
-
-     FIX: `index = value.Count - 1;`
-
-S.2  [** FIXED on master/Claude1 in 5385d19d, 2026-07-29 **]
-     Book pages are shallow-copied while every other collection is deep-cloned
-     Adapter/WeenieConverter.cs:163
-
-     STATUS: fixed upstream in "Bug fixes 1 (#4470)", applying the recommended
-     deep-clone loop essentially verbatim (WeenieConverter.cs:162-168):
-         result.PropertiesBookPageData =
-             new List<PropertiesBookPageData>(weenie.PropertiesBookPageData.Count);
-         foreach (var page in weenie.PropertiesBookPageData)
-             result.PropertiesBookPageData.Add(page.Clone());
-     Note it also pre-sizes the list by Count, which the original did not.
-     STILL PRESENT ON `combined` - that branch does not have the fix merged.
-
-         new List<PropertiesBookPageData>(weenie.PropertiesBookPageData)
-
-     This copies the LIST but aliases the ELEMENT objects.
-     PropertiesBookPageData.Clone() exists and is not used here.
-
-     FAILURE: WorldObject.cs:107 converts from the CACHED weenie, so every
-     instance of a book weenie shares page objects. A player edits a page
-     (Book.ModifyPage mutates page.PageText in place), which mutates the
-     world-cache weenie - and every existing and future book of that class now
-     shows the edited text.
-
-     FIX: `foreach (var p in weenie.PropertiesBookPageData)
-            result.PropertiesBookPageData.Add(p.Clone());`
 
 S.3  Enchantment heartbeat mutates under a READ lock
      Models/PropertiesEnchantmentRegistryExtensions.cs:244-256
@@ -254,15 +200,11 @@ I.11 Biota / Weenie model classes - plain property bags with no equality or
 
 SECTION E - SUGGESTED PRIORITY
 ================================================================================
-  1. S.2  Book page aliasing - a player edit permanently corrupts the shared
-          world cache for every book of that class. Worst blast radius here.
-  2. S.3  Read-lock mutation in the enchantment heartbeat - a data race on
+  1. S.3  Read-lock mutation in the enchantment heartbeat - a data race on
           state consulted constantly during combat.
-  3. S.1  AddPage off-by-one - trivially reproducible by any player writing in
-          a book, and it silently discards their writing.
-  4. S.4  Cell decoding - CellX being permanently 0 outdoors means every
+  2. S.4  Cell decoding - CellX being permanently 0 outdoors means every
           CellDist range check is wrong.
-  5. S.6, S.9 - equality and hashcode contract violations. Cheap to fix and
+  3. S.6, S.9 - equality and hashcode contract violations. Cheap to fix and
           they cause silent, hard-to-trace lookup failures.
   6. S.5  Map-edge clamp.
   7. S.7, S.8 - the SetupConst values. Mechanical.

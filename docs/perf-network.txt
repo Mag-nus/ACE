@@ -219,23 +219,6 @@ P.6  Every property-update message allocates a byte[] under a global lock
      FIX: add WriteCurrentSequence(BinaryWriter, ...) overloads that write the
      scalar directly; retain the byte[] API only for legacy callers.
 
-P.7  Unguarded packetLog.DebugFormat on the hottest paths
-     42 instances in NetworkSession.cs, 3 in MessageFragment.cs
-
-     log4net checks IsDebugEnabled INSIDE the method, but arguments are
-     evaluated at the call site regardless. Value-type arguments box (heap
-     allocation), and calls with 4+ arguments bind to params object[] and
-     allocate an array.
-
-     Worst by frequency: NetworkSession.cs:130 and :154 (per message PER
-     RECIPIENT, boxing message.Opcode); MessageFragment.cs:49 (3 boxes per
-     message per recipient); MessageFragment.cs:66, :99 (per fragment per
-     recipient); NetworkSession.cs:825/848/876/884 (per fragment);
-     :274/437/485/493/499/516/523/535/540 (per datagram or fragment inbound).
-
-     FIX: wrap in `if (packetLog.IsDebugEnabled)`. The pattern already exists
-     in the same file at lines 172, 423 and 739 - so this is inconsistency, not
-     a missing idiom.
 
 P.8  cachedPackets retains every sent packet for 120 seconds
      NetworkSession.cs:72, 731
@@ -339,11 +322,9 @@ SECTION F - SUGGESTED PRIORITY
           CalculateObjDesc. This is the O(N^2)-on-zone-entry fix.
   3. P.4  Early-return in NetworkSession.Update. Trivial change, removes
           millions of UtcNow reads and lock operations per second.
-  4. P.7  Guard the 45 unguarded debug log calls. Mechanical, and the correct
-          pattern is already in the same file.
-  5. P.5  Right-size the ArrayPool rent and stop zeroing 4 KB per packet.
-  6. P.3, P.6, P.8, P.10 - remaining per-recipient and per-packet allocation.
-  7. P.11 Overlapped receive. Larger change; do it after measuring whether the
+  4. P.5  Right-size the ArrayPool rent and stop zeroing 4 KB per packet.
+  5. P.3, P.6, P.8, P.10 - remaining per-recipient and per-packet allocation.
+  6. P.11 Overlapped receive. Larger change; do it after measuring whether the
           serialized receive path is actually a bottleneck at your player
           count.
   8. P.12 Instrument first; optimise only if the loss path proves hot.

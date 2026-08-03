@@ -31,9 +31,8 @@ SOURCE OF THIS DOCUMENT
   Gen0 churn (attack structurally, not one at a time) from the genuinely
   PROMOTED allocations (M.1, M.9, H.2) that are worth fixing individually.
 
-  If you act on only three things in this document: P.1, M.2 (a one-line
-  deletion that halves the largest allocation site), and N.1 (delete the
-  duplicated walkable test in the innermost per-frame loop).
+  If you act on only two things in this document: P.1, and N.2 (the
+  15-iteration no-op loop in the innermost per-frame path).
   NOTE: F.1 was previously listed here. Its contention analysis stands, but the
   fix originally proposed for it would deadlock - read F.1 before acting on it.
 
@@ -84,23 +83,20 @@ P.1  A global upgradeable lock serialises the parallel physics tick
 SECTION B - ALLOCATION ON THE PER-OBJECT-PER-FRAME PATH
 ================================================================================
 
-P.2  Roughly 45 heap objects allocated per transition() call - half of them
-     immediately garbage
-     Transition.cs:29-32, 604-611, 690-695
+P.2  Roughly 20 heap objects allocated per transition() call
+     Transition.cs:29-32, 604-611
 
-     The Transition constructor calls Init(), and MakeTransition() calls Init()
-     AGAIN - so every allocation is made twice and the first set is discarded
-     instantly.
+     The Transition constructor calls Init(), which builds ObjectInfo,
+     SpherePath (4 Positions -> 4 AFrames, 1 Sphere, 5 List<Sphere>),
+     CollisionInfo and its List, CellArray and its Dictionary - roughly 20
+     objects. transition() runs at least once per moving object per frame
+     (PhysicsObj.cs:1691, 1778, 4351), so this is a steady, high-rate source of
+     Gen0 garbage.
 
-     Each Init() builds ObjectInfo, SpherePath (4 Positions -> 4 AFrames, 1
-     Sphere, 5 List<Sphere>), CollisionInfo and its List, CellArray and its
-     Dictionary - roughly 20 objects. transition() runs at least once per
-     moving object per frame (PhysicsObj.cs:1691, 1778, 4351).
-
-     FIX: (a) delete the redundant Init() in MakeTransition - that alone frees
-     50% immediately; (b) add a [ThreadStatic] Transition pool with a Reset().
-     The CleanupTransition stub at Transition.cs:237 is where the original
-     static pool used to live, which is a strong hint the port dropped it.
+     FIX: add a [ThreadStatic] Transition pool with a Reset(). The
+     CleanupTransition stub at Transition.cs:237 is where the original static
+     pool used to live, which is a strong hint the port dropped it.
+     See M.2 and M.3 for sizing and for why a naive free-list will not work.
 
 P.3  new Position per transition step
      SpherePath.cs:271-277, 257-263, 265-269
@@ -794,12 +790,8 @@ M.1  Visibility lists are the only reliably PROMOTED allocation
      `new`. Replace Except/Distinct with a reusable HashSet<uint> of IDs.
      RISK: low. Confirm no caller retains the returned list beyond the tick.
 
-M.2  The Transition object graph: ~1.3 KB and ~45 objects, allocated TWICE
-     Transition.cs:690-695 (MakeTransition), 29-32 (ctor -> Init), 604-611
-
-     MakeTransition calls `new Transition()` - whose constructor calls Init() -
-     and then calls Init() AGAIN, so the entire graph is built and immediately
-     orphaned once.
+M.2  The Transition object graph: ~650 B and ~20 objects per transition
+     Transition.cs:29-32 (ctor -> Init), 604-611
 
      MEASURED SHELL SIZES: Transition 48 B; SpherePath ~304 B (18 refs, 8
      Vector3, 13 bool, 8 int/float); CollisionInfo ~128 B plus a
@@ -807,8 +799,8 @@ M.2  The Transition object graph: ~1.3 KB and ~45 objects, allocated TWICE
      ~200 B; plus four Position+AFrame pairs (SpherePath.cs:63-67) at 80 B
      each.
 
-     Deleting the second Init() is a ONE-LINE, ZERO-RISK 50% CUT. Do this
-     first, before any pooling work.
+     Pooling is the remaining lever here - see M.3 for why a naive free-list
+     will not work.
 
 M.3  Pooling Transition is viable - but NOT with a naive free-list
      Transition.cs:237 (the CleanupTransition stub where the C++ pool lived)
@@ -1058,7 +1050,7 @@ SECTION N - FOURTH PASS: ObjectMaint ALGORITHMS AND BSP TRAVERSAL
    algorithmically - yet both of pass 2's top findings came from it. BSP/ had
    never been examined for performance at all, despite sitting in the innermost
    collision loop.
-   Findings are numbered N.1-N.12.
+   Findings are numbered N.2-N.12.
 ================================================================================
 ================================================================================
 
@@ -1071,28 +1063,6 @@ SECTION N - FOURTH PASS: ObjectMaint ALGORITHMS AND BSP TRAVERSAL
 
 --- N: BSP TRAVERSAL (per-frame, innermost loop) ---
 
-N.1  walkable_hits_sphere runs the polygon/sphere test TWICE - four times on
-     disagreement - as leftover debug scaffolding
-     Polygon.cs:400-412
-
-     It calls polygon_hits_sphere_precise, then calls polygon_hits_sphere
-     purely to compare, and if the two disagree it calls BOTH AGAIN, discarding
-     every result.
-
-     This is the innermost statement of the BSP leaf loop: BSPLeaf.find_walkable
-     (BSPLeaf.cs:36) and BSPLeaf.hits_walkable (BSPLeaf.cs:56), reached from
-     BSPTree.find_collisions -> RootNode.find_walkable for EVERY WALKING STEP
-     of EVERY MOVING OBJECT EVERY FRAME. Each redundant call is an O(verts)
-     loop with a cross product and three dot products per edge.
-
-     FIX: delete lines 406-410 and keep `hit`. A straight ~50% cut of walkable
-     polygon cost, with no behavioural change.
-
-     NOTE: this was already filed as a correctness/cleanliness item in
-     bugs-physics.txt L.5 ("leftover debug code"). What is NEW here is the
-     FREQUENCY - it was not previously understood to be in the innermost
-     per-frame collision loop. That escalates it from cosmetic cleanup to one
-     of the cheapest real wins in the subsystem.
 
 N.2  adjust_to_plane burns 15 identical iterations before failing
      BSPTree.cs:50-67
@@ -1303,12 +1273,9 @@ Transition, CellArray, and the Polygon methods beyond those on the BSP leaf
 path.
 
 --- N: SUGGESTED PRIORITY ---
-  1. N.1  Delete the duplicated walkable test. Innermost per-frame loop,
-          ~50% cut of walkable polygon cost, zero behavioural risk, and the
-          lines are already marked as debug leftovers.
-  2. N.2  The 15-iteration no-op loop - but read the bugs-physics.txt M.2 note
+  1. N.2  The 15-iteration no-op loop - but read the bugs-physics.txt M.2 note
           first and take both together.
-  3. N.6 + N.9  The ObjectMaint lock and hash multiplication. Both are
+  2. N.6 + N.9  The ObjectMaint lock and hash multiplication. Both are
           mechanical, and together they remove roughly 3N lock acquisitions and
           N redundant hashes per transition.
   4. N.3  stackalloc the box corners (bundle with M.7 - same fix, same file).

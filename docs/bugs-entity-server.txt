@@ -138,21 +138,6 @@ E.2  Infinite loop hangs the calling thread when baseXP == 0
      RELATED: lines 29-33 double levelXP per level with no overflow check, so
      maxLevel >= 64 silently wraps.
 
-E.3  Double Destroy() on the same object in GeneratorProfile.Reset()
-     GeneratorProfile.cs:581-584
-
-     When wo.Container == Generator and TryRemoveFromInventory succeeds,
-     wo.Destroy() is called at line 581 - and then execution falls through to
-     the unconditional wo.Destroy() at line 584.
-
-     FAILURE: a chest or container generator (RegenLocationType.Contain) reset
-     by generator regeneration or by /reset destroys each held item twice,
-     producing a double landblock removal and a DOUBLE GUID RELEASE. The
-     recycled GUID can then be handed out to two live objects simultaneously -
-     object identity corruption that will manifest far from this code.
-
-     FIX: `else wo.Destroy();`
-
 
 SECTION B - MEDIUM SEVERITY
 ================================================================================
@@ -353,11 +338,9 @@ SECTION E - SUGGESTED PRIORITY
 ================================================================================
   1. E.2  baseXP == 0 infinite loop - a content data error hangs a server
           thread outright. One guard clause.
-  2. E.3  Double Destroy / double GUID release - object identity corruption is
-          the worst failure mode in this list, and the fix is one `else`.
-  3. E.1  ulong underflow on item level - trivially triggered by appraising a
+  2. E.1  ulong underflow on item level - trivially triggered by appraising a
           new set item.
-  4. E.5  DamageHistory underflow - silently reassigns kill credit and loot
+  3. E.5  DamageHistory underflow - silently reassigns kill credit and loot
           rights.
   5. E.6  Dual fellowship membership - a duplicate-XP exploit reachable by
           ordinary players through normal UI actions.

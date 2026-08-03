@@ -717,14 +717,9 @@ Q.4  Armor layers: LINQ Where().ToList() over all equipped items, per attack,
      FIX: precompute a CoverageMask -> WorldObject[] map on equip/unequip,
      exactly as the gear-rating cache already does in the same file.
 
-Q.5  Dead Biota read inside the per-armor-piece loop
-     Creature_BodyPart.cs:69, Monster_Melee.cs:493
-         var armorType = armor.GetProperty(PropertyInt.ArmorType) ?? 0;
-     Assigned, NEVER USED. One wasted ReaderWriterLockSlim per armor piece per
-     attack (~4 per attack, more for layered monsters). Delete both lines.
 
 Q.6  Per armor piece: three Biota locks, none cached
-     GetArmorMod reads ArmorLevel, the dead ArmorType (Q.5), and GetResistance
+     GetArmorMod reads ArmorLevel and GetResistance
      -> ArmorModVsSlash/Pierce/etc. Only the two enchantment calls are cached.
      Four layers = twelve locks.
      FIX (PROPOSED, NOT SAFE AS STATED): cache base AL plus the eight RL floats
@@ -748,8 +743,6 @@ Q.6  Per armor piece: three Biota locks, none cached
      read from the biota rather than a snapshot, or do not cache at all - the
      twelve locks are cheaper than wrong armour values.
 
-     The Q.5 fix (deleting the two dead ArmorType reads) is unaffected and
-     remains safe.
 
 Q.7  ignoreMagicArmor / ignoreMagicResist recomputed 3-4x per attack
      Creature_BodyPart.cs:38-39, Monster_Melee.cs:426-427,
@@ -1059,9 +1052,7 @@ NOT examined: Player_Inventory.cs UI handlers beyond the move/burden paths
           override that already exists, removing ~10-16 enchantment-registry
           lock+scan+alloc cycles per attack. Invalidation is already handled by
           the existing ClearCache.
-  2. Q.5  Delete the two dead ArmorType reads. Two lines, two fewer locks per
-          armor piece per attack.
-  3. Q.7  Compute the two ignoreMagic booleans once per attack instead of eight
+  2. Q.7  Compute the two ignoreMagic booleans once per attack instead of eight
           locked reads.
   4. Q.2 + Q.3  Memoise CreatureSkill.Current and thread the resolved skill
           through DamageEvent. The largest combat win, but it needs an

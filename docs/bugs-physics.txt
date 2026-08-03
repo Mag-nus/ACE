@@ -28,7 +28,7 @@ SOURCE OF THIS DOCUMENT
   enough to warrant its own treatment.
 
 VERIFICATION
-  VERIFIED DIRECTLY : H.1, H.2, M.1 (Sections A-B); G.3, G.4 and the U+202C
+  VERIFIED DIRECTLY : H.1, H.2, M.1 (Sections A-B); G.4 and the U+202C
                       character in G.19 (Section G)
   VERIFIED EMPIRICALLY : G.1 and G.2 - the pass-3 auditor extracted the
                       trajectory solvers and ran a 200,000-shot randomised
@@ -312,11 +312,6 @@ L.4  Duplicated unreachable branch in Sphere.Attack
      attack-quadrant cone logic; the whole function is worth re-verifying
      against the original.
 
-L.5  Leftover debug code on a hot walkability path
-     Polygon.cs:400-411
-     In walkable_hits_sphere, when the precise and imprecise tests disagree,
-     both are pointlessly re-executed and the results discarded. Delete lines
-     406-410.
 
 L.6  Type-widening makes bounds checks dead code
      Common/LandDefs.cs:169-198 (blockid_to_lcoord / gid_to_lcoord)
@@ -366,7 +361,7 @@ SECTION E - SUGGESTED PRIORITY
           adjacent correct branch.
   5. M.5  Polygon.make_plane degenerate guard - cheap, and it converts a silent
           collision failure into something detectable.
-  6. M.4, L.1-L.5 as cleanup.
+  6. M.4, L.1-L.4 as cleanup.
   7. M.2  BSPTree / FindTimeOfCollision LAST, despite its severity - see the
           risk note under M.2.
   8. M.6  Only after consulting the acclient reference.
@@ -467,19 +462,6 @@ G.2  [VERIFIED EMPIRICALLY] Stationary ballistic solver lacks a
      Also `numSolutions = lowAng != highAng ? 2 : 1` (line 341) is a float
      equality test that should be an epsilon compare on root.
 
-G.3  [VERIFIED DIRECTLY] Null check inverted so that it GUARANTEES the NRE
-     Animation/MotionInterp.cs:747
-
-         if (WeenieObj == null && !WeenieObj.IsCreature() || ...)
-
-     If WeenieObj is null the left operand is TRUE, so && evaluates the right
-     operand - dereferencing the null it just tested for. The correct pattern
-     appears five times elsewhere in the SAME FILE (lines 179, 196, 396, 434,
-     591): `if (WeenieObj != null && !WeenieObj.IsCreature())`.
-
-     The operator is also semantically inverted: for a NON-creature the
-     intended "jump always allowed" branch is now never taken.
-     REACHED FROM: MotionInterp.jump().
 
 G.4  [VERIFIED DIRECTLY] List capacity mistaken for count, then indexed
      PartArray.cs:367-373

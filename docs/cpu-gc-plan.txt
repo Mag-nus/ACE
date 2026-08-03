@@ -46,78 +46,52 @@ first makes later measurement cleaner because they remove noise.
     Removes most of perf-managers.txt Section A outright.
         -> perf-managers.txt P.0 / P.1-P.4
 
- 2. [VERIFIED] Delete the duplicated walkable test.
-    Polygon.cs:405-410. Both polygon_hits_sphere and _precise were verified
-    side-effect-free; the ref parameter is a discarded local. Deleting the
-    whole `if` removes the condition's call too: 2 calls -> 1 in the common
-    case, 4 -> 1 on disagreement. Innermost per-frame BSP leaf loop.
-        -> perf-physics.txt N.1
-
- 3. [VERIFIED] Delete the duplicate Init() in MakeTransition.
-    Transition.cs:692. `new Transition()` already calls Init(); the second call
-    operates on a brand-new object. Halves the largest per-frame allocation
-    source (~45 objects -> ~22 per transition).
-    NOTE: if you later implement Transition pooling (Tier 3), MakeTransition is
-    where the reset belongs - re-add it deliberately then.
-        -> perf-physics.txt P.2 / M.2
-
- 4. [VERIFIED] Delete the two dead ArmorType reads.
-    Creature_BodyPart.cs:69, Monster_Melee.cs:493. Assigned, never used. One
-    wasted ReaderWriterLockSlim per armor piece per attack.
-        -> perf-worldobjects.txt Q.5
-
- 5. Hoist Time.GetUnixTime() out of the landblock loop.
+ 2. Hoist Time.GetUnixTime() out of the landblock loop.
     LandblockManager.cs:387, 412, 424 - currently once PER LANDBLOCK rather
     than once per tick. Also fixes a timestamp-consistency smell (landblocks in
     one tick currently see different "now" values).
         -> perf-common.txt K.1
 
- 6. Single DateTime.UtcNow snapshot in NetworkSession.Update.
+ 3. Single DateTime.UtcNow snapshot in NetworkSession.Update.
     NetworkSession.cs:187-244 - up to 8 UtcNow reads per session per ~1000Hz
     tick. At 100 sessions that is ~800k clock reads/sec.
         -> perf-common.txt K.2, perf-network.txt P.4
 
- 7. One Stopwatch instead of three in ServerPerformanceMonitor.
+ 4. One Stopwatch instead of three in ServerPerformanceMonitor.
     ServerPerformanceMonitor.cs:213-231 - monitors5m/1h/24h each hold their own
     Stopwatch timing the IDENTICAL interval. 36 QPC reads per outer tick where
     12 would do. Straight 3x.
         -> perf-managers.txt P.1
 
- 8. Guard the instrumentation CALL SITES, not just the callee.
+ 5. Guard the instrumentation CALL SITES, not just the callee.
     WorldObject_Tick.cs:290, 372; Player_Tick.cs:296, 323, 429, 527;
     Landblock.cs:438-596. `stopwatch.Elapsed.TotalSeconds` is evaluated at the
     call site before AddToCumulativeEvent's IsRunning check.
         -> perf-managers.txt P.3, perf-common.txt K.3, perf-worldobjects.txt P.11
 
- 9. Guard the 45 unguarded packetLog.DebugFormat calls.
-    NetworkSession.cs (42), MessageFragment.cs (3). Arguments are evaluated
-    regardless of log level; value types box. The IsDebugEnabled pattern already
-    exists in the same file at lines 172, 423, 739.
-        -> perf-network.txt P.7
-
-10. Right-size the ArrayPool rent and stop zeroing.
+ 6. Right-size the ArrayPool rent and stop zeroing.
     NetworkSession.cs:756, 798 - rents up to 4096 bytes for a packet bounded at
     484, then Return(buffer, clearArray: true) zeroes all 4096 per packet sent.
         -> perf-network.txt P.5
 
-11. Replace Enum.Parse with a static lookup table.
+ 7. Replace Enum.Parse with a static lookup table.
     Player_Combat.cs:174, 545; Monster_Combat.cs:323, 410. Reflection parse plus
     three string allocations, twice per landed hit.
         -> perf-worldobjects.txt O.3
 
-12. t.RunSynchronously() in the serialized DB worker.
+ 8. t.RunSynchronously() in the serialized DB worker.
     SerializedShardDatabase.cs:55-56 currently does t.Start(); t.Wait();, which
     schedules onto the ThreadPool and blocks the dedicated thread - two context
     switches per DB operation.
         -> perf-database.txt Q.11
 
-13. Pre-size collections in UnpackableExtensions.
+ 9. Pre-size collections in UnpackableExtensions.
     All ~20 methods read a count then Add() into a default-capacity collection.
     One file, broad effect on the landblock-load path. Bundle with the
     validation fix in bugs-datloader.txt Section E.
         -> perf-datloader.txt P.6
 
-14. IEquatable<ObjectGuid>.
+10. IEquatable<ObjectGuid>.
     ACE.Entity/ObjectGuid.cs - only Equals(object) is overridden, so
     EqualityComparer<ObjectGuid>.Default boxes on every comparison. It is the
     key type for Landblock.worldObjects, Container.Inventory, EquippedObjects,
@@ -132,14 +106,14 @@ TIER 2 - LOCAL BUT LARGER; TEST, DO NOT JUST APPLY
 Still local reasoning, but each is an algorithm replacement or a visible
 behaviour change. Each needs its own validation.
 
-15. DerethDateTime.SetDateTimeFromTicks - replace the loop with integer maths.
+11. DerethDateTime.SetDateTimeFromTicks - replace the loop with integer maths.
     ~626,000 iterations per construction TODAY, growing ~66k/year, called per
     Day/Night generator per heartbeat ON THE LANDBLOCK TICK THREAD. Plausibly
     the largest single algorithmic defect in the codebase.
     Filed as a BUG (bugs-common.txt C.1) because it is an outright defect.
     Validate against known date conversions before/after.
 
-16. Precompute per-vertex edge geometry in Polygon.
+12. Precompute per-vertex edge geometry in Polygon.
     Edge, Cross(Plane.Normal, edge) and two length-squares recomputed on every
     sphere test, per polygon, per BSP leaf, per cell, per insertion attempt,
     per step. Likely the largest raw-FLOP win in physics.
@@ -148,32 +122,32 @@ behaviour change. Each needs its own validation.
     category. Verify no consumer mutates them before caching. ***
         -> perf-physics.txt O.2
 
-17. Batch the biota child-table loads.
+13. Batch the biota child-table loads.
     ShardDatabase.cs:225-262 - up to 26 round-trips PER OBJECT; a 200-item
     login is ~5,200 round-trips, all serialized behind one thread. Directly
     user-visible as login latency.
         -> perf-database.txt Q.1
 
-18. Dictionary instead of FirstOrDefault in SetProperty.
+14. Dictionary instead of FirstOrDefault in SetProperty.
     Models/Shard/BiotaExtensions.cs:71-200 - every biota save is O(n^2) with
     ~250 allocations. The correct pattern already exists in the same file at
     BiotaUpdater.cs:141.
         -> perf-database.txt Q.7
 
-19. O(1) LinkedListNode removal on the landblock.
+15. O(1) LinkedListNode removal on the landblock.
     Landblock.cs:632-785 - removal does LinkedList.Remove(VALUE) on three lists,
     each an O(n) scan. Spell projectiles and arrows are created and destroyed
     continuously in combat, so this is O(objects in landblock) per projectile.
         -> perf-entity-server.txt E.2
 
-20. Throttle monster position broadcasts.
+16. Throttle monster position broadcasts.
     Monster_Navigation.cs:255-263 sends unconditionally at 5Hz with no movement
     threshold, while players are throttled to 1s (Player_Tick.cs:513). 5x the
     packet rate per monster. VISIBLE BEHAVIOUR CHANGE - validate movement
     smoothness for observers.
         -> perf-worldobjects.txt P.5
 
-21. Offset-based network fragments.
+17. Offset-based network fragments.
     MessageFragment.cs:87-91 - a full byte[] payload copy PER RECIPIENT
     (est. ~600k byte[68]/sec at 100 mutually-visible players). Also fixes a
     genuine DATA RACE: SendBundle runs under Parallel.ForEach while threads
@@ -181,7 +155,7 @@ behaviour change. Each needs its own validation.
     but the race makes it worth doing regardless.
         -> perf-network.txt P.2
 
-22. Lock-free fast path in LandblockManager.GetLandblock.
+18. Lock-free fast path in LandblockManager.GetLandblock.
     A global upgradeable ReaderWriterLockSlim permits ONE upgradeable reader
     process-wide, entered up to 9x per sphere per step by every physics thread.
     Read landblocks[x,y] volatile first, return if non-null, lock only to load.
@@ -197,7 +171,7 @@ These contain the LARGEST claimed wins and EVERY retraction in this doc set.
 Do not start any of them without first establishing the invariant they assume.
 Measure before and after - several are large enough to regress if done wrong.
 
-23. ACE.Entity property-read locking (E.1) - THE BIGGEST CLAIMED WIN.
+19. ACE.Entity property-read locking (E.1) - THE BIGGEST CLAIMED WIN.
     Every Biota property read takes a ReaderWriterLockSlim, ~10-15x the cost of
     the dictionary lookup it guards; ~150-220 acquisitions per player-vs-player
     melee swing. The [Ephemeral] fast path does not mitigate it (9 of 404
@@ -210,7 +184,7 @@ Measure before and after - several are large enough to regress if done wrong.
     on it.
         -> perf-entity-shared.txt E.1
 
-24. ObjectMaint contention - the obvious fix is RETRACTED.
+20. ObjectMaint contention - the obvious fix is RETRACTED.
     Making rwLock per-instance WOULD DEADLOCK: twelve cross-instance
     `obj.ObjMaint.<Method>()` calls are made WHILE HOLDING the lock, safe today
     only because one static lock with SupportsRecursion is re-entered on the
@@ -218,16 +192,16 @@ Measure before and after - several are large enough to regress if done wrong.
     of the lock first.
         -> perf-physics.txt F.1 (retraction and three alternatives)
 
-25. CellArray rewrite (bugs-physics.txt H.2 / Section H).
+21. CellArray rewrite (bugs-physics.txt H.2 / Section H).
     Simultaneously a correctness bug and an uptime-proportional performance
     problem; a prerequisite for item 26. Full replacement class is written up.
 
-26. Skip shadow teardown/rebuild when the cell set is unchanged.
+22. Skip shadow teardown/rebuild when the cell set is unchanged.
     Depends on item 25 landing first (otherwise the "unchanged" comparison is
     never true), and on the cell-set comparison being reliable.
         -> perf-physics.txt P.4
 
-27. Transition pooling.
+23. Transition pooling.
     VERIFIED ESCAPE HAZARD: transition() returns the object and five callers
     OUTSIDE physics retain it (WorldObject.cs:331/369/391/420,
     Player_Inventory.cs:1489). Needs an explicit release point or the data
@@ -235,7 +209,7 @@ Measure before and after - several are large enough to regress if done wrong.
     CollisionInfo.CollideObject clearing - otherwise the pool becomes a leak.
         -> perf-physics.txt M.3
 
-28. Struct conversions (AFrame/Position/Sphere).
+24. Struct conversions (AFrame/Position/Sphere).
     Position costs 80 bytes across two objects for 32 bytes of data; there is
     not one struct in the whole 162-file physics subsystem.
     RISK: AFrame fields are mutated through shared references; Sphere is mutated
@@ -244,7 +218,7 @@ Measure before and after - several are large enough to regress if done wrong.
     Convert only the verified-safe set first: Ray, BBox, Vertex, ObjectInfo.
         -> perf-physics.txt M.4, M.5
 
-29. Caching derived combat values.
+25. Caching derived combat values.
     Armor totals/resistances, CreatureSkill.Current, ObjDesc, enchantment
     top-layer. Each needs a COMPLETE invalidation set, and two attempts at
     enumerating one have already been wrong:
@@ -254,13 +228,13 @@ Measure before and after - several are large enough to regress if done wrong.
     PREFER A VERSION STAMP over an enumerated hook list.
         -> perf-worldobjects.txt Q.4, Q.6, O.4, O.6, P.2
 
-30. CellStruct sharing.
+26. CellStruct sharing.
     perf-datloader.txt P.4 assumed "geometry is immutable and safely shareable".
     CellStruct has all-public mutable fields, and this codebase has a PROVEN
     counterexample of a cached dat object being mutated in place
     (bugs-datloader.txt D.6, the Palette). Audit consumers for writes first.
 
-31. Quadratic insertion nesting (O.1).
+27. Quadratic insertion nesting (O.1).
     Real 3-5x structural multiplier - but it also changes HOW MANY
     collision-resolution attempts occur, so it can change movement outcomes in
     tight geometry. Do not bundle with the H.1 fix; both change how often
@@ -279,41 +253,24 @@ locally verifiable, and several are already verified.
 
 Tier 2 and Tier 3 should NOT be attempted blind. Before starting them:
 
-  1. dotnet-counters on gen-0/1/2-gc-count and alloc-rate under a populated
-     load. This settles the entire GC ordering in README.md - specifically
+  * dotnet-counters on gen-0/1/2-gc-count and alloc-rate under a populated
+    load. This settles the entire GC ordering in README.md - specifically
      WHETHER PROMOTION IS ACTUALLY OCCURRING, which is the premise for ranking
-     retention and promotion above raw allocation volume.
-  2. A dotnet-trace allocation-tick profile, to confirm Position / AFrame /
-     Sphere dominate by count as predicted.
-  3. Check GCSettings.IsServerGC and whether background GC is enabled - Gen1
-     cost differs sharply between configurations.
-  4. Per-tick call counts for handle_visible_cells versus transition(). The
-     RATIO determines whether the visibility lists or the transition allocation
-     is the larger win, and an earlier estimate of this was already wrong by an
-     order of magnitude (handle_visible_cells is per CELL-TRANSITION, not per
-     frame).
-
-The in-tree ServerPerformanceMonitor counters (LandblockManager_TickPhysics,
-DoSessionWork_TickOutbound, UpdateGameWorld_Entire) are the cheapest
-before/after baseline - noting the irony that Tier 1 items 1, 7 and 8 are about
-the cost of those very counters, so capture a baseline BEFORE applying them.
-
-
+    retention and promotion above raw allocation volume.
 ================================================================================
 SUMMARY
 ================================================================================
-  TIER 1  14 items, local and low-risk, several already verified. Do these now.
-          They are collectively substantial and they reduce measurement noise.
+  TIER 1  10 items, local and low-risk. Do these now. They are collectively
+          substantial and they reduce measurement noise.
   MEASURE Establish the baseline. Without it the Tier 2/3 ordering is a
           hypothesis.
   TIER 2   8 items, local reasoning but real algorithm or behaviour changes.
   TIER 3   9 items, containing the biggest claimed wins AND every retraction.
           Establish the invariant first, every time.
 
-If you do nothing else: Tier 1 items 1, 2, 3, 7 and 8. That is one config flag
-and four deletions/hoists, all verified or trivially verifiable, hitting the
-60Hz physics loop, the ~1000Hz outer loop and the instrumentation that runs
-around both.
+If you do nothing else: Tier 1 items 1, 2, 4 and 5. That is one config flag
+plus three hoists/consolidations, all trivially verifiable, hitting the ~1000Hz
+outer loop and the instrumentation that runs around it.
 
 ================================================================================
 END OF PLAN

@@ -90,7 +90,7 @@ C.2  Thread limits are never applied when the config keys are absent
      MaxDegreeOfParallelism at ParallelOptions' default of -1, i.e. UNLIMITED.
      Parallel.ForEach then oversubscribes every core. LandblockManager.cs:338
      computes Math.Min(count, -1) = -1, producing a NEGATIVE tick-efficiency
-     value that then poisons the stats tracker (see C.7).
+     value that then poisons the statistics tracker.
 
      CALLERS: LandblockManager.cs:317, 338, 379, 400; PlayerManager.cs:55;
      RetailShardManager.cs:148, 185; AdminStatCommands.cs:116.
@@ -179,23 +179,6 @@ C.6  Real-world to Derethian year conversion double-counts a year for Jan-Mar
      ALSO: `convertedDay > 30 -> 30` (line 975) makes the 30th and 31st of
      31-day months produce identical dates, and Feb 29/30 unreachable.
 
-C.7  Performance history statistics are structurally wrong
-     Performance/TimedEventHistory.cs:240, 245, 257
-
-     ShortestEvent starts at 0 and is only updated by
-     `LastEvent < ShortestEvent`, which is never true for non-negative
-     durations. AverageEventDuration divides by TotalEvents with no zero guard.
-
-     FAILURE: RateMonitor.ToString() always prints "Shortest: 0.0000 s", and
-     prints "Average: NaN s" for any monitor with no events (e.g. after
-     ClearEventHistory()). That NaN also makes the
-     OrderByDescending(AverageEventDuration) sorts in AdminStatCommands.cs:205-208,
-     224 NONDETERMINISTIC, because NaN comparisons are unordered.
-
-     CALLERS: AdminStatCommands.cs:205-249, Program_Metrics.cs.
-
-     FIX: initialise ShortestEvent to double.MaxValue (reporting 0 when
-     TotalEvents == 0) and guard the average.
 
 C.8  A single non-finite sample poisons a rolling tracker forever
      Performance/RollingAmountOverTimeTracker.cs:207, 212;
@@ -323,13 +306,12 @@ SECTION D - SUGGESTED PRIORITY
   5. C.4  ISAAC release race and the unreleased IssacServer.
   6. C.6  Lore-year conversion - persisted into deed text, so wrong values
           outlive the fix.
-  7. C.5, C.7, C.8 - correctness of the diagnostics you would otherwise use to
+  7. C.5, C.8 - correctness of the diagnostics you would otherwise use to
           validate everything else. Worth doing early for that reason alone.
   8. C.9  Documentation plus a length guard.
 
-NOTE: C.2, C.7 and C.8 form a chain - the missing thread limits produce -1,
-which produces NaN, which permanently poisons the trackers and makes the admin
-statistics nondeterministic. Fix C.2 first, then C.7 and C.8 as hardening.
+NOTE: C.2 and C.8 form a chain - the missing thread limits produce -1, which
+propagates into the statistics tracker. Fix C.2 first, then C.8 as hardening.
 
 ================================================================================
 END OF REPORT

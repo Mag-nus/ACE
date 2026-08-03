@@ -3,9 +3,10 @@
 Read-only review of the ACEmulator codebase (~330,000 lines, 12 subsystems).
 Nothing in the source tree was modified; these documents are analysis only.
 
-**Date:** 2026-07-25 · **Reviewed at:** branch `combined`
-**Re-verified:** 2026-07-27 against `combined` (`dbe6c6da`) and `Claude1` (`1e7bd6f0`) — see
-[Re-verification](#re-verification-2026-07-27).
+**Date:** 2026-07-25 · **Reviewed at:** branch `combined` · **Last verified:** 2026-08-03 against `Claude1`
+
+**Scope:** open findings only. Resolved findings have been removed, so finding
+IDs are non-contiguous within each report.
 
 **Structure:** exactly one bug report and one performance report per subsystem.
 Each file is self-contained — findings are stated in full where they live, not
@@ -120,119 +121,27 @@ defect, not just its symptom.
 
 ---
 
-## Re-verification (2026-07-27)
-
-Every headline finding was re-checked directly against the source on both branches.
-
-### Fixed upstream — 4 findings
-
-Commit **`5385d19d` "Bug fixes 1 (#4470)"** (Mag-nus, 2026-07-29) fixed four documented
-findings, in each case applying this audit's recommended fix essentially verbatim. It is
-merged into `master` and `Claude1`.
-
-| Finding | File | Fix |
-|---|---|---|
-| [A.0a](bugs-adapter.txt) | `GDLE/GDLEConverter.cs:534` | IID requirements now go to `IIDRequirements`, not `DIDRequirements` |
-| [A.0b](bugs-adapter.txt) | `Lifestoned/LifestonedConverter.cs:462` | dedup guard now checks the destination `WeeniePropertiesSpellBook` |
-| [S.1](bugs-entity-shared.txt) | `Models/PropertiesBookPageDataExtensions.cs:68` | `index = value.Count - 1` |
-| [S.2](bugs-entity-shared.txt) | `Adapter/WeenieConverter.cs:162-168` | book pages now deep-cloned per element |
-
-⚠️ **None of these four are on `combined`** — the branch this audit was written against.
-It is 552 commits ahead of `master` but does not have `5385d19d` merged, so all four
-defects are still live there. Verified individually, not inferred.
-
-🔶 **A third book bug is still open on every branch — [`bugs-adapter.txt` A.6](bugs-adapter.txt).**
-S.1 and S.2 were the book-page *index* and *aliasing* bugs. A.6 is the book-page
-*permission* flag: `GDLE/Models/Page.cs:22-31` has an `IgnoreAuthor` getter that
-disagrees with its own setter, so importing GDLE/Lifestoned book content **negates** it.
-Since `IgnoreAuthor == true` means "skip the author check — anyone may edit or delete
-this page" (`Book.cs:137`, `Book.cs:155`), author-locked pages import as
-world-editable. Re-verified 2026-07-27 and **escalated MEDIUM → HIGH**; the one-line fix
-and the separate data-repair note are in A.6.
-
-### Still present — everything else
-
-All of the following are unchanged, byte-for-byte, on `combined` (`dbe6c6da`) and — where
-the file exists on that branch — on `Claude1` (`1e7bd6f0`):
-
-| Finding | File | Status |
-|---|---|---|
-| Privilege escalation (`AccessLevel.Player`) | `CharacterTransferCommands.cs:28` | present on `combined` only |
-| Receive callback catches only `SocketException` | `ConnectionListener.cs:122` | present |
-| `Listen()` recurses from its own catch | `ConnectionListener.cs:83` | present |
-| Guaranteed NRE (`== null && !…`) | `MotionInterp.cs:747` | present |
-| `List<>` index assign on empty list | `PartArray.cs:367` | present |
-| `SetStatic`/`SetDynamic` never `Clear()` | `CellArray.cs:17-38` | present |
-| Redundant sphere tests | `Polygon.cs:400-412` | present |
-| Quadratic `InsertIntoCell` | `Transition.cs:789` | present |
-| Static `rwLock` shared across instances | `ObjectMaint.cs:23` | present |
-| `AssignDivide` multiplies | `Effect.cs:107-109` | present |
-| `try`/`finally` with no `catch` | `LootGenerationFactory.cs:36-104` | present |
-| Unsynchronised static dictionaries | `AllegianceManager.cs:24,29` | present |
-| `ServerPerformanceMonitorAutoStart: true` | `Config.js:51` | present (see note) |
-| E.0d `ActionQueue` no exception isolation | `Actions/ActionQueue.cs` | present — 0 `catch` in file |
-| M.0a tick loop no exception isolation | `WorldManager.cs:332-395` | present — 0 `catch` in file |
-| F.0a `Rescale` divide-by-zero → NaN | `CantripChance.cs:268` | present — still no `total == 0` guard |
-| W.0a discarded return → silent item loss | `Player_Trade.cs:261-265` | present |
-| D.3 character-name TOCTOU | `ShardDatabase.cs:583` | present — still no unique constraint |
-| D.4 unsynchronised `scrollsBySpellID` | `WorldDatabaseWithEntityCache.cs:134` | present |
-| D.5 SQL escape misses backslash | `SQLWriter.cs:85` | present |
-| C.5 `SubtractTicks` validates addition | `DerethDateTime.cs:622` | present |
-| M.1 normalises a discarded copy | `CollisionInfo.cs:50-54` | present |
-
-**Method:** each row above was checked by reading the current source on both branches, not
-by reasoning about dates. An earlier pass of this section wrongly reported "nothing fixed"
-because it only looked for commits *after* the audit date and missed `5385d19d`, which was
-already merged into the branch. Fixes can arrive in commits that predate your checkout —
-**check content, not chronology.**
-
-**`Config.js` note:** it is **gitignored** (`.gitignore:299`), so it cannot be checked from
-git history — only the working-tree file. That file still reads `true` at line 51.
-`Config.js.example:54` correctly ships `false`. Any change here is local-only and will not
-appear in a diff.
-
 ## Design notes
 
 | Report | Question | Verdict |
 |---|---|---|
 | [design-socket-listener-modernisation.txt](design-socket-listener-modernisation.txt) | Modernise the UDP listener — use System.IO.Pipelines? | **Not Pipelines** (wrong tool for datagrams); modernise with `SocketAddress` overloads, concurrent receives and `ValueTask` async |
 
-## Fixes applied
-
-| Report | Scope | Outcome |
-|---|---|---|
-| [fixes-applied-2026-07-30.txt](fixes-applied-2026-07-30.txt) | Every fix that fits **one file, ≤3 lines** | **17 fixes / 12 files**, +24/−17 lines; solution builds clean; adapter fixes re-verified by re-running the round-trip suite |
-
-Includes the full list of what was **deliberately skipped** and why — RT.1,
-exception isolation, W.0a, M.1, C.6 — plus three places where the documented fix was
-**wrong** and I did something different:
-
-- **E.3** — the docs said `else wo.Destroy();`. That *leaks* the object when
-  `TryRemoveFromInventory` fails, trading a double-free for a resource leak. Removed
-  the inner `Destroy()` instead, so the item is destroyed exactly once.
-- **C.7** — the docs said initialise `ShortestEvent` to `double.MaxValue`; that needs
-  two edits and makes an event-less monitor print `1.79E+308`. Seeded on the first
-  event instead: one line, no display regression.
-- **F.0a** — the documented 1-line guard **does not actually fix it**, so it was left
-  alone rather than shipped broken. See the report.
-
 ## Executed tests
 
 | Report | What was run | Outcome |
 |---|---|---|
-| [roundtrip-adapter-tests.txt](roundtrip-adapter-tests.txt) | Round-trip tests over all 6 round-trippable `ACE.Adapter` conversion pairs, on .NET 10 | **6 defects** (2 previously undocumented), plus **empirical confirmation of A.6 and A.7** |
+| [roundtrip-adapter-tests.txt](roundtrip-adapter-tests.txt) | Round-trip tests over all 6 round-trippable `ACE.Adapter` conversion pairs, on .NET 10 | Open defects RT.1, RT.2, RT.3, RT.6; **empirical confirmation of A.7** |
 
 Unlike the audit reports, that document records **observed program output**, not
-analysis. Two results worth pulling out:
+analysis. The result worth pulling out:
 
-- **A.6 confirmed, and worse than described** — `IgnoreAuthor` inverts in *both*
-  directions on a *single* pass. The wire byte is correct, which isolates the defect
-  to the getter and confirms "fix the getter, not the setter."
 - **Every failure in this subsystem is silent.** Each converter ends in
   `catch { return false; }` with no logging. One consequence found by running it: an
   undocumented NRE (RT.2) *masks* documented finding A.7 entirely, making A.7 look
   unreproducible. Finding any of this required an `AppDomain.FirstChanceException`
-  handler to observe exceptions the converters swallow.
+  handler to observe exceptions the converters swallow. That silence, not any single
+  defect, is the most important finding in the document.
 
 ## Investigated issues
 
@@ -359,14 +268,12 @@ claim was **false** — that `PlayerManager.GetAllOffline()` returns `null`, whi
 does not. All three are recorded as non-findings or corrections rather than quietly
 dropped, because each would otherwise have misled someone.
 
-**External calibration (2026-07-29).** Four findings were independently fixed
-upstream in `5385d19d`, and in all four cases the maintainer's fix matched this
-audit's recommendation essentially verbatim — including the exact one-liner
-`index = value.Count - 1` and the `page.Clone()` loop. That is a real accuracy
-signal, but read it narrowly, because it lands exactly where the pattern below
-predicts: **all four were pure local-dataflow defects** — a wrong collection named
-two lines from the right one, an off-by-one, a shallow copy where siblings deep-copy.
-None required reasoning about threading, lifetimes, or cross-subsystem coupling.
+**External calibration.** Where findings from this doc set have been independently
+acted on upstream, the fixes matched the recommendations essentially verbatim — but
+read that narrowly, because it lands exactly where the pattern below predicts: those
+were **pure local-dataflow defects**, of the shape "a wrong collection named two
+lines from the right one". None required reasoning about threading, lifetimes, or
+cross-subsystem coupling.
 
 This is the same split that shows up in the retractions above: **claims about local
 dataflow have held; claims about system-level coupling have not.** So the four
@@ -561,9 +468,9 @@ lists in `Landblock` — and the same principle applies elsewhere.
 
 ## Suggested next steps
 
-1. **Merge `5385d19d` into `combined`.** Four defects fixed on `master` are still
-   live there, including the two book bugs that compound each other (S.1 + S.2).
-   This is now the cheapest available win.
+1. **Bring `combined` up to date with `master`.** It is ~552 commits behind and
+   does not carry the fixes that have landed upstream, so several defects resolved
+   on `master` are still live there. This is the cheapest available win.
 2. Address the privilege escalation (on the branches where it applies), then the
    exception isolation — still four unguarded entry points, all re-verified present.
 3. Spot-verify any finding before acting on it.
@@ -571,9 +478,9 @@ lists in `Landblock` — and the same principle applies elsewhere.
 5. Consider a fourth physics pass. Both remaining gaps are named in
    `bugs-physics.txt` Section F: `Common/` (7,677 lines, untouched by pass 3) then
    `MotionTable.cs` against the original client's `CMotionTable` semantics.
-6. **Round-trip test for `ACE.Adapter` (convert A→B→A and diff) — now the highest-
-   value test to write.** Both fixed adapter findings (A.0a, A.0b) were
-   wrong-collection defects that a round-trip diff would have caught mechanically.
-   They were instead found by reading and fixed by hand, which means the *next* one
-   will be too. This is the only item on this list that prevents recurrence rather
-   than fixing an instance.
+6. **Round-trip test for `ACE.Adapter` (convert A→B→A and diff) — the highest-value
+   test to write.** This subsystem's dominant defect class is wrong-collection and
+   dropped-field errors, which a round-trip diff catches mechanically. Every one
+   found so far was found by reading, which means the next one will be too. This is
+   the only item on this list that prevents recurrence rather than fixing an
+   instance.

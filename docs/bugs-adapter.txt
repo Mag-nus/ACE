@@ -7,78 +7,17 @@ Scope   : Source/ACE.Adapter  (78 files, ~6,400 lines)
 Date    : 2026-07-25
 Companion document: perf-adapter.txt
 
-STATUS  : 2 of the findings below are FIXED on master/Claude1 (A.0a, A.0b) by
-          commit 5385d19d "Bug fixes 1 (#4470)", 2026-07-29. BOTH ARE STILL
-          LIVE ON `combined`, which does not have that commit merged.
-
-          *** A.6 IS STILL OPEN ON EVERY BRANCH, AND WAS ESCALATED TO HIGH ***
-          A.6 is the THIRD book bug. The two fixed in 5385d19d (S.1, S.2 in
-          bugs-entity-shared.txt) were the book-page INDEX and ALIASING bugs;
-          A.6 is the book-page PERMISSION flag, inverted on import. It is
-          filed under SECTION B below for historical numbering only - treat it
-          as Section A severity. See A.6 for the verified trace.
+STATUS  : open findings only. Numbering is non-contiguous because resolved
+          findings have been removed.
 
 VERIFICATION
-  FIXED UPSTREAM, RE-VERIFIED 2026-07-27 : A.0a, A.0b
+  EMPIRICALLY CONFIRMED BY EXECUTION : A.7 (see roundtrip-adapter-tests.txt)
   TRACED BUT NOT RE-VERIFIED : all other findings. Spot-check before fixing.
 
-  NOTE: both fixed findings were wrong-collection defects - the kind a
-  round-trip conversion test (A -> B -> A, then diff) would catch mechanically.
-  They were found by reading and fixed by hand instead, so the next one will
-  recur. See "Suggested next steps" in README.md.
+  A round-trip conversion test (A -> B -> A, then diff) would catch this
+  document's dominant defect class mechanically. See "Suggested next steps" in
+  README.md - it remains the highest-value item for this subsystem.
 
-FINDINGS FROM THE INITIAL SWEEP (folded in)
-
-A.0a [HIGH] [** FIXED on master/Claude1 in 5385d19d, 2026-07-29 **]
-     IID recipe requirements written into the WRONG destination list
-     GDLE/GDLEConverter.cs:524-541
-
-     STATUS: fixed upstream in "Bug fixes 1 (#4470)" exactly as recommended -
-     the call is now `requirements.IIDRequirements.Add(new Models.IIDRequirement
-     {...})`. Verified at GDLEConverter.cs:534.
-     STILL PRESENT ON `combined` - that branch does not have the fix merged.
-
-         foreach (var iidReq in input.RecipeRequirementsIID) {
-             ...
-             requirements.DIDRequirements.Add(new Models.DIDRequirement { ... });
-             //             ^^^ should be IIDRequirements
-         }
-
-     Models.RecipeRequirements has a distinct IIDRequirements list (confirmed
-     in GDLE/Models/RecipeRequirements.cs), and the reverse converter at
-     roughly line 817 correctly reads value.IIDRequirements.
-
-     FAILURE: exporting an ACE recipe that has an IID requirement silently
-     re-labels it as a DID requirement; round-tripping back to ACE then never
-     repopulates RecipeRequirementsIID, so the requirement is lost.
-
-     This is the archetype of the copy-paste/wrong-collection pattern that
-     recurs throughout this project (see A.2, A.13 and the Section A findings
-     generally).
-
-A.0b [HIGH] [** FIXED on master/Claude1 in 5385d19d, 2026-07-29 **]
-     Spellbook de-duplication checks a collection that never holds spells
-     Lifestoned/LifestonedConverter.cs:462
-
-     STATUS: fixed upstream in "Bug fixes 1 (#4470)". The guard now checks the
-     DESTINATION list, matching every sibling block:
-         if (result.WeeniePropertiesSpellBook.FirstOrDefault(
-                 x => x.Spell == value.SpellId) == null)
-     Verified at LifestonedConverter.cs:462.
-     STILL PRESENT ON `combined` - that branch does not have the fix merged.
-
-         if (result.WeeniePropertiesDID.FirstOrDefault(
-                 x => x.Type == (int)PropertyDataId.Spell && x.Value == value.SpellId) == null)
-             result.WeeniePropertiesSpellBook.Add(...);
-
-     Every other block in this method - Bool, Int, Float, String, Skill,
-     Position - and the reverse ACE-to-LSD direction at line 1055 check the
-     DESTINATION list for duplicates. Here it checks WeeniePropertiesDID, which
-     never contains spell entries, so the guard is always false.
-
-     FAILURE: if the source input.Spells contains a duplicate SpellId - common
-     in hand-edited LSD data - both copies are inserted into
-     WeeniePropertiesSpellBook, producing duplicate spellbook rows.
 
 THEME: this code is almost entirely mechanical field-by-field mapping, which
 makes it highly susceptible to copy-paste error. The dominant defect class is
@@ -103,7 +42,7 @@ A.1  Combined recipes all import with Id = 0
      that does `recipe.Id = input.key`.
 
      ACE's own exporter deliberately zeroes that field
-     (GDLEConverter.cs:423 `newRecipe.RecipeId = 0`), so a folder of
+     (GDLEConverter.cs:424 `newRecipe.RecipeId = 0`), so a folder of
      ACE-exported combined recipes re-imports as N recipes ALL WITH Id 0, while
      the cookbooks correctly receive RecipeId = value.key and therefore point
      at recipes that do not exist.
@@ -111,33 +50,9 @@ A.1  Combined recipes all import with Id = 0
      FIX: use GDLEConverter.TryConvert(value, out cookbooks, out recipe), or
      set result.Id = value.key.
 
-A.2  ACE -> LSD drops the emote action Display flag
-     Lifestoned/LifestonedConverter.cs:753-824
-
-     Every other action field is copied; Display is absent from the
-     initialiser - yet LSD -> ACE reads it (line 269
-     `Display = action.Display`).
-
-     FAILURE: exporting and re-importing an AwardLevelProportionalXP or
-     AwardLevelProportionalSkillXP emote loses the "show message" flag, which
-     becomes null.
-
-     FIX: add `Display = action.Display`.
-
-A.3  Amount64 truncated from long to 32 bits
-     Lifestoned/LifestonedConverter.cs:757
-
-         Amount64 = (uint?)action.Amount64
-
-     ACE's Amount64 is long?, and the LSD model's Amount64 is ALSO long? - only
-     the cast is wrong. LSD -> ACE (line 272) correctly uses (long?).
-
-     FAILURE: an AwardXP emote with 8,000,000,000 XP exports as 3,705,032,704.
-
-     FIX: (long?)action.Amount64.
 
 A.4  Recipe mods with no typed rows are silently discarded
-     GDLE/GDLEConverter.cs:603-611
+     GDLE/GDLEConverter.cs:385-401 (GetIndex)
 
      GetIndex() derives the slot from the first typed mod row; a RecipeMod that
      carries only Health/Stamina/Mana/DataId/InstanceId returns -1 and is
@@ -166,106 +81,19 @@ A.5  Fractional spell fields typed as uint?, breaking the entire spell file
 SECTION B - MEDIUM SEVERITY
 ================================================================================
 
-A.6  [** STILL PRESENT - RE-VERIFIED AND ESCALATED 2026-07-27 **]
-     [** SEVERITY: was MEDIUM, now HIGH - this is a PERMISSION inversion **]
-     IgnoreAuthor getter is inverted relative to its setter
-     GDLE/Models/Page.cs:22-31
 
-     THE THIRD BOOK BUG. S.1 and S.2 (bugs-entity-shared.txt) were fixed in
-     5385d19d; this one was NOT, and it is still live on master/Claude1 AND on
-     combined. If you fixed "the book bug", this is the one still outstanding.
+A.7  Hard-coded Mods[i] for i = 0..7   [EMPIRICALLY CONFIRMED BY EXECUTION]
+     GDLE/GDLEConverter.cs:878-885
 
-     VERIFIED DIRECTLY (2026-07-27), all four legs of the trace:
-
-     1. There is EXACTLY ONE IgnoreAuthor definition in ACE.Adapter -
-        GDLE/Models/Page.cs. Both converters share this model type;
-        LifestonedConverter.cs:526 builds `new List<Page>()` of it.
-
-     2. The getter and setter DISAGREE WITH EACH OTHER:
-            get => IgnoreAutor_Binder.Value == 0 ? true : false;   // 0 -> true
-            set => IgnoreAutor_Binder = value ? 1 : 0;             // true -> 1
-        This is the airtight part of the finding: whatever GDLE's on-disk
-        convention for the byte actually is, these two cannot both be right, and
-        no value can survive a write-then-read.
-
-     3. The two directions use OPPOSITE accessors, which is what makes it flip:
-          LifestonedConverter.cs:68  IMPORT (LSD -> ACE) reads  .IgnoreAuthor => GETTER
-          LifestonedConverter.cs:539 EXPORT (ACE -> LSD) writes .IgnoreAuthor => SETTER
-        So export is CORRECT and import is NEGATED.
-
-        Round trip, concretely:
-          ACE IgnoreAuthor = true
-            -> export (setter) -> binder = 1 -> JSON "ignoreAuthor": 1
-            -> import (getter) -> 1 == 0 is false -> returns FALSE
-          ACE IgnoreAuthor = false        *** FLIPPED ***
-        It flips on EVERY pass, so repeated round trips oscillate.
-        Importing hand-authored or GDLE-authored JSON is negated on the FIRST
-        read - no round trip required.
-
-     4. WHY THIS IS A PERMISSION BUG, NOT COSMETIC DATA CORRUPTION.
-        IgnoreAuthor is the authorship gate on book page editing:
-          Book.cs:137 (ModifyPage) - `if (page.IgnoreAuthor || player is author
-                                      || player is Sentinel || player is Admin)`
-          Book.cs:155 (DeletePage) - `if (page == null || (!page.IgnoreAuthor &&
-                                      player.Guid.Full != page.AuthorId && ...))`
-        IgnoreAuthor == true means "skip the author check - ANYONE may edit or
-        delete this page."
-
-        Therefore the negation on import runs in the DANGEROUS direction:
-          authored "ignoreAuthor": 0  (author-locked)
-            -> imports as TRUE
-            -> ANY PLAYER CAN EDIT OR DELETE THE PAGE IN-GAME.
-        And in the other direction, pages meant to be world-writable import as
-        author-locked, so nobody can edit them.
-
-     SCOPE - do not over-read this. The adapters are offline content tooling,
-     not a live gameplay path, so this only affects shards that import book
-     content from GDLE or Lifestoned format. But the flag it corrupts is written
-     into the shard/world DB and is then enforced by gameplay, so "the adapter
-     is offline" does NOT contain the consequence.
-
-     EMPIRICALLY CONFIRMED 2026-07-27 by execution - see
-     roundtrip-adapter-tests.txt section 4. Observed output:
-         IgnoreAuthor True  -> wire byte 1 -> False   *** FLIPPED ***
-         IgnoreAuthor False -> wire byte 0 -> True    *** FLIPPED ***
-     The wire byte is CORRECT in both cases, which isolates the defect to the
-     getter and confirms the "fix the getter, not the setter" conclusion below.
-     It inverts in BOTH directions on a SINGLE pass - no round trip needed.
-
-     FIX (one expression, in the getter):
-         get
-         {
-             return (!IgnoreAutor_Binder.HasValue)
-                 ? null
-                 : new bool?(IgnoreAutor_Binder.Value != 0);
-         }
-
-     FIX THE GETTER, NOT THE SETTER. Three independent reasons converge:
-       - 1 = true is the standard byte encoding for a bool;
-       - the setter already implements it, as does ACE's own `bool IgnoreAuthor`
-         column (ACE.Database/Models/Shard/BiotaPropertiesBookPageData.cs:44);
-       - any JSON previously EXPORTED by ACE was written with setter semantics,
-         so fixing the getter makes that existing content import correctly too.
-
-     DATA REPAIR IS SEPARATE FROM THE CODE FIX. Because import negated silently,
-     any book content ALREADY imported through this path has IgnoreAuthor stored
-     inverted in the shard DB. Fixing the getter stops new corruption; it does
-     not repair existing rows. Audit
-     weenie_properties_book_page_data.ignore_author on any shard that has
-     imported book content before trusting it.
-
-A.7  [** EMPIRICALLY CONFIRMED 2026-07-27 - see roundtrip-adapter-tests.txt RT.3 **]
-     Verified by execution, and the boundary is exactly as predicted below:
+     Confirmed by running the round-trip suite; the boundary is exact:
      Mods.Count of 0, 1 and 7 all throw ArgumentOutOfRangeException and the
      recipe is dropped; 8 and 9 succeed; Mods=null throws NullReferenceException
-     at GDLEConverter.cs:881 instead.
-     NOTE: a previously UNDOCUMENTED defect masks this one - input.Requirements
-     is dereferenced unguarded at GDLEConverter.cs:781, which fires first on
-     minimal JSON and makes A.7 look unreproducible. Fix both together; see
-     roundtrip-adapter-tests.txt RT.2.
+     at GDLEConverter.cs:882 instead.
 
-     Hard-coded Mods[i] for i = 0..7
-     GDLE/GDLEConverter.cs:877-884
+     A SEPARATE DEFECT MASKS THIS ONE: input.Requirements is dereferenced
+     unguarded at GDLEConverter.cs:782 and fires first on minimal JSON, making
+     A.7 look unreproducible. Fix both together - see
+     roundtrip-adapter-tests.txt RT.2.
 
      Any GDLE recipe JSON whose Mods array is shorter than 8 - or null, or
      absent - throws IndexOutOfRange or NRE. That is caught at line 1002 and
@@ -274,12 +102,13 @@ A.7  [** EMPIRICALLY CONFIRMED 2026-07-27 - see roundtrip-adapter-tests.txt RT.3
      FIX: `if (input.Mods == null || i >= input.Mods.Count) continue;`
 
 A.8  Bool recipe requirement Message dropped on export
-     GDLE/GDLEConverter.cs:590-596
+     GDLE/GDLEConverter.cs:591-597
 
      Models.BoolRequirement.Message exists and GDLE -> ACE reads it (line 871),
      but the export initialiser writes only Stat/Value/OperationType. A recipe
      whose bool requirement carries a failure message loses it on export.
-     Same shape as the known IID bug two loops above.
+     Same wrong-collection / dropped-field shape that recurs throughout this
+     file - the reason a round-trip test matters more than any single fix.
 
 A.9  Unresolvable link endpoints are rewritten to 0 rather than dropped
      GDLE/GDLELoader.cs:133-144
@@ -291,11 +120,6 @@ A.9  Unresolvable link endpoints are rewritten to 0 rather than dropped
 
      FIX: skip the link when either lookup fails.
 
-A.10 Inner conversion result ignored in the cookbook export
-     GDLE/GDLEConverter.cs:421-425
-     If cookbooks[0].Recipe is null or the conversion fails, result.recipe is
-     set to null and the method STILL RETURNS TRUE. The caller writes a JSON
-     file containing `"recipe": null` that can never be re-imported.
 
 A.11 Emote item creation profile only exported when DestinationType is set
      Lifestoned/LifestonedConverter.cs:869-880
@@ -306,7 +130,7 @@ A.11 Emote item creation profile only exported when DestinationType is set
      FIX: guard on `action.WeenieClassId.HasValue || action.DestinationType.HasValue`.
 
 A.12 FirstOrDefault(...).InitLevel with no null check aborts the whole export
-     Lifestoned/LifestonedConverter.cs:559-599, 607-629
+     Lifestoned/LifestonedConverter.cs:559-600 (attributes), 606-628 (vitals)
      Any weenie with a partial attribute set throws NRE, which the catch turns
      into `return false` - and TryConvertACEWeeniesToLSDJSON silently skips it.
      This hits EVERY weenie that has MaxHealth but no MaxStamina or MaxMana:
@@ -385,11 +209,9 @@ SECTION E - SUGGESTED PRIORITY
   3. A.12 The FirstOrDefault NRE - it silently skips a large class of weenies
           (doors, chests) during export.
   4. A.1  Combined recipes importing with Id = 0 and orphaned cookbooks.
-  5. A.6  IgnoreAuthor inversion - it FLIPS on every round trip, so the damage
-          compounds with each pass.
-  6. A.2, A.3, A.4, A.8, A.11, A.13 - the remaining silent field losses.
-  7. A.7, A.9, A.10 as robustness.
-  8. Section C gaps as a separate piece of work.
+  5. A.4, A.8, A.11, A.13 - the remaining silent field losses.
+  6. A.7, A.9 as robustness.
+  7. Section C gaps as a separate piece of work.
 
 RECOMMENDATION: the round-trip asymmetry technique found most of these, and it
 is mechanisable. A test that converts a corpus of representative weenies,

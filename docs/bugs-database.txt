@@ -94,23 +94,6 @@ D.0f [DESIGN RISK] Reused DbContext depends on an easily-violated invariant
 SECTION A - HIGH SEVERITY
 ================================================================================
 
-D.1  Pending saves are DISCARDED on unsafe shutdown
-     SerializedShardDatabase.cs:40-48
-
-         while (!_queue.IsAddingCompleted)
-
-     IsAddingCompleted becomes true the instant Stop() calls CompleteAdding(),
-     regardless of how many items remain queued. The correct property for
-     "drained" is IsCompleted.
-
-     FAILURE: ServerManager.cs:217 drains the queue on a graceful shutdown, so
-     the normal path is fine. But Program.cs:364 (OnProcessExit, logged as
-     "Unsafe server shutdown detected") calls DatabaseManager.Stop() with a
-     full queue - and every pending biota and character save is thrown away
-     rather than flushed. This is exactly the scenario where you most need the
-     saves to land.
-
-     FIX: while (!_queue.IsCompleted).
 
 D.2  Lost updates: UpdateAccount writes every column from a detached entity
      AuthenticationDatabase.cs:117-125
@@ -327,12 +310,9 @@ E.9  Extensions/QueryableExtensions.ToSql - the enumerator is never advanced, so
 
 SECTION E - SUGGESTED PRIORITY
 ================================================================================
-  1. D.1  IsAddingCompleted -> IsCompleted. One word, and it is the difference
-          between flushing and discarding every pending save on an unsafe
-          shutdown.
-  2. D.5  SQL escaping. Player-controlled text becomes executable SQL when an
+  1. D.5  SQL escaping. Player-controlled text becomes executable SQL when an
           admin exports and re-imports content.
-  3. D.4  scrollsBySpellID -> ConcurrentDictionary. Matches the sibling caches
+  2. D.4  scrollsBySpellID -> ConcurrentDictionary. Matches the sibling caches
           in the same file.
   4. D.3  Unique index on character.name. Requires a schema migration, so plan
           it, but the current state allows duplicate live characters.

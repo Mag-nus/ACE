@@ -1,8 +1,9 @@
 ================================================================================
 ACE.Adapter ROUND-TRIP TESTS - EXECUTED RESULTS
 ================================================================================
-Date     : 2026-07-27
-Branch   : Claude1 (1e7bd6f0), identical to master
+Run date : 2026-07-27
+Re-scoped: 2026-08-03 - resolved findings removed; line numbers re-verified
+           against Claude1 (4aa6c446)
 Target   : Source/ACE.Adapter (78 files, ~6,400 lines)
 Runtime  : .NET SDK 10.0.110, ACE.Adapter builds clean (0 warnings, 0 errors)
 
@@ -16,39 +17,6 @@ Harness location (outside the repo, source tree untouched):
                               (captured output: results file in the same folder)
 Re-run with:
   dotnet run --project <scratchpad>/RoundTrip/RoundTrip.csproj
-
-********************************************************************************
-UPDATE 2026-07-30 - FIXES APPLIED AND RE-VERIFIED BY RE-RUNNING THIS SUITE
-********************************************************************************
-Four of the findings below are now FIXED in the working tree. Verified by
-re-running this harness after the change, not by inspection:
-
-  A.6  IgnoreAuthor polarity   FIXED - probe now reports:
-           IgnoreAuthor True  -> wire byte 1 -> True   preserved
-           IgnoreAuthor False -> wire byte 0 -> False  preserved
-  RT.2 Requirements null deref FIXED - Requirements=null now returns True,
-                                      zero swallowed exceptions
-  RT.3 Mods[i] index (A.7)     FIXED - Mods.Count of 0/1/7/8/9 and null ALL
-                                      return True now
-  RT.4 success-with-null-recipe FIXED - the failing case now returns False
-                                      instead of True with recipe == NULL
-  RT.5 unguarded cookbooks[0].Recipe FIXED - folded into the existing entry guard
-
-STILL OPEN, deliberately: RT.1 (needs 6 hoisted lookups + null checks - exceeds
-a 3-line change) and RT.6 (caveated, unverified). The section-6 logging
-recommendation is also untouched.
-
-NOTE ON THE LAST PROBE LINE. RT.3's probe still shows a NullReferenceException
-at GDLEConverter.cs:748 on the reverse leg. That is NOT a regression and NOT the
-bug that was fixed: the probe deliberately feeds a RecipeCombined whose `recipe`
-is null - a value the fixed forward path can no longer produce - directly into
-the reverse converter. It documents that `TryConvert(Models.Recipe, out Recipe)`
-still does not null-check its own `input`. Separate latent defect, unchanged.
-
-The full "cases=12 clean=0 differing=12" line in section 2 is unchanged, because
-the remaining 12 differences are the BY-DESIGN items catalogued in section 5 plus
-RT.1. Do not read it as "nothing was fixed" - read section 5.
-********************************************************************************
 
 --------------------------------------------------------------------------------
 1. METHOD
@@ -91,23 +59,22 @@ ONE-WAY ONLY - CANNOT be round-trip tested, coverage gap by construction:
   They remain unverified by this suite. Do not read "adapters tested" as
   covering them.
 
-Headline counts from the generic sweep:
-  cases=12  clean=0  differing=12  errored=0
-Read that with section 5 - a large share of those 12 are BY-DESIGN differences,
-not defects. The defect list is section 3.
+NOTE ON RAW SWEEP COUNTS: the generic sweep reports a differing-pair count that
+is NOT a defect count - a large share of its differences are BY-DESIGN (section
+4). Always read the two together; the defect list is section 3.
 
 --------------------------------------------------------------------------------
 3. FINDINGS
 --------------------------------------------------------------------------------
 
 RT.1 [HIGH] A weenie with a PARTIAL attribute set is silently discarded whole
-     Lifestoned/LifestonedConverter.cs:548 (guard), 558-600 (the dereferences)
+     Lifestoned/LifestonedConverter.cs:554 (guard), 559-600 (the dereferences)
 
      OBSERVED OUTPUT:
          weenie with Strength only        : TryConvert returned False
            -> WEENIE SILENTLY DROPPED (exception swallowed by bare catch)
          control, all six attributes      : TryConvert returned True
-         swallowed: NullReferenceException at LifestonedConverter.cs:573
+         swallowed: NullReferenceException at LifestonedConverter.cs:568
 
      The guard admits any weenie with at least one attribute:
          if (input.WeeniePropertiesAttribute != null
@@ -135,20 +102,20 @@ RT.1 [HIGH] A weenie with a PARTIAL attribute set is silently discarded whole
      This also removes 18 redundant LINQ scans (6 attributes x 3 reads).
 
 RT.2 [HIGH] GDLE recipe import dereferences input.Requirements without a null check
-     GDLE/GDLEConverter.cs:781                            *** NOT PREVIOUSLY DOCUMENTED ***
+     GDLE/GDLEConverter.cs:782                            *** NOT PREVIOUSLY DOCUMENTED ***
 
      OBSERVED OUTPUT:
          Requirements=null, Mods.Count=0 -> returned False
-           swallowed: NullReferenceException at GDLEConverter.cs:781
+           swallowed: NullReferenceException at GDLEConverter.cs:782
 
-     Line 781 is `foreach (var value in input.Requirements)`. There IS a null
+     Line 782 is `foreach (var value in input.Requirements)`. There IS a null
      check one line later - `if (value == null) continue;` - guarding the
      ELEMENTS, but nothing guards the COLLECTION.
 
      FAILURE: any GDLE recipe JSON that omits the `Requirements` array
      deserialises to null and the whole recipe is silently dropped on import.
 
-     THIS MASKS RT.3. Line 781 executes before the Mods loop at 877, so on
+     THIS MASKS RT.3. Line 782 executes before the Mods loop at 878, so on
      minimal JSON you hit this NRE and never reach the documented Mods defect.
      That is why the Mods issue only reproduces once Requirements is non-null.
 
@@ -157,7 +124,7 @@ RT.2 [HIGH] GDLE recipe import dereferences input.Requirements without a null ch
      for its own collections.
 
 RT.3 [HIGH] Mods indexed 0..7 unconditionally - CONFIRMS DOCUMENTED A.7
-     GDLE/GDLEConverter.cs:877-884
+     GDLE/GDLEConverter.cs:878-885
 
      A.7 was previously traced but not verified. It is now EMPIRICALLY CONFIRMED,
      and the boundary is exactly as predicted. Holding Requirements non-null to
@@ -170,7 +137,7 @@ RT.3 [HIGH] Mods indexed 0..7 unconditionally - CONFIRMS DOCUMENTED A.7
          Mods.Count=8  -> TryConvert returned True
          Mods.Count=9  -> TryConvert returned True
          Mods=null     -> TryConvert returned False
-             NullReferenceException at GDLEConverter.cs:881
+             NullReferenceException at GDLEConverter.cs:882
 
      So: fewer than 8 throws, exactly 8 or more succeeds, null throws a
      different exception a few lines further on. The loop is
@@ -179,59 +146,6 @@ RT.3 [HIGH] Mods indexed 0..7 unconditionally - CONFIRMS DOCUMENTED A.7
 
      FIX (as documented in A.7):
          if (input.Mods == null || i >= input.Mods.Count) continue;
-
-RT.4 [HIGH] Cookbook export REPORTS SUCCESS while silently dropping the recipe
-     GDLE/GDLEConverter.cs:421 and :436
-
-     OBSERVED OUTPUT:
-         [minimal valid recipe]
-           forward returned True; combined.recipe is populated; precursors=1
-           reverse returned True
-         [recipe that fails export]
-           forward returned True; combined.recipe is NULL; precursors=1
-           *** REPORTS SUCCESS WHILE SILENTLY DROPPING THE ENTIRE RECIPE ***
-           reverse returned False
-             NullReferenceException at GDLEConverter.cs:747
-
-     Line 421 discards the result of the inner conversion:
-         TryConvert(recipe, out var newRecipe);      // return value IGNORED
-         if (newRecipe != null)
-             newRecipe.RecipeId = 0;
-         result.recipe = newRecipe;                  // may be null
-     ...and line 436 unconditionally `return true`. The null check protects the
-     RecipeId assignment but not the caller's understanding of the outcome.
-
-     CONSEQUENCE, OBSERVED AS A TWO-STAGE CASCADE: the export writes a
-     RecipeCombined whose `recipe` is null and calls it success. Re-importing
-     that object then NREs at line 747 dereferencing `input.RecipeId`. A failure
-     originating in the recipe converter surfaces as a crash in an unrelated
-     later operation, with the true cause already discarded.
-
-     FIX: honour the bool.
-         if (!TryConvert(recipe, out var newRecipe)) { result = null; return false; }
-
-RT.5 [MEDIUM] Cookbook export has no try/catch and dereferences an EF navigation
-     GDLE/GDLEConverter.cs:414-418
-
-     Alone among the converters, `TryConvert(List<CookBook>, out RecipeCombined)`
-     has NO try/catch. It guards the list:
-         if (cookbooks == null || cookbooks.Count == 0) { result = null; return false; }
-     then immediately does:
-         var recipe = cookbooks[0].Recipe;   // navigation property
-         result.key = recipe.Id;             // unguarded dereference
-
-     OBSERVED: with `Recipe` not populated, this threw NullReferenceException
-     that ESCAPED to the caller (GDLEConverter.cs:418) rather than returning
-     false. The harness had to wire the navigation property explicitly to reach
-     the real code path.
-
-     CAVEAT ON SEVERITY - INFERRED, NOT OBSERVED IN PRODUCTION: whether a real
-     caller can hit this depends on whether `CookBook.Recipe` is eager-loaded at
-     every call site. I did not audit the callers. The defensive point stands
-     regardless: this is the one converter whose failure mode is an escaping
-     exception instead of `false`.
-
-     FIX: null-check `recipe`, and wrap the body to match its siblings.
 
 RT.6 [LOW] LandblockInstance.IsLinkChild is dropped on import
      GDLE/GDLEConverter.cs:127-210
@@ -245,28 +159,7 @@ RT.6 [LOW] LandblockInstance.IsLinkChild is dropped on import
      VERIFY BEFORE FIXING - I did not trace the DB insert path.
 
 --------------------------------------------------------------------------------
-4. CONFIRMATION OF A.6 (the book-page permission bug)
---------------------------------------------------------------------------------
-A.6 was previously established by reading. It is now EMPIRICALLY CONFIRMED, and
-the observed behaviour is worse than "round trips flip it": it inverts in BOTH
-directions on a SINGLE pass.
-
-     OBSERVED OUTPUT:
-         IgnoreAuthor True  -> wire byte 1 -> False   *** FLIPPED ***
-         IgnoreAuthor False -> wire byte 0 -> True    *** FLIPPED ***
-
-Note the middle column - the wire byte is CORRECT in both cases. The setter
-writes 1 for true and 0 for false, exactly as expected. The getter then misreads
-it. This isolates the defect to the getter alone and directly supports the
-"fix the getter, not the setter" conclusion in A.6.
-
-The second line is the security-relevant one. `IgnoreAuthor == true` means
-"skip the author check - anyone may edit or delete this page" (Book.cs:137,
-Book.cs:155). An author-locked page (`false`) imports as world-editable
-(`true`). That is now a measured result, not an argument.
-
---------------------------------------------------------------------------------
-5. NON-FINDINGS - differences that are BY DESIGN
+4. NON-FINDINGS - differences that are BY DESIGN
 --------------------------------------------------------------------------------
 Recorded explicitly so nobody "fixes" them. The generic sweep counted these as
 differences; they are not defects.
@@ -298,7 +191,7 @@ differences; they are not defects.
      healthiest converters in the project.
 
 --------------------------------------------------------------------------------
-6. THE SYSTEMIC FINDING
+5. THE SYSTEMIC FINDING
 --------------------------------------------------------------------------------
 Individually the above are six defects. Together they are one problem:
 
@@ -319,7 +212,7 @@ silently produce databases that are quietly wrong, which is exactly the failure
 mode the Section A findings in bugs-adapter.txt keep describing.
 
 --------------------------------------------------------------------------------
-7. LIMITATIONS - READ BEFORE CITING THESE RESULTS
+6. LIMITATIONS - READ BEFORE CITING THESE RESULTS
 --------------------------------------------------------------------------------
 1. SYNTHETIC INPUT. Objects are reflection-populated, not loaded from a real
    world database. Values are valid-shaped but not realistic. A real corpus
@@ -333,26 +226,28 @@ mode the Section A findings in bugs-adapter.txt keep describing.
    would not appear here.
 4. COLLECTIONS HELD AT 2 ELEMENTS and recursion capped at depth 4, to keep the
    diff readable. Deeper or wider structures are not explored.
-5. RT.5's real-world reachability is INFERRED, not measured - see its caveat.
-6. Nothing in the ACE source tree was modified to produce these results.
+5. Nothing in the ACE source tree was modified to produce these results.
 
 --------------------------------------------------------------------------------
-8. RECOMMENDED NEXT STEP
+7. RECOMMENDED NEXT STEP
 --------------------------------------------------------------------------------
-Promote this harness into the repository as ACE.Adapter.Tests. It found four
+Promote this harness into the repository as ACE.Adapter.Tests. It found several
 undocumented-or-unverified defects on first run, in a subsystem that already had
 a written audit - and it is the only mechanism here that PREVENTS recurrence
 rather than fixing instances. The generic sweep plus the two-polarity boolean
 pass is about 300 lines and needs no database.
 
-Suggested order:
+THE HARNESS ITSELF NO LONGER EXISTS - it was built outside the repository and
+was lost with its scratch directory. Rebuilding it is the first task. Do not
+skip the FirstChanceException handler described in section 1; without it the
+suite finds almost nothing.
+
+Suggested order for the remaining findings:
   1. RT.2 and RT.3 together - both are one-line collection guards in the same
      method, and RT.2 currently hides RT.3.
-  2. A.6 - one expression, and it is a permission bug.
-  3. RT.1 - small refactor, also removes 18 redundant LINQ scans.
-  4. RT.4 - honour the bool.
-  5. The systemic logging change in section 6.
-  6. RT.5, RT.6 after verifying their caveats.
+  2. RT.1 - small refactor, also removes 18 redundant LINQ scans.
+  3. The systemic logging change in section 5.
+  4. RT.6 after verifying its caveat.
 
 ================================================================================
 END OF ROUND-TRIP TEST RESULTS
