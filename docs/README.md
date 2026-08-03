@@ -230,8 +230,7 @@ ordering.
 - **`perf-physics.txt` Section M** — the physics per-frame churn. `M.0` establishes
   there is **not one `struct` in 162 files**; `Position` costs 80 bytes across two
   objects for 32 bytes of data. Do not pick these off individually — the leverage is
-  structural. `M.2` (delete the duplicate `Init()`) halves the largest allocation site
-  in one line, then struct conversion (`M.4`, `M.5`) and pooling (`M.3`, which has a
+  structural: struct conversion (`M.4`, `M.5`) and pooling (`M.3`, which has a
   verified escape hazard — read it before attempting).
 
 ### One multiplier that applies to all of it
@@ -377,9 +376,9 @@ because they show *which* kinds of recommendation failed:
   refactor, and it should not share a commit with the H.1 fix.
 - **Exception isolation — caveated**, see the note under fix #2 above.
 
-**What held up:** the "zero-risk" claims that were pure *local dataflow* — deleting a
-provably-redundant `Init()` call (`M.2`), and deleting the duplicated walkable test
-(`N.1`, where both methods were verified side-effect-free). **What failed:** every
+**What held up:** the "zero-risk" claims that were pure *local dataflow* — redundant
+calls and dead reads, where the surrounding methods were verified side-effect-free.
+**What failed:** every
 claim about *system-level coupling* — locking, persistence, cache invalidation. That
 is the useful split. Treat a recommendation as reliable in proportion to how local its
 reasoning is.
