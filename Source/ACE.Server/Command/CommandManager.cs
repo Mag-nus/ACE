@@ -6,16 +6,17 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading;
 
+using Microsoft.Extensions.Logging;
+
+using ACE.Common.Logging;
 using ACE.Entity.Enum;
 using ACE.Server.Network;
-
-using log4net;
 
 namespace ACE.Server.Command
 {
     public static class CommandManager
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public static readonly bool NonInteractiveConsole = Convert.ToBoolean(Environment.GetEnvironmentVariable("ACE_NONINTERACTIVE_CONSOLE"));
 
@@ -28,7 +29,7 @@ namespace ACE.Server.Command
 
         public static IEnumerable<CommandHandlerInfo> GetCommandByName(string commandname)
         {
-            return commandHandlers.Select(p => p.Value).Where(p => p.Attribute.Command == commandname);
+            return commandHandlers.Select(p => p.Value).Where(p => p.Attribute.Command.Equals(commandname, StringComparison.OrdinalIgnoreCase));
         }
 
         public static CommandHandler GetDelegate(Action<Session, string[]> handler) => (CommandHandler)Delegate.CreateDelegate(typeof(CommandHandler), handler.Method);
@@ -139,6 +140,13 @@ namespace ACE.Server.Command
                 Console.Write("ACE >> ");
 
                 string commandLine = Console.ReadLine();
+
+                if (commandLine == null)
+                {
+                    log.Info("ACEmulator command prompt disabled - console input stream was closed");
+                    return;
+                }
+
                 if (string.IsNullOrWhiteSpace(commandLine))
                     continue;
 
