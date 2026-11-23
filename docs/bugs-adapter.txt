@@ -1,0 +1,204 @@
+================================================================================
+ACE.Adapter - BUG REPORT
+================================================================================
+Scope   : Source/ACE.Adapter  (78 files, ~6,400 lines)
+          GDLE/ (GDLE emulator format), Lifestoned/ (Lifestoned content editor
+          format), Enum/, top-level converters
+Date    : 2026-07-25
+Companion document: perf-adapter.txt
+
+STATUS  : open findings only. Numbering is non-contiguous because resolved
+          findings have been removed.
+
+VERIFICATION
+  TRACED BUT NOT RE-VERIFIED : all findings. Spot-check before fixing.
+
+  A round-trip conversion test (A -> B -> A, then diff) would catch this
+  document's dominant defect class mechanically. See "Suggested next steps" in
+  README.md - it remains the highest-value item for this subsystem.
+
+
+THEME: this code is almost entirely mechanical field-by-field mapping, which
+makes it highly susceptible to copy-paste error. The dominant defect class is
+SILENT DATA LOSS OR CORRUPTION - content passes through the converter and comes
+out subtly wrong, with no error raised. Nothing here runs on a gameplay path,
+so severity is scoped to "content is quietly damaged", not "server breaks".
+
+The most productive technique was ROUND-TRIP ASYMMETRY: comparing the A->B
+converter against B->A for the same type. Any property handled in one direction
+but not the other is a data-loss bug. Most findings below came from that.
+================================================================================
+
+
+SECTION A - HIGH SEVERITY
+================================================================================
+
+A.1  Combined recipes all import with Id = 0
+     GDLE/GDLELoader.cs:438-452
+
+     TryLoadRecipeCombinedConverted calls TryConvert(value.recipe, ...) - which
+     sets Id = input.recipe.RecipeId - instead of the RecipeCombined overload
+     that does `recipe.Id = input.key`.
+
+     ACE's own exporter deliberately zeroes that field
+     (GDLEConverter.cs:424 `newRecipe.RecipeId = 0`), so a folder of
+     ACE-exported combined recipes re-imports as N recipes ALL WITH Id 0, while
+     the cookbooks correctly receive RecipeId = value.key and therefore point
+     at recipes that do not exist.
+
+     FIX: use GDLEConverter.TryConvert(value, out cookbooks, out recipe), or
+     set result.Id = value.key.
+
+
+A.4  Recipe mods with no typed rows are silently discarded
+     GDLE/GDLEConverter.cs:385-401 (GetIndex)
+
+     GetIndex() derives the slot from the first typed mod row; a RecipeMod that
+     carries only Health/Stamina/Mana/DataId/InstanceId returns -1 and is
+     skipped with a Console.WriteLine.
+
+     GDLE -> ACE explicitly CREATES exactly such mods (lines 996-1001, added
+     when Health > 0 || ... || DataId > 0), so those round-trip to nothing.
+
+     FIX: fall back to ExecutesOnSuccess (first free slot 0-3 versus 4-7).
+
+A.5  Fractional spell fields typed as uint?, breaking the entire spell file
+     GDLE/Models/Spell.cs:69, 72, 81, 108, 111, 117, 150
+
+     CritFreq, CritMultiplier, ElementalModifier, SlayerDamageBonus,
+     SpreadAngle, VerticalAngle, DefaultLaunchAngle and PowerVariance are
+     double? or float? in ACE's Spell table - CritFreq is typically 0.03.
+
+     The auditor verified that JsonSerializer.Deserialize THROWS JsonException
+     on `"critFreq": 0.03` into a uint?. Because the loader catches and returns
+     false, GDLELoader.TryLoadSpells / TryLoadSpellsConverted fails for the
+     ENTIRE spell file with no error surfaced.
+
+     FIX: type them double?.
+
+
+SECTION B - MEDIUM SEVERITY
+================================================================================
+
+
+A.8  Bool recipe requirement Message dropped on export
+     GDLE/GDLEConverter.cs:591-597
+
+     Models.BoolRequirement.Message exists and GDLE -> ACE reads it (line 872),
+     but the export initialiser writes only Stat/Value/OperationType. A recipe
+     whose bool requirement carries a failure message loses it on export.
+     Same wrong-collection / dropped-field shape that recurs throughout this
+     file - the reason a round-trip test matters more than any single fix.
+
+A.9  Unresolvable link endpoints are rewritten to 0 rather than dropped
+     GDLE/GDLELoader.cs:133-144
+
+     A links entry referencing a weenie not present in the same landblock file
+     yields LandblockInstanceLink { ParentGuid = 0, ChildGuid = 0 }, which is
+     STILL ADDED to the output list at lines 170-176 and inserted into the
+     database as a dangling or self-referential link.
+
+     FIX: skip the link when either lookup fails.
+
+
+A.11 Emote item creation profile only exported when DestinationType is set
+     Lifestoned/LifestonedConverter.cs:870-881
+     A Give / TakeItems / InqOwnsItems action with WeenieClassId and StackSize
+     but a null DestinationType loses wcid, stack size, palette and shade
+     entirely - while LSD -> ACE (lines 309-317) populates them from
+     action.Item unconditionally.
+     FIX: guard on `action.WeenieClassId.HasValue || action.DestinationType.HasValue`.
+
+A.12 FirstOrDefault(...).InitLevel with no null check aborts the whole export
+     Lifestoned/LifestonedConverter.cs:559-600 (attributes), 607-629 (vitals)
+     Any weenie with a partial attribute set throws NRE, which the catch turns
+     into `return false` - and TryConvertACEWeeniesToLSDJSON silently skips it.
+     This hits EVERY weenie that has MaxHealth but no MaxStamina or MaxMana:
+     doors, chests, most non-creature damageable objects.
+     FIX: null-check each lookup before building the Attribute or Vital.
+
+A.13 DID duplicate check exists only on one branch
+     Lifestoned/LifestonedConverter.cs:164-192
+     With the default correctForEnumShift = false, duplicate didStats keys are
+     added twice - unlike every other stat list - producing duplicate
+     weenie_properties_d_i_d rows.
+
+A.14 Missing JsonPropertyName attributes silently zero all body-part damage
+     GDLE/Models/Zones.cs
+     This is the ONLY model in the tree with no [JsonPropertyName] annotations.
+     Its sibling ArmorValues is fully snake_case-annotated (base_armor,
+     armor_vs_slash), so the bpsd sub-damage keys are almost certainly
+     lower-case in the real format.
+     System.Text.Json is CASE-SENSITIVE by default and LifestonedLoader passes
+     no options (verified: `{"hlf":0.5}` deserialises to null), so all 12
+     body-part damage zones import as 0 - LifestonedConverter.cs:130-144
+     coerces null to 0. Creatures import with NO hit-location weighting.
+
+
+SECTION C - GAPS: NO CONVERTER AT ALL
+================================================================================
+Not defects in existing code, but silent capability gaps worth recording.
+
+G.1  Models/Encounter.cs and Models/Region.cs (EncounterMap, Encounters) are
+     deserialised but have NO converter in either direction, and the GDLE model
+     (key plus List<uint>) cannot express ACE's CellX/CellY encounter rows.
+G.2  RecipeRequirementsString.Message is lost in BOTH directions, because
+     Models/StringRequirement.cs has no Message field.
+G.3  WeeniePropertiesCreateList.Palette is sbyte in ACE but uint? in
+     CreateItem, so palette ids above 127 corrupt on import
+     (LifestonedConverter.cs:161) and re-export as roughly 4.29 billion
+     (line 703).
+G.4  WeeniePropertiesSkill.LastUsedTime (double) is narrowed to float on export
+     (line 1044).
+G.5  GDLE Spell.School (dispel school) is never written to Spell.DispelSchool -
+     there is a TODO at GDLEConverter.cs:371 - so imported dispels lose their
+     school filter.
+
+
+SECTION D - INVESTIGATED, NOT A BUG
+================================================================================
+I.1  LifestonedConverter.cs:39 Enum.GetName(typeof(WeenieClassName), uint)
+     against a ushort enum - verified on .NET 10 that GetName converts via
+     UInt64 and returns the correct name. No exception.
+I.2  LifestonedConverter.cs:43 input.Name NRE - LSDWeenie.Name is a computed
+     property with a WeenieId.ToString() fallback, never null.
+I.3  LifestonedConverter.cs:908 result.FloatStats.Add without initialising the
+     list - LSDWeenie's stat lists all have field initialisers.
+I.4  Emote Min/Max int?<->uint? casts - unchecked two's-complement round-trips
+     exactly; only the intermediate JSON looks odd for negatives.
+I.5  TreasureWielded (GDLEConverter.cs:1062) - all 19 columns mapped, and there
+     is no ACE -> GDLE direction to be asymmetric with.
+I.6  Event, Quest, RecipePrecursor and CookBook mappings are complete in both
+     directions (Quest.MinDelta uint->int->uint round-trips unchecked).
+I.7  Landblock re-guid logic runs twice (GDLELoader.cs:116 then
+     GDLEConverter.cs:169) - the second pass is a no-op because the guids are
+     already in range.
+I.8  IsLinkChild is not set by GDLEConverter.TryConvert(Models.Landblock), but
+     GDLELoader.TryConvertLandblocks:174-176 sets it for all callers that
+     matter.
+
+
+SECTION E - SUGGESTED PRIORITY
+================================================================================
+  1. A.5  uint? on fractional spell fields. It fails the ENTIRE spell file with
+          no error surfaced, so a user importing spells gets silence and no
+          spells. Highest impact-to-effort ratio here.
+  2. A.14 Zones.cs missing annotations - every imported creature silently loses
+          hit-location weighting, which would be extremely hard to diagnose
+          from gameplay.
+  3. A.12 The FirstOrDefault NRE - it silently skips a large class of weenies
+          (doors, chests) during export.
+  4. A.1  Combined recipes importing with Id = 0 and orphaned cookbooks.
+  5. A.4, A.8, A.11, A.13 - the remaining silent field losses.
+  6. A.9 as robustness.
+  7. Section C gaps as a separate piece of work.
+
+RECOMMENDATION: the round-trip asymmetry technique found most of these, and it
+is mechanisable. A test that converts a corpus of representative weenies,
+recipes and spells A -> B -> A and diffs against the original would catch every
+Section A and Section C finding automatically, and would catch the next one
+before it ships. That is worth more than any individual fix here.
+
+================================================================================
+END OF REPORT
+================================================================================

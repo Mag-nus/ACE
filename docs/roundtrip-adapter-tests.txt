@@ -1,0 +1,203 @@
+================================================================================
+ACE.Adapter ROUND-TRIP TESTS - EXECUTED RESULTS
+================================================================================
+Run date : 2026-07-27
+Re-scoped: 2026-08-03 - resolved findings removed; line numbers re-verified
+           against Claude1 (4aa6c446)
+Target   : Source/ACE.Adapter (78 files, ~6,400 lines)
+Runtime  : .NET SDK 10.0.110, ACE.Adapter builds clean (0 warnings, 0 errors)
+
+THESE RESULTS WERE PRODUCED BY RUNNING CODE, NOT BY READING IT.
+Everything below was observed as program output. Where a claim is inferred
+rather than observed, it says so explicitly.
+
+Harness location (outside the repo, source tree untouched):
+  <scratchpad>/RoundTrip/   - RoundTrip.csproj, Program.cs, Populator.cs,
+                              Differ.cs, Probes.cs, Trace.cs
+                              (captured output: results file in the same folder)
+Re-run with:
+  dotnet run --project <scratchpad>/RoundTrip/RoundTrip.csproj
+
+--------------------------------------------------------------------------------
+1. METHOD
+--------------------------------------------------------------------------------
+Two complementary techniques.
+
+(a) GENERIC REFLECTION SWEEP. For each round-trippable pair, build an ACE-side
+    object with every scalar member set to a distinctive non-default value and
+    every collection populated, convert ACE -> external -> ACE, then structurally
+    diff the start and end graphs by reflection and report every differing path.
+    Run twice: once with all booleans seeded true, once false. That second pass
+    is what exposes polarity inversions, which a single pass can hide.
+
+(b) TARGETED PROBES. One concrete semantic assertion each, for defects the
+    generic sweep pointed at. These are the high-confidence results.
+
+CRITICAL TECHNIQUE NOTE - WITHOUT THIS THE SUITE FINDS ALMOST NOTHING.
+Every converter wraps its body in a bare `catch { return false; }`. Failures are
+therefore SILENT: the caller sees `false` with no message, no exception, no log.
+The harness installs an AppDomain.FirstChanceException handler to observe
+exceptions the converters swallow. Every stack trace quoted below was recovered
+that way. Reading `return false` tells you nothing about WHY.
+
+--------------------------------------------------------------------------------
+2. COVERAGE
+--------------------------------------------------------------------------------
+ROUND-TRIPPABLE (both directions exist) - 6 pairs, all tested:
+  Weenie                  <-> LSDWeenie              Lifestoned :21  / :490
+  Quest                   <-> Models.Quest           GDLE       :14  / :237
+  Recipe                  <-> Models.Recipe          GDLE       :443 / :742
+  CookBook                <-> Models.RecipePrecursor GDLE       :1016/ :1039
+  List<CookBook>          <-> Models.RecipeCombined  GDLE       :406 / :714
+  List<LandblockInstance> <-> Models.Landblock        GDLE       :35  / :127
+
+ONE-WAY ONLY - CANNOT be round-trip tested, coverage gap by construction:
+  Models.Event              -> Event                 GDLE :210
+  Models.SpellValue         -> Spell                 GDLE :262
+  Models.WieldedTreasureTable -> List<TreasureWielded> GDLE :1062
+  These three have no reverse converter, so no round trip can validate them.
+  They remain unverified by this suite. Do not read "adapters tested" as
+  covering them.
+
+NOTE ON RAW SWEEP COUNTS: the generic sweep reports a differing-pair count that
+is NOT a defect count - a large share of its differences are BY-DESIGN (section
+4). Always read the two together; the defect list is section 3.
+
+--------------------------------------------------------------------------------
+3. FINDINGS
+--------------------------------------------------------------------------------
+
+RT.1 [HIGH] A weenie with a PARTIAL attribute set is silently discarded whole
+     Lifestoned/LifestonedConverter.cs:554 (guard), 559-600 (the dereferences)
+
+     OBSERVED OUTPUT:
+         weenie with Strength only        : TryConvert returned False
+           -> WEENIE SILENTLY DROPPED (exception swallowed by bare catch)
+         control, all six attributes      : TryConvert returned True
+         swallowed: NullReferenceException at LifestonedConverter.cs:568
+
+     The guard admits any weenie with at least one attribute:
+         if (input.WeeniePropertiesAttribute != null
+             && input.WeeniePropertiesAttribute.Count > 0)
+     Inside, all SIX attributes are read like this - three times each, and
+     WITHOUT a null check on the FirstOrDefault result:
+         Ranks = input.WeeniePropertiesAttribute
+                     .FirstOrDefault(a => a.Type == (ushort)PropertyAttribute.Endurance)
+                     .InitLevel
+     FirstOrDefault returns null when that attribute is absent, so `.InitLevel`
+     throws. The bare catch turns that into `return false`, and the ENTIRE
+     WEENIE is dropped - not just its attributes.
+
+     WHY THIS MATTERS: "Count > 0" is not "has all six". Any weenie carrying an
+     incomplete attribute set - which the schema permits, since these are
+     individual property rows - is unexportable, and the tooling reports only a
+     bare false.
+
+     FIX: hoist one lookup per attribute and null-check it, e.g.
+         var end = input.WeeniePropertiesAttribute
+                       .FirstOrDefault(a => a.Type == (ushort)PropertyAttribute.Endurance);
+         if (end != null)
+             result.Attributes.Endurance = new GDLE.Models.Attribute
+             { Ranks = end.InitLevel, LevelFromCp = end.LevelFromCP, XpSpent = end.CPSpent };
+     This also removes 18 redundant LINQ scans (6 attributes x 3 reads).
+
+RT.6 [LOW] LandblockInstance.IsLinkChild is dropped on import
+     GDLE/GDLEConverter.cs:127-210
+
+     OBSERVED: `[0].IsLinkChild: True -> False` in the boolean-true pass only.
+     `IsLinkChild` appears NOWHERE in GDLEConverter.cs - it is simply never
+     assigned on the import side, so it defaults to false.
+
+     CAVEAT: this may be intentional if ACE recomputes the flag when links are
+     inserted, since links arrive via the separate `out links` parameter.
+     VERIFY BEFORE FIXING - I did not trace the DB insert path.
+
+--------------------------------------------------------------------------------
+4. NON-FINDINGS - differences that are BY DESIGN
+--------------------------------------------------------------------------------
+Recorded explicitly so nobody "fixes" them. The generic sweep counted these as
+differences; they are not defects.
+
+  Guid: 2 -> 1879060480
+      BY DESIGN. `ReGuidAndConvertLandblocks` deliberately re-assigns GUIDs
+      outside the landblock's valid range. Verified arithmetically:
+      1879060480 == 0x70003000 == 0x70000000 | (landblockId 3 << 12), exactly
+      the documented formula. The source comment says invalid input is expected
+      to be sanitised this way.
+
+  Landblock: 3 -> <null>
+      BY DESIGN, and the code says so:
+        //result.Landblock = input.key; ACE uses a virtual column here of
+        //(result.ObjCellId >> 16)
+      It is a computed DB column, intentionally not assigned.
+
+  LandblockInstanceLink.Count: 2 -> 0
+      HARNESS ARTIFACT. Links are returned through the separate `out links`
+      parameter, not on the instance's navigation collection. The differ
+      compares the navigation property, so it sees an empty list. Not a defect.
+
+  Id: 2 -> 0   and   LastModified: <date> -> default
+      EXPECTED. Database surrogate key and audit timestamp; neither is carried
+      in the external formats. Seen on Quest and CookBook.
+
+  => Quest <-> Models.Quest and CookBook <-> Models.RecipePrecursor round trip
+     CLEANLY apart from those two DB-metadata columns. Those two pairs are the
+     healthiest converters in the project.
+
+--------------------------------------------------------------------------------
+5. THE SYSTEMIC FINDING
+--------------------------------------------------------------------------------
+Individually the above are separate defects. Together they point at one problem:
+
+    EVERY FAILURE MODE IN THIS SUBSYSTEM IS SILENT.
+
+Each converter ends in `catch { return false; }` with no logging, no exception
+detail, no indication of which field or record failed. Consequences observed
+directly in this run:
+  - RT.1 discards an entire weenie and reports only `false`.
+
+Recommendation, ranked above any individual fix above: give the converters a
+diagnostic channel - at minimum log the exception and the identifying key
+(ClassId / RecipeId / landblock) in each catch. Content pipelines that fail
+silently produce databases that are quietly wrong, which is exactly the failure
+mode the Section A findings in bugs-adapter.txt keep describing.
+
+--------------------------------------------------------------------------------
+6. LIMITATIONS - READ BEFORE CITING THESE RESULTS
+--------------------------------------------------------------------------------
+1. SYNTHETIC INPUT. Objects are reflection-populated, not loaded from a real
+   world database. Values are valid-shaped but not realistic. A real corpus
+   would likely surface more, and would also rule out any harness artifacts I
+   have misclassified in section 5.
+2. THE THREE ONE-WAY CONVERTERS ARE UNTESTED (section 2). This suite cannot
+   reach them.
+3. NO JSON LAYER. Tests exercise object-to-object conversion. The
+   serialise/deserialise round trip through GDLELoader / LifestonedLoader is not
+   covered, so JSON-shape defects (missing property names, casing, converters)
+   would not appear here.
+4. COLLECTIONS HELD AT 2 ELEMENTS and recursion capped at depth 4, to keep the
+   diff readable. Deeper or wider structures are not explored.
+5. Nothing in the ACE source tree was modified to produce these results.
+
+--------------------------------------------------------------------------------
+7. RECOMMENDED NEXT STEP
+--------------------------------------------------------------------------------
+Promote this harness into the repository as ACE.Adapter.Tests. It found several
+undocumented-or-unverified defects on first run, in a subsystem that already had
+a written audit - and it is the only mechanism here that PREVENTS recurrence
+rather than fixing instances. The generic sweep plus the two-polarity boolean
+pass is about 300 lines and needs no database.
+
+THE HARNESS ITSELF NO LONGER EXISTS - it was built outside the repository and
+was lost with its scratch directory. Rebuilding it is the first task. Do not
+skip the FirstChanceException handler described in section 1; without it the
+suite finds almost nothing.
+
+Suggested order for the remaining findings:
+  1. RT.1 - small refactor, also removes 18 redundant LINQ scans.
+  2. The systemic logging change in section 5.
+  3. RT.6 after verifying its caveat.
+
+================================================================================
+END OF ROUND-TRIP TEST RESULTS
+================================================================================
