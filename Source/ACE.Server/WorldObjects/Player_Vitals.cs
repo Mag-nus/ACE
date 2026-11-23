@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 
+using ACE.Common.Logging;
 using ACE.DatLoader;
 using ACE.Entity;
 using ACE.Entity.Enum;
@@ -144,7 +145,7 @@ namespace ACE.Server.WorldObjects
             // check for exhaustion
             if (vital.Vital == PropertyAttribute2nd.Stamina || vital.Vital == PropertyAttribute2nd.MaxStamina)
             {
-                if (newVal == 0)
+                if (vital.Current == 0)
                 {
                     OnExhausted();
                 }
