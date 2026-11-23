@@ -6,6 +6,7 @@ using System.Numerics;
 using System.Text;
 
 using ACE.Common;
+using ACE.Common.Logging;
 using ACE.Database;
 using ACE.DatLoader;
 using ACE.DatLoader.FileTypes;
@@ -170,11 +171,11 @@ namespace ACE.Server.WorldObjects
             var player = this as Player;
             var targetPlayer = target as Player;
 
+            if (targetCreature.Invincible)
+                resisted = true;
+
             if (targetPlayer != null)
             {
-                if (targetPlayer.Invincible)
-                    resisted = true;
-
                 if (targetPlayer.UnderLifestoneProtection)
                 {
                     targetPlayer.HandleLifestoneProtection();

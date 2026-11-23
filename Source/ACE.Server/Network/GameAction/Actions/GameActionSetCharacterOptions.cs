@@ -1,10 +1,11 @@
 using System.Collections.Generic;
 
+using Microsoft.Extensions.Logging;
+
 using ACE.Common.Extensions;
+using ACE.Common.Logging;
 using ACE.Entity.Enum;
 using ACE.Server.Network.Enum;
-
-using log4net;
 
 namespace ACE.Server.Network.GameAction.Actions
 {
@@ -17,7 +18,7 @@ namespace ACE.Server.Network.GameAction.Actions
 
     public static class GameActionSetCharacterOptions
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         [GameAction(GameActionType.SetCharacterOptions)]
         public static void Handle(ClientMessage message, Session session)
@@ -63,6 +64,10 @@ namespace ACE.Server.Network.GameAction.Actions
 
             if (numTab1Spells > 0)
             {
+                // each spell id is 4 bytes; a count larger than the remaining payload is malformed
+                if (numTab1Spells > (message.Payload.BaseStream.Length - message.Payload.BaseStream.Position) / 4)
+                    return;
+
                 var tab1Spells = new uint[numTab1Spells];
                 for (int i = 0; i < numTab1Spells; i++)
                     tab1Spells[i] = message.Payload.ReadUInt32();  // SpellID
