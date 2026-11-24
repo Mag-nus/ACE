@@ -14,19 +14,19 @@ BRANCH SCOPE  (added 2026-07-27)
   `combined` AND `RetailCharacterImport`. It is NOT present on `master` or
   `Claude1`, where the /restoreretailcharacter command does not exist at all.
 
-  Every finding below that cites CharacterTransferCommands.cs - including X.1,
-  the privilege escalation - therefore applies to `combined` and
-  `RetailCharacterImport` ONLY.
+  Every finding below that cites CharacterTransferCommands.cs applies to those
+  two branches ONLY, and X.1 applies to `combined` only. Line numbers are given
+  for `combined`; on `RetailCharacterImport` add 35.
 
   If you are on `master` and the file is missing, THAT IS NOT A FIX; the code
   was simply never merged there. Conversely, do not assume `master` is safe
-  because the file is absent - the vulnerability arrives with the branch.
+  because the file is absent - these defects arrive with the branch.
 
-  Re-verified 2026-07-27 on `combined` (dbe6c6da): line 28 still reads
-  AccessLevel.Player. Unchanged.
+  Re-verified 2026-11-23 on `combined` (4c7dfe6be) and `RetailCharacterImport`
+  (2de3a2f9c): the command is still AccessLevel.Player on both.
 
 VERIFICATION
-  VERIFIED DIRECTLY : X.1 (the privilege escalation) - confirmed end to end
+  VERIFIED DIRECTLY : X.1 - each copied property and its effect read in source
   TRACED BUT NOT RE-VERIFIED : all others. Spot-check before fixing.
 
 FINDINGS FROM THE INITIAL SWEEP (folded in)
@@ -50,98 +50,71 @@ FINDINGS FROM THE INITIAL SWEEP (folded in)
         (3648-3732) get this right, confirming these are copy-paste slips
         rather than intent.
 
-*** THIS REPORT CONTAINS THE MOST SEVERE FINDING OF THE ENTIRE AUDIT ***
-Read Section A first.
+Read Section A first: any player can claim any retail character (X.2), and on
+`combined` the restored character keeps retail staff abilities (X.1).
 ================================================================================
 
 
-SECTION A - CRITICAL: PRIVILEGE ESCALATION
+SECTION A - CRITICAL: /restoreretailcharacter
 ================================================================================
 
-X.1  Any player can grant themselves full server admin
-     Command/Handlers/CharacterTransferCommands.cs:28 and :151-156
-     [VERIFIED DIRECTLY - every link in the chain confirmed by reading]
+X.1  A restored retail staff character keeps staff abilities  [`combined` only]
+     Command/Handlers/CharacterTransferCommands.cs:136-151 (ints), 154-168 (bools)
+     [VERIFIED DIRECTLY]
 
-     THE CHAIN:
+     The command is registered at AccessLevel.Player and copies every property
+     of an arbitrary retail biota onto the new character. The bool loop skips
+     Attackable and the four permission bools (IsAdmin, IsArch, IsSentinel,
+     IsAdvocate), so command authorisation is not reachable. Everything else a
+     retail GM, sentinel or advocate carries is copied:
 
-     (1) The command is registered at AccessLevel.Player:
+       IsPsr                      advocate teleport by map click
+       Invincible                 cannot be damaged
+       IgnorePortalRestrictions   uses any portal regardless of level/quest
+       IgnoreHouseBarriers        walks through house barriers
+       SafeSpellComponents        casting consumes no components
+       HiddenAdmin, AdvocateState staff display state
+       IsEnvoy                    accepted by CommandManager.cs:298-311 for
+                                  Envoy, Sentinel and Advocate commands. ACE's
+                                  own id (9005), so not expected in retail data.
+       AdvocateQuest, AdvocateLevel
+                                  inputs to the Advocate self-elevation at
+                                  Player.cs:178-181; harmless without IsAdvocate
+       CloakStatus, PhysicsState  PhysicsState carries the Cloaked bit
+       ChannelsActive/Allowed     staff chat channels
 
-           [CommandHandler("restoreretailcharacter", AccessLevel.Player,
-                           CommandHandlerFlag.RequiresWorld, 3, ...)]
+     Nothing clears these at login: WorldManager strips them only from
+     characters with an Admin or Sentinel WeenieType, and the restored character
+     is built from the "human" weenie.
 
-         Any logged-in player may invoke it. Confirmed at line 28.
-
-     (2) It copies every PropertyBool from an arbitrary retail biota,
-         filtering exactly ONE property:
-
-           foreach (var property in retailBiota.BiotaPropertiesBool)
-           {
-               if (property.Type == (int)PropertyBool.Attackable)
-                   continue;
-               player.SetProperty((PropertyBool)property.Type, property.Value);
-           }
-
-         Confirmed at lines 151-156. IsAdmin, IsArch, IsSentinel and
-         IsAdvocate are NOT filtered.
-
-     (3) Those exact PropertyBools back the permission properties:
-
-           WorldObjects/Player_Properties.cs:36-69
-             IsAdmin    => GetProperty(PropertyBool.IsAdmin) ?? false
-             IsSentinel => GetProperty(PropertyBool.IsSentinel) ?? false
-             IsArch     => GetProperty(PropertyBool.IsArch) ?? false
-             IsAdvocate => GetProperty(PropertyBool.IsAdvocate) ?? false
-
-     (4) Command authorisation reads them directly:
-
-           Command/CommandManager.cs:298-311
-             bool isAdmin = session.Player.IsAdmin;
-             ...
-             || commandInfo.Attribute.Access == AccessLevel.Admin
-                && !(isAdmin || isSUDOauthorized)
-                    return CommandHandlerResponse.NotAuthorized;
-
-     EXPLOIT: a player types
-
-         /restoreretailcharacter dt "+SomeRetailGM" Mychar
-
-     naming any retail character on one of the nine hard-coded shards whose
-     biota carries IsAdmin. They log in as the restored character and now hold
-     /createitem, /set-accountaccess, /delete and every other admin command.
-
-     Nothing ever clears these flags - Player.cs:153-182 only ever sets them
-     true. AdvocateQuest plus IsAdvocate alone self-elevates the session at
-     Player.cs:178-181.
-
-     FIX (do all three):
-       a. Whitelist the imported property types. Exclude every permission bool
-          and AdvocateQuest rather than blacklisting a single property.
-       b. Raise the command to AccessLevel.Admin.
-       c. Gate it behind a PropertyManager bool, disabled by default.
+     FIX: skip these properties too. `RetailCharacterImport` does this with two
+     sets, privilegeBools and privilegeInts, matching the list WorldManager
+     strips plus the permission and advocate properties. Cherry-pick 2de3a2f9c.
 
 X.2  Same command: no ownership proof, no enable gate, no rate limit
-     CharacterTransferCommands.cs:28-47, 269-331
+     CharacterTransferCommands.cs:28-47, 269-343
 
-     Independently of X.1, any player can name ANY retail character on nine
-     hard-coded shards and receive its full inventory, wielded gear, levels,
-     skills and titles.
+     Any player can name ANY retail character on nine hard-coded shards and
+     receive its full inventory, wielded gear, levels, skills and titles.
 
          /restoreretailcharacter ff SomeFamousPlayer Mule
 
      FIX: require an ownership token or admin approval, and gate behind a
-     server property.
+     server property, disabled by default.
 
-X.3  Same command mutates the SHARED CACHED weenie
-     CharacterTransferCommands.cs:76
+X.3  Same command briefly mutates the SHARED CACHED weenie
+     CharacterTransferCommands.cs:73-84
 
+         var tempCreateList = human.PropertiesCreateList;
          human.PropertiesCreateList = null;
+         var player = new Player(human, guid, session.AccountId);
+         human.PropertiesCreateList = tempCreateList;
 
-     `human` is the object returned by
-     DatabaseManager.World.GetCachedWeenie("human") - the shared cache entry.
-
-     FAILURE: one invocation by any player strips the starter create-list for
-     EVERY character created server-wide until the cache is reloaded. It also
-     happens on the DB callback thread.
+     `human` is the shared entry from DatabaseManager.World.GetCachedWeenie.
+     The list is restored, but with no try/finally: if the Player constructor
+     throws, every character created server-wide loses its starter create-list
+     until the cache is reloaded. While the window is open, a character created
+     on another thread also gets none. This runs on the DB callback thread.
 
      FIX: clone the weenie before mutating, or skip the create-list at the
      character-creation call site.
@@ -285,16 +258,12 @@ pass does not repeat the work.
 
 SECTION G - SUGGESTED PRIORITY
 ================================================================================
-  1. X.1  FIX THIS FIRST, AHEAD OF EVERYTHING ELSE IN THE ENTIRE AUDIT.
-          It is a verified privilege escalation reachable by any authenticated
-          player, and it grants complete control of the server. If this
-          codebase is running anywhere with untrusted players, treat it as an
-          active incident: disable or remove the command immediately, then
-          audit existing characters for unexpected IsAdmin/IsArch/IsSentinel/
-          IsAdvocate properties, since the flags persist and nothing clears
-          them.
-  2. X.2, X.3 - the same command's other two defects. Fixing X.1 properly means
-          addressing all three together.
+  1. X.2  Any player can take any retail character's gear and levels. Gate
+          the command before running it with untrusted players.
+  2. X.1  On `combined`, cherry-pick the property filter, then check existing
+          restored characters for IsPsr, Invincible and the other staff
+          properties, since nothing clears them.
+     X.3  together with either.
   3. X.4  Access levels that do not match command power.
   4. X.9  Callback-thread mutation of world state.
   5. X.5, X.6, X.7, X.8 - the crash cluster. X.7 is notable because the

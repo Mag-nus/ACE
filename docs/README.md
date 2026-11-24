@@ -16,25 +16,25 @@ deferred to another document.
 
 ## 🔴 Read this first
 
-**`bugs-command.txt` Section A — verified privilege escalation, any player to full admin.**
+**`bugs-command.txt` Section A — `/restoreretailcharacter` is open to every player.**
 
-> **Branch scope (added 2026-07-27):** `CharacterTransferCommands.cs` exists **only on
-> `combined` and `RetailCharacterImport`**. It is **not** on `master` or `Claude1`, where
+> **Branch scope:** `CharacterTransferCommands.cs` exists **only on `combined` and
+> `RetailCharacterImport`**. It is **not** on `master` or `Claude1`, where
 > `restoreretailcharacter` does not exist at all. If you are reading this on `master`, the
-> file is absent — that is expected, not a fix. Re-verified on `combined`: still
-> `AccessLevel.Player`, unchanged.
+> file is absent — that is expected, not a fix. Re-verified 2026-11-23 on both branches:
+> still `AccessLevel.Player`.
 
-`/restoreretailcharacter` (`CharacterTransferCommands.cs:28`) is registered at
-`AccessLevel.Player`. Its `PropertyBool` copy loop filters exactly one property
-(`Attackable`), so `IsAdmin` / `IsArch` / `IsSentinel` / `IsAdvocate` are copied
-verbatim from an arbitrary retail biota. Those same properties back
-`Player_Properties.cs:36-69`, which `CommandManager.cs:298-311` reads to authorize
-every command. A player restores a retail character flagged `IsAdmin` and logs in
-with complete control of the server. The flags persist; nothing clears them.
+- **X.2, both branches:** any player can name any retail character on nine
+  hard-coded shards and receive its full inventory, wielded gear, levels, skills and
+  titles. There is no ownership check and no server setting to turn the command off.
+- **X.1, `combined` only:** the restore skips the four permission bools, so it
+  does not grant command access, but it copies every other staff property a retail GM
+  or advocate carries: `IsPsr` (map-click teleport), `Invincible`,
+  `IgnorePortalRestrictions`, `IgnoreHouseBarriers`, `SafeSpellComponents`, the cloak
+  state and staff channels. Nothing clears them at login. `RetailCharacterImport`
+  filters them (commit `2de3a2f9c`).
 
-I verified every link in that chain directly. **If this code is deployed anywhere
-with untrusted players, treat it as an active incident** — disable the command,
-then audit existing characters for unexpected permission properties.
+**If this code is deployed with untrusted players, gate or disable the command first.**
 
 ---
 
@@ -67,8 +67,8 @@ layout and GC behaviour) is Section M.
 
 Severity-ordered, not effort-ordered.
 
-1. **Privilege escalation** — `bugs-command.txt` X.1. Above everything else
-   **on `combined`/`RetailCharacterImport`**. Does not apply to `master`/`Claude1`,
+1. **`/restoreretailcharacter`** — `bugs-command.txt` X.2 and X.1. Above everything
+   else **on `combined`/`RetailCharacterImport`**. Does not apply to `master`/`Claude1`,
    where the file does not exist (see the scope note at the top).
 2. **Exception isolation** at the three tick/receive boundaries —
    `bugs-network.txt` N.0a, `bugs-managers.txt` M.0a, `bugs-entity-server.txt` E.0d.
@@ -473,7 +473,7 @@ lists in `Landblock` — and the same principle applies elsewhere.
 1. **Bring `combined` up to date with `master`.** It is ~552 commits behind and
    does not carry the fixes that have landed upstream, so several defects resolved
    on `master` are still live there. This is the cheapest available win.
-2. Address the privilege escalation (on the branches where it applies), then the
+2. Gate `/restoreretailcharacter` (on the branches where it exists), then the
    exception isolation — still four unguarded entry points, all re-verified present.
 3. Spot-verify any finding before acting on it.
 4. Profile against `ServerPerformanceMonitor` before acting on any perf report.
