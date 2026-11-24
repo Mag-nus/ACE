@@ -122,6 +122,7 @@ defect, not just its symptom.
 | Report | Question | Verdict |
 |---|---|---|
 | [design-socket-listener-modernisation.txt](design-socket-listener-modernisation.txt) | Modernise the UDP listener — use System.IO.Pipelines? | **Not Pipelines** (wrong tool for datagrams); modernise with `SocketAddress` overloads, concurrent receives and `ValueTask` async |
+| [design-mod-system.txt](design-mod-system.txt) | Review the mod (plugin) system: bugs, modern standard, cost with no mods | **No cost when idle**; lifecycle bugs MOD.1-16 (hot reload, `/mod find`, command override); move from Harmony-only to explicit extension points |
 
 ## Executed tests
 

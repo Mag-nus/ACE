@@ -1,0 +1,263 @@
+================================================================================
+DESIGN NOTE
+The mod (plugin) system - issues, modern standard, and idle cost
+================================================================================
+Question asked : "Can you analyze our plugin system for issues or improvements?
+                  Are we doing it to the modern standard? Is there a better way
+                  to be doing it? Is there performance impact with the current
+                  system in place even when there are no plugins loaded?"
+Date           : 2026-11-23
+Verified       : master 799a0d096
+Primary files  : Source/ACE.Server/Mods/ModContainer.cs, ModManager.cs,
+                 ModHelpers.cs, ModCommands.cs, ModMetadata.cs, IHarmonyMod.cs
+Related        : Command/CommandManager.cs, Program.cs:165/340/344,
+                 Managers/ServerManager.cs:202
+Libraries      : Lib.Harmony 2.4.3, McMaster.NETCore.Plugins 2.0.0
+
+All findings below come from reading the code. None were reproduced by running
+a mod.
+
+Mod layout, for reference: Mods/<Name>/<Name>.dll plus Meta.json. The entry type
+is found by the naming convention <AssemblyName>.Mod and must implement
+IHarmonyMod (Initialize + IDisposable).
+
+--------------------------------------------------------------------------------
+0. VERDICT
+--------------------------------------------------------------------------------
+- With no mods loaded the cost is effectively zero (section 1).
+- The lifecycle code has real bugs. Most are in hot reload and `/mod find`
+  (section 2).
+- Assembly loading is fine. The extension model, which is Harmony patching
+  only, is what falls short of current practice (section 3).
+
+--------------------------------------------------------------------------------
+1. COST WITH NO MODS LOADED - EFFECTIVELY ZERO
+--------------------------------------------------------------------------------
+Startup:
+  ModManager.Initialize (Program.cs:165) creates the Mods folder if it is
+  missing and enumerates its subfolders. With no subfolders, no PluginLoader is
+  created, no file watcher starts, and no Harmony code runs.
+
+Runtime:
+  Nothing in the game loop calls into Mods/. The only references from outside
+  the folder are startup (Program.cs:165, 344) and shutdown
+  (ServerManager.cs:202). Command dispatch is the same dictionary lookup with or
+  without mods.
+
+Assemblies:
+  Harmony is only referenced inside the body of the `/mod method` verb
+  (ModCommands.cs:78-90). McMaster is only referenced inside ModContainer.
+  Neither assembly should load until a mod or that verb is used. This was not
+  measured at runtime. It does not change the conclusion either way.
+
+No build settings exist for Harmony's sake: no TieredCompilation, ReadyToRun or
+trimming changes in ACE.Server.csproj, and no [MethodImpl(NoInlining)] in game
+code.
+
+--------------------------------------------------------------------------------
+2. BUGS
+--------------------------------------------------------------------------------
+
+---- HIGH ----
+
+MOD.1 [HIGH] `/mod find` orphans the old loaders, so a mod can run twice
+      ModManager.cs:83-96 (LoadMods), ModContainer.cs:49-68 (Initialize)
+
+      LoadMods calls DisableAllMods and then builds new ModContainers, each
+      with a new PluginLoader. No PluginLoader is ever disposed; there is no
+      Dispose call on a loader anywhere in Mods/. Each old loader keeps its file
+      watcher and its `Loader.Reloaded += Reload` subscription. The next time
+      the mod's DLL changes, the orphaned container restarts and calls
+      Enable(), which creates a second instance and applies its Harmony patches
+      a second time.
+
+      FIX: dispose each old container's Loader (and unsubscribe Reloaded)
+      before replacing the list.
+
+MOD.2 [HIGH] Hot reload restarts mods on a background thread
+      ModContainer.cs:226-238 (Reload)
+
+      McMaster raises Reloaded from its own debounce timer, so Restart() runs on
+      that thread. Harmony patches are removed and re-applied, and
+      CommandManager.commandHandlers (a plain Dictionary) is mutated, while the
+      world thread executes the patched methods and reads that dictionary.
+      perf-command.txt E.1 covers the dictionary race; hot reload is the path
+      that triggers it with nobody typing a command.
+
+      FIX: marshal the restart onto the world thread (enqueue it as a world
+      action) instead of running it in the event handler.
+
+MOD.3 [HIGH] Disabling a mod that overrode a core command deletes the command
+      ModHelpers.cs:138, CommandManager.cs:79-83
+
+      TryAddCommand(..., overrides: true) replaces the core handler in place.
+      UnregisterCommands later calls TryRemoveCommand(attribute.Command) by
+      name, which removes the entry outright. The original handler is never
+      restored, so the core command is gone until the server restarts.
+
+      FIX: when overriding, keep the replaced CommandHandlerInfo and put it
+      back on unregister.
+
+---- MEDIUM ----
+
+MOD.4 [MEDIUM] A mod whose entry type is not an IHarmonyMod reports Active and
+      does nothing
+      ModContainer.cs:202, 110-111
+
+      `Activator.CreateInstance(ModType) as IHarmonyMod` yields null if the type
+      does not implement the interface, or if the interface was loaded into the
+      mod's context separately from the host's. `Instance?.Initialize()` then
+      skips silently, and Status is set to Active anyway.
+
+      FIX: treat a null cast as LoadFailure and log the type name.
+
+MOD.5 [MEDIUM] The entry type is found by naming convention, not by type
+      ModContainer.cs:40-41
+
+      TypeName is ScopeName with ".dll" replaced by ".Mod", so the namespace
+      must equal the assembly name and the class must be named Mod. The
+      commented-out alternative scans for types that implement IHarmonyMod,
+      which is more robust, but its IsAssignableFrom check is written backwards
+      and needs flipping if it is restored.
+
+MOD.6 [MEDIUM] A failed Initialize leaves partial patches that cannot be removed
+      ModContainer.cs:108-122, 136-137
+
+      If a mod's Initialize throws partway through patching, Status becomes
+      Inactive with the partial patches still applied. Disable() returns early
+      for anything that is not Active, so they are never cleaned up, and a later
+      Enable or Restart patches again on top.
+
+      FIX: on Initialize failure, call Instance.Dispose (or unpatch by the
+      mod's Harmony ID) before setting the status.
+
+MOD.7 [MEDIUM] LoadFailure is permanent
+      ModContainer.cs:83-87
+
+      Enable() refuses any mod in LoadFailure, so hot-reloading a corrected DLL
+      cannot recover it. Only `/mod find` does, and that triggers MOD.1.
+
+MOD.8 [MEDIUM] The hot-reload debounce never engages
+      ModContainer.cs:44, 228, 241-252
+
+      _lastChange is only updated in ModDll_Changed, and nothing subscribes
+      ModDll_Changed. The 3-second guard in Reload therefore only blocks reloads
+      in the first 3 seconds after the container is constructed.
+
+MOD.9 [MEDIUM] Hot reload is on by default
+      ModMetadata.cs:26
+
+      `HotReload = true`, so every production mod gets a file watcher and is
+      exposed to MOD.1, MOD.2 and MOD.8 unless its author opts out.
+
+      FIX: default to false; hot reload is a development convenience.
+
+---- LOW ----
+
+MOD.10 [LOW] EnableModByName throws NullReferenceException when nothing matches
+       ModManager.cs:188-193
+
+MOD.11 [LOW] `/mod method` throws NullReferenceException when no method matches
+       ModCommands.cs:82-84 (mcMethod is not null-checked)
+
+MOD.12 [LOW] Mod names are matched by partial Contains
+       ModManager.cs:190, 212, 309
+
+       `/mod disable a` acts on whichever mod's name contains "a" first. Prefer
+       an exact match, falling back to a unique partial match.
+
+MOD.13 [LOW] `/mod settings` starts explorer on the server host
+       ModCommands.cs:113
+
+       Any Developer-level player can launch a process on the server from in
+       game. It also fails on Linux. Print the path instead.
+
+MOD.14 [LOW] Settings file helpers swallow or block
+       ModHelpers.cs:157, 175-179
+
+       RetryWrite starts the write with a fire-and-forget Task.Run and always
+       returns true, so write failures are never reported. RetryRead blocks on
+       async code with `.Result`. ReadWithRetryAsync leaks its StreamReader when
+       an exception is thrown.
+
+MOD.15 [LOW] Mods initialize early, and their commands are registered twice
+       Program.cs:165, 340, 344
+
+       ModManager.Initialize runs before the World and Database managers exist,
+       so a mod's Initialize cannot safely touch them. Enable() also registers
+       the mod's commands at that point; CommandManager.Initialize (line 340)
+       then overwrites same-named entries with core handlers, and
+       ModManager.RegisterCommands (line 344) registers them again. The end
+       state is correct, but only because of the order of those three calls.
+
+MOD.16 [LOW] No version or dependency contract
+       ModMetadata.cs (Dependencies, Conflicts, ACEVersion are commented-out
+       Todos)
+
+       Nothing stops a mod built against an older ACE from loading and patching
+       methods whose signatures or semantics have changed.
+
+--------------------------------------------------------------------------------
+3. MODERN STANDARD AND A BETTER WAY
+--------------------------------------------------------------------------------
+LOADING - ACCEPTABLE AS IS
+  McMaster's PluginLoader wraps AssemblyLoadContext and
+  AssemblyDependencyResolver, giving each mod its own dependency resolution. It
+  is still maintained (2.0.0, January 2025, targets net8.0). A hand-rolled
+  equivalent is about 50 lines of a custom AssemblyLoadContext. Replacing it is
+  only worth doing to drop the dependency or to take direct control of
+  unloading.
+
+  Unloading does not actually happen today. Loaders are created with
+  isUnloadable: true but never disposed (MOD.1). Even with disposal, Harmony
+  patches hold references into the mod assembly, so the context cannot be
+  collected unless every patch is removed first.
+
+EXTENSION MODEL - THIS IS WHERE ACE IS BEHIND
+  The only way to extend the server is to Harmony-patch its internals. Costs:
+  - Brittle. Any rename, signature change or refactor silently breaks mods.
+    This is why the audit docs warn against deleting public members.
+  - Can silently miss. The JIT inlines small methods into their callers
+    (tiered compilation and dynamic PGO make this more common). A patch on an
+    inlined method does not run at those call sites.
+  - No contract. See MOD.16.
+
+  The modern pattern is explicit extension points, with Harmony kept as an
+  escape hatch for anything not covered:
+  - Events for the common hooks: player login/logout, death, item use, chat,
+    tick, landblock load. An event with no subscribers costs one null check,
+    so the zero-cost-with-no-mods property from section 1 is kept.
+  - A small host interface passed to each mod's Initialize, providing its
+    ILogger, its folder and settings path, and command registration. That
+    replaces ModManager.Log, GetFolder, and each mod reading its own
+    Settings.json.
+  - An API version in Meta.json that the loader checks before enabling.
+
+  IAsyncDisposable on IHarmonyMod is already a Todo in IHarmonyMod.cs and fits
+  naturally with the host interface.
+
+VERSIONS
+  Lib.Harmony 2.4.3 supports net10.0. 3.0 is at release candidate 7. Stay on
+  2.x until 3.0 ships, then evaluate it as a breaking upgrade, since existing
+  mods would need rebuilding.
+
+--------------------------------------------------------------------------------
+4. SUGGESTED ORDER
+--------------------------------------------------------------------------------
+Small and contained:
+  1. MOD.1 - dispose old loaders in LoadMods.
+  2. MOD.2 + MOD.9 - run hot reloads on the world thread; default HotReload
+     to false.
+  3. MOD.3 + perf-command.txt E.1 - thread-safe command table; restore an
+     overridden core command on unregister.
+  4. MOD.4 + MOD.5 - fail loudly on a non-IHarmonyMod entry type; find the
+     entry type by interface scan.
+  5. The LOW items, in any order.
+
+Needs a decision first:
+  6. The events plus host-interface API in section 3. It is a design change
+     that affects every existing mod.
+
+================================================================================
+END OF DESIGN NOTE
+================================================================================
