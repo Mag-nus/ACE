@@ -50,12 +50,12 @@ FINDINGS FROM THE INITIAL SWEEP (folded in)
         (3648-3732) get this right, confirming these are copy-paste slips
         rather than intent.
 
-Read Section A first: any player can claim any retail character (X.2), and on
-`combined` the restored character keeps retail staff abilities (X.1).
+Read Section A first: on `combined`, a restored retail character keeps retail
+staff abilities (X.1).
 ================================================================================
 
 
-SECTION A - CRITICAL: /restoreretailcharacter
+SECTION A - HIGH: /restoreretailcharacter
 ================================================================================
 
 X.1  A restored retail staff character keeps staff abilities  [`combined` only]
@@ -90,17 +90,6 @@ X.1  A restored retail staff character keeps staff abilities  [`combined` only]
      FIX: skip these properties too. `RetailCharacterImport` does this with two
      sets, privilegeBools and privilegeInts, matching the list WorldManager
      strips plus the permission and advocate properties. Cherry-pick 2de3a2f9c.
-
-X.2  Same command: no ownership proof, no enable gate, no rate limit
-     CharacterTransferCommands.cs:28-47, 269-343
-
-     Any player can name ANY retail character on nine hard-coded shards and
-     receive its full inventory, wielded gear, levels, skills and titles.
-
-         /restoreretailcharacter ff SomeFamousPlayer Mule
-
-     FIX: require an ownership token or admin approval, and gate behind a
-     server property, disabled by default.
 
 X.3  Same command briefly mutates the SHARED CACHED weenie
      CharacterTransferCommands.cs:73-84
@@ -243,6 +232,11 @@ SECTION F - INVESTIGATED, NOT A BUG
 A large number of handlers were checked and found correct. Recorded so a later
 pass does not repeat the work.
 
+  /restoreretailcharacter letting any player restore ANY retail character, with
+  no ownership check or enable setting, is BY DESIGN (confirmed by the
+  maintainer 2026-11-23). Do not report it. Copying staff properties onto the
+  restored character is a separate matter - see X.1.
+
   @teleloc (AdminCommands.cs:934-950 - the `i > 2 && Length < 8` break
   correctly covers parameters[7]); @qst bestow/erase/stamp and the fellow
   bestow/erase/stamp guards (3649-3719, 3927-3993); @adminhouse
@@ -258,12 +252,10 @@ pass does not repeat the work.
 
 SECTION G - SUGGESTED PRIORITY
 ================================================================================
-  1. X.2  Any player can take any retail character's gear and levels. Gate
-          the command before running it with untrusted players.
-  2. X.1  On `combined`, cherry-pick the property filter, then check existing
+  1. X.1  On `combined`, cherry-pick the property filter, then check existing
           restored characters for IsPsr, Invincible and the other staff
           properties, since nothing clears them.
-     X.3  together with either.
+  2. X.3  The same command's shared-weenie mutation.
   3. X.4  Access levels that do not match command power.
   4. X.9  Callback-thread mutation of world state.
   5. X.5, X.6, X.7, X.8 - the crash cluster. X.7 is notable because the

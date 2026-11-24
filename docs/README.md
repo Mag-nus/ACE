@@ -14,30 +14,6 @@ deferred to another document.
 
 ---
 
-## 🔴 Read this first
-
-**`bugs-command.txt` Section A — `/restoreretailcharacter` is open to every player.**
-
-> **Branch scope:** `CharacterTransferCommands.cs` exists **only on `combined` and
-> `RetailCharacterImport`**. It is **not** on `master` or `Claude1`, where
-> `restoreretailcharacter` does not exist at all. If you are reading this on `master`, the
-> file is absent — that is expected, not a fix. Re-verified 2026-11-23 on both branches:
-> still `AccessLevel.Player`.
-
-- **X.2, both branches:** any player can name any retail character on nine
-  hard-coded shards and receive its full inventory, wielded gear, levels, skills and
-  titles. There is no ownership check and no server setting to turn the command off.
-- **X.1, `combined` only:** the restore skips the four permission bools, so it
-  does not grant command access, but it copies every other staff property a retail GM
-  or advocate carries: `IsPsr` (map-click teleport), `Invincible`,
-  `IgnorePortalRestrictions`, `IgnoreHouseBarriers`, `SafeSpellComponents`, the cloak
-  state and staff channels. Nothing clears them at login. `RetailCharacterImport`
-  filters them (commit `2de3a2f9c`).
-
-**If this code is deployed with untrusted players, gate or disable the command first.**
-
----
-
 ## The 24 reports
 
 | Subsystem | Bugs | Performance |
@@ -67,9 +43,12 @@ layout and GC behaviour) is Section M.
 
 Severity-ordered, not effort-ordered.
 
-1. **`/restoreretailcharacter`** — `bugs-command.txt` X.2 and X.1. Above everything
-   else **on `combined`/`RetailCharacterImport`**. Does not apply to `master`/`Claude1`,
-   where the file does not exist (see the scope note at the top).
+1. **`/restoreretailcharacter` on `combined`** — `bugs-command.txt` X.1. A restored
+   retail staff character keeps its staff abilities (map-click teleport,
+   invincibility, portal and house-barrier bypass, free spell components, cloak).
+   `CharacterTransferCommands.cs` exists only on `combined` and
+   `RetailCharacterImport`, and `RetailCharacterImport` already filters these.
+   Letting any player restore any retail character is by design.
 2. **Exception isolation** at the three tick/receive boundaries —
    `bugs-network.txt` N.0a, `bugs-managers.txt` M.0a, `bugs-entity-server.txt` E.0d.
    Three independent audits converged on this. One malformed UDP packet from an
@@ -473,7 +452,7 @@ lists in `Landblock` — and the same principle applies elsewhere.
 1. **Bring `combined` up to date with `master`.** It is ~552 commits behind and
    does not carry the fixes that have landed upstream, so several defects resolved
    on `master` are still live there. This is the cheapest available win.
-2. Gate `/restoreretailcharacter` (on the branches where it exists), then the
+2. Cherry-pick the `/restoreretailcharacter` property filter onto `combined`, then the
    exception isolation — still four unguarded entry points, all re-verified present.
 3. Spot-verify any finding before acting on it.
 4. Profile against `ServerPerformanceMonitor` before acting on any perf report.
