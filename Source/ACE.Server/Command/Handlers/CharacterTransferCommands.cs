@@ -23,6 +23,41 @@ namespace ACE.Server.Command.Handlers
     {
         private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
+        /// <summary>
+        /// Properties that grant permissions or staff abilities.
+        /// A retail GM, sentinel or advocate biota carries these, and copying them would give the restored character those powers.
+        /// The restored character keeps the defaults from the human weenie instead.
+        /// This covers everything WorldManager strips from a character whose account no longer has admin access.
+        /// </summary>
+        private static readonly HashSet<PropertyBool> privilegeBools = new HashSet<PropertyBool>
+        {
+            PropertyBool.IsAdmin,
+            PropertyBool.IsArch,
+            PropertyBool.IsSentinel,
+            PropertyBool.IsEnvoy,
+            PropertyBool.IsAdvocate,
+            PropertyBool.IsPsr,
+            PropertyBool.AdvocateQuest,
+            PropertyBool.AdvocateState,
+            PropertyBool.HiddenAdmin,
+            PropertyBool.Invincible,
+            PropertyBool.IgnoreHouseBarriers,
+            PropertyBool.IgnorePortalRestrictions,
+            PropertyBool.SafeSpellComponents,
+            PropertyBool.DamagedByCollisions,
+            PropertyBool.ReportCollisions,
+        };
+
+        /// <inheritdoc cref="privilegeBools"/>
+        private static readonly HashSet<PropertyInt> privilegeInts = new HashSet<PropertyInt>
+        {
+            PropertyInt.AdvocateLevel,
+            PropertyInt.ChannelsActive,
+            PropertyInt.ChannelsAllowed,
+            PropertyInt.CloakStatus,
+            PropertyInt.PhysicsState, // carries the Cloaked state
+        };
+
 
         // restoreretailcharacter
         [CommandHandler("restoreretailcharacter", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, 3, "Restores a pcapped retail character into your characters list", "[server name] [retail character name] [new character name]")]
@@ -147,6 +182,8 @@ namespace ACE.Server.Command.Handlers
                     // We don't pull in house information
                     if (property.Type == (int)PropertyInt.HouseStatus || property.Type == (int)PropertyInt.HouseType)
                         continue;
+                    if (privilegeInts.Contains((PropertyInt)property.Type))
+                        continue;
                     player.SetProperty((PropertyInt)property.Type, property.Value);
                 }
                 foreach (var property in retailBiota.BiotaPropertiesInt64)
@@ -155,14 +192,7 @@ namespace ACE.Server.Command.Handlers
                 {
                     if (property.Type == (int)PropertyBool.Attackable)
                         continue;
-                    // Filter out privilege states
-                    if (property.Type == (int)PropertyBool.IsAdmin)
-                        continue;
-                    if (property.Type == (int)PropertyBool.IsArch)
-                        continue;
-                    if (property.Type == (int)PropertyBool.IsSentinel)
-                        continue;
-                    if (property.Type == (int)PropertyBool.IsAdvocate)
+                    if (privilegeBools.Contains((PropertyBool)property.Type))
                         continue;
                     player.SetProperty((PropertyBool)property.Type, property.Value);
                 }
