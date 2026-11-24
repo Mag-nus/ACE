@@ -11,11 +11,13 @@ STATUS  : open findings only. Numbering is non-contiguous because resolved
           findings have been removed.
 
 VERIFICATION
-  TRACED BUT NOT RE-VERIFIED : all findings. Spot-check before fixing.
+  REPRODUCED BY RUNNING CODE : A.4, A.8, A.11, A.12, A.13, G.4 - by the
+                               round-trip tests, see roundtrip-adapter-tests.txt
+  TRACED BUT NOT RE-VERIFIED : all others. Spot-check before fixing.
 
-  A round-trip conversion test (A -> B -> A, then diff) would catch this
-  document's dominant defect class mechanically. See "Suggested next steps" in
-  README.md - it remains the highest-value item for this subsystem.
+  The round-trip tests live in Source/ACE.Adapter.Tests on branch
+  `adapter-roundtrip-tests`, not merged. That branch also fixes the six
+  reproduced findings.
 
 
 THEME: this code is almost entirely mechanical field-by-field mapping, which
@@ -134,6 +136,18 @@ A.14 Missing JsonPropertyName attributes silently zero all body-part damage
      body-part damage zones import as 0 - LifestonedConverter.cs:130-144
      coerces null to 0. Creatures import with NO hit-location weighting.
 
+A.15 A weenie with attributes but no vitals imports three zero-valued vitals
+     GDLE/Models/AttributeSet.cs:26-34, Lifestoned/LifestonedConverter.cs:97-102
+     AttributeSet initialises Health, Stamina and Mana to `new Vital()`.
+     Import creates a MaxHealth/MaxStamina/MaxMana row for each non-null vital,
+     so any file whose "attributes" object omits health, stamina or mana gets
+     that vital as a row of zeros, because the omitted key deserialises to the
+     default object, not null. Export has the same shape: a weenie with
+     attributes and no vitals writes all three as zeros.
+     NOT VERIFIED: whether a zero-valued vital row behaves differently from no
+     row at runtime. Removing the initialisers changes how every existing file
+     without vitals imports, so check that first.
+
 
 SECTION C - GAPS: NO CONVERTER AT ALL
 ================================================================================
@@ -148,8 +162,21 @@ G.3  WeeniePropertiesCreateList.Palette is sbyte in ACE but uint? in
      CreateItem, so palette ids above 127 corrupt on import
      (LifestonedConverter.cs:161) and re-export as roughly 4.29 billion
      (line 703).
-G.4  WeeniePropertiesSkill.LastUsedTime (double) is narrowed to float on export
-     (line 1044).
+G.4  Doubles narrowed to float in both directions - a defect, not a gap
+     GDLE/Models/FloatStat.cs:12, EmoteAction.cs:186/238/242, Skill.cs:13
+     Lifestoned/LifestonedConverter.cs:762-763, 816, 908, 1044
+     ACE stores PropertyFloat values, emote MinDbl/MaxDbl/Percent and skill
+     LastUsedTime as double. The GDLE models declare them float, and export
+     casts down to match, so 0.1 round-trips as 0.10000000149. JSON numbers
+     carry no type; the model type alone loses the precision.
+     Gameplay effect after a round trip:
+       - InqFloatStat compares `stat >= MinDbl && stat <= MaxDbl`
+         (EmoteManager.cs:531), so a property sitting exactly on a bound can
+         flip from TestSuccess to TestFailure.
+       - SetFloatStat writes Percent straight into the property
+         (EmoteManager.cs:1159), so the stored value changes.
+     FIX: type the four model properties double and drop the casts. No code
+     outside ACE.Adapter uses them.
 G.5  GDLE Spell.School (dispel school) is never written to Spell.DispelSchool -
      there is a TODO at GDLEConverter.cs:371 - so imported dispels lose their
      school filter.
@@ -189,15 +216,15 @@ SECTION E - SUGGESTED PRIORITY
   3. A.12 The FirstOrDefault NRE - it silently skips a large class of weenies
           (doors, chests) during export.
   4. A.1  Combined recipes importing with Id = 0 and orphaned cookbooks.
-  5. A.4, A.8, A.11, A.13 - the remaining silent field losses.
-  6. A.9 as robustness.
-  7. Section C gaps as a separate piece of work.
+  5. A.4, A.8, A.11, A.13, G.4 - the remaining silent field losses.
+  6. A.15 after checking how zero-valued vitals behave.
+  7. A.9 as robustness.
+  8. Section C gaps as a separate piece of work.
 
 RECOMMENDATION: the round-trip asymmetry technique found most of these, and it
-is mechanisable. A test that converts a corpus of representative weenies,
-recipes and spells A -> B -> A and diffs against the original would catch every
-Section A and Section C finding automatically, and would catch the next one
-before it ships. That is worth more than any individual fix here.
+is now mechanised - see roundtrip-adapter-tests.txt. Its remaining gaps are a
+real content corpus, the JSON layer for the GDLE pairs (where A.5 and A.14
+live) and the three one-way converters, including spells.
 
 ================================================================================
 END OF REPORT

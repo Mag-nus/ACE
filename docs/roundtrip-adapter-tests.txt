@@ -1,22 +1,23 @@
 ================================================================================
 ACE.Adapter ROUND-TRIP TESTS - EXECUTED RESULTS
 ================================================================================
-Run date : 2026-07-27
-Re-scoped: 2026-08-03 - resolved findings removed; line numbers re-verified
-           against Claude1 (4aa6c446)
+Run date : 2026-11-23, against master (799a0d096)
 Target   : Source/ACE.Adapter (78 files, ~6,400 lines)
-Runtime  : .NET SDK 10.0.110, ACE.Adapter builds clean (0 warnings, 0 errors)
+Runtime  : .NET SDK 10.0.115
 
 THESE RESULTS WERE PRODUCED BY RUNNING CODE, NOT BY READING IT.
-Everything below was observed as program output. Where a claim is inferred
-rather than observed, it says so explicitly.
+Everything below was observed as test output. Where a claim is inferred rather
+than observed, it says so explicitly.
 
-Harness location (outside the repo, source tree untouched):
-  <scratchpad>/RoundTrip/   - RoundTrip.csproj, Program.cs, Populator.cs,
-                              Differ.cs, Probes.cs, Trace.cs
-                              (captured output: results file in the same folder)
+Harness location:
+  Source/ACE.Adapter.Tests/ on branch `adapter-roundtrip-tests` (not merged).
+    Harness/Populator.cs, Differ.cs, SwallowedExceptions.cs, RoundTrip.cs
+    RoundTripTests.cs (generic sweep), ProbeTests.cs (targeted probes)
+  That branch also contains fixes for the defects below, so on it every test
+  passes. To observe the defects, run the tests against master's converters
+  (15 of 23 fail).
 Re-run with:
-  dotnet run --project <scratchpad>/RoundTrip/RoundTrip.csproj
+  dotnet test Source/ACE.Adapter.Tests
 
 --------------------------------------------------------------------------------
 1. METHOD
@@ -29,16 +30,31 @@ Two complementary techniques.
     diff the start and end graphs by reflection and report every differing path.
     Run twice: once with all booleans seeded true, once false. That second pass
     is what exposes polarity inversions, which a single pass can hide.
+    Doubles are seeded as N + 0.1, which float cannot represent exactly, so any
+    narrowing to float shows up as a difference.
+
+    Every difference the round trip is allowed to produce is listed in the test
+    with a reason (section 4). Anything else fails.
 
 (b) TARGETED PROBES. One concrete semantic assertion each, for defects the
-    generic sweep pointed at. These are the high-confidence results.
+    generic sweep pointed at or cannot reach (import-only behaviour, partial
+    sets, the JSON layer). These are the high-confidence results.
 
 CRITICAL TECHNIQUE NOTE - WITHOUT THIS THE SUITE FINDS ALMOST NOTHING.
 Every converter wraps its body in a bare `catch { return false; }`. Failures are
 therefore SILENT: the caller sees `false` with no message, no exception, no log.
-The harness installs an AppDomain.FirstChanceException handler to observe
-exceptions the converters swallow. Every stack trace quoted below was recovered
-that way. Reading `return false` tells you nothing about WHY.
+The harness installs an AppDomain.FirstChanceException handler, scoped to the
+test's thread, to observe exceptions the converters swallow. Every stack trace
+quoted below was recovered that way.
+
+SEEDING MUST BE SCHEMA-VALID. Random values make several converters throw for
+reasons that are not defects. The sweep holds these to valid shapes:
+  - recipe requirement Index 0-2, recipe mod slot 0-7, all typed rows on one
+    mod share its slot, and ExecutesOnSuccess = (slot <= 3)
+  - all six attributes and the three max vitals present (partial sets are
+    covered by probes)
+  - book PageId and emote action Order numbered 0..n
+  - landblock instances given in-range GUIDs and a real parent/child link
 
 --------------------------------------------------------------------------------
 2. COVERAGE
@@ -59,22 +75,19 @@ ONE-WAY ONLY - CANNOT be round-trip tested, coverage gap by construction:
   They remain unverified by this suite. Do not read "adapters tested" as
   covering them.
 
-NOTE ON RAW SWEEP COUNTS: the generic sweep reports a differing-pair count that
-is NOT a defect count - a large share of its differences are BY-DESIGN (section
-4). Always read the two together; the defect list is section 3.
-
 --------------------------------------------------------------------------------
 3. FINDINGS
 --------------------------------------------------------------------------------
 
-RT.1 [HIGH] A weenie with a PARTIAL attribute set is silently discarded whole
-     Lifestoned/LifestonedConverter.cs:554 (guard), 559-600 (the dereferences)
+RT.1 [HIGH] A weenie with a PARTIAL attribute or vital set is silently discarded
+     Lifestoned/LifestonedConverter.cs:554 (guard), 559-629 (the dereferences)
+     Same defect as bugs-adapter.txt A.12.
 
      OBSERVED OUTPUT:
-         weenie with Strength only        : TryConvert returned False
-           -> WEENIE SILENTLY DROPPED (exception swallowed by bare catch)
-         control, all six attributes      : TryConvert returned True
-         swallowed: NullReferenceException at LifestonedConverter.cs:568
+         weenie with Strength only       : TryConvert returned False
+           swallowed: NullReferenceException at LifestonedConverter.cs:566
+         weenie with MaxHealth only      : TryConvert returned False
+           swallowed: NullReferenceException at LifestonedConverter.cs:615
 
      The guard admits any weenie with at least one attribute:
          if (input.WeeniePropertiesAttribute != null
@@ -86,63 +99,79 @@ RT.1 [HIGH] A weenie with a PARTIAL attribute set is silently discarded whole
                      .InitLevel
      FirstOrDefault returns null when that attribute is absent, so `.InitLevel`
      throws. The bare catch turns that into `return false`, and the ENTIRE
-     WEENIE is dropped - not just its attributes.
+     WEENIE is dropped - not just its attributes. The vitals block repeats the
+     pattern for MaxHealth/MaxStamina/MaxMana, so doors and chests (MaxHealth
+     only) cannot be exported.
 
-     WHY THIS MATTERS: "Count > 0" is not "has all six". Any weenie carrying an
-     incomplete attribute set - which the schema permits, since these are
-     individual property rows - is unexportable, and the tooling reports only a
-     bare false.
+     FIX: one lookup per attribute and vital, null when absent. The import side
+     already skips null entries, so the round trip is then exact. This also
+     removes 27 redundant LINQ scans (9 entries x 3 reads).
 
-     FIX: hoist one lookup per attribute and null-check it, e.g.
-         var end = input.WeeniePropertiesAttribute
-                       .FirstOrDefault(a => a.Type == (ushort)PropertyAttribute.Endurance);
-         if (end != null)
-             result.Attributes.Endurance = new GDLE.Models.Attribute
-             { Ranks = end.InitLevel, LevelFromCp = end.LevelFromCP, XpSpent = end.CPSpent };
-     This also removes 18 redundant LINQ scans (6 attributes x 3 reads).
+ALSO REPRODUCED BY THIS RUN - all documented in bugs-adapter.txt, each observed
+failing by its own probe:
+  A.4  Recipe mod with no typed rows   exported 1 mod, imported 0
+  A.8  Bool requirement message        "You need to be bonded." -> <null>
+  A.11 Emote item without destination  WeenieClassId and StackSize -> <null>
+  A.13 Duplicate DID key on import     2 rows for one key
+  G.4  Float narrowing                 WIDER THAN DOCUMENTED - see below
 
-RT.6 [LOW] LandblockInstance.IsLinkChild is dropped on import
-     GDLE/GDLEConverter.cs:127-210
-
-     OBSERVED: `[0].IsLinkChild: True -> False` in the boolean-true pass only.
-     `IsLinkChild` appears NOWHERE in GDLEConverter.cs - it is simply never
-     assigned on the import side, so it defaults to false.
-
-     CAVEAT: this may be intentional if ACE recomputes the flag when links are
-     inserted, since links arrive via the separate `out links` parameter.
-     VERIFY BEFORE FIXING - I did not trace the DB insert path.
+  G.4 as observed by the N + 0.1 seeding: not only Skill.LastUsedTime but
+  every float stat and three emote action fields come back changed:
+      Weenie.WeeniePropertiesFloat[0].Value: 354.1 -> 354.1000061035156
+      ...WeeniePropertiesEmoteAction[0].MinDbl: 194.1 -> 194.10000610351562
+      ...WeeniePropertiesEmoteAction[0].MaxDbl: 195.1 -> 195.10000610351562
+      ...WeeniePropertiesEmoteAction[0].Percent: 200.1 -> 200.10000610351562
+      Weenie.WeeniePropertiesSkill[0].LastUsedTime: 463.1 -> 463.1000061035156
+  The JSON-layer probe (export to file, reload through LifestonedLoader)
+  shows the same loss. Full description in bugs-adapter.txt G.4.
 
 --------------------------------------------------------------------------------
 4. NON-FINDINGS - differences that are BY DESIGN
 --------------------------------------------------------------------------------
-Recorded explicitly so nobody "fixes" them. The generic sweep counted these as
-differences; they are not defects.
+Recorded explicitly so nobody "fixes" them. Each is listed in the test as an
+allowed difference.
 
-  Guid: 2 -> 1879060480
-      BY DESIGN. `ReGuidAndConvertLandblocks` deliberately re-assigns GUIDs
-      outside the landblock's valid range. Verified arithmetically:
-      1879060480 == 0x70003000 == 0x70000000 | (landblockId 3 << 12), exactly
-      the documented formula. The source comment says invalid input is expected
-      to be sanitised this way.
+  RT.6 RETRACTED - LandblockInstance.IsLinkChild false after import
+      GDLEConverter.TryConvert(Models.Landblock) never assigns it, but its
+      caller GDLELoader.TryConvertLandblocks sets it from the links
+      (GDLELoader.cs:174-176). Not a defect; matches bugs-adapter.txt I.8.
 
-  Landblock: 3 -> <null>
-      BY DESIGN, and the code says so:
+  Database keys and timestamps
+      Id, LastModified, and the foreign keys ObjectId, EmoteId, RecipeId and
+      RecipeModId are not part of either external format. With them excluded,
+      Quest and CookBook round trip cleanly.
+
+  Navigation properties carried separately
+      CookBook.Recipe and Recipe.CookBook: a precursor carries only RecipeId,
+      and the combined-recipe pair carries the recipe beside the cookbooks.
+      Landblock links come back through the `out links` parameter. The harness
+      reattaches both the way the database navigation would; once it does, the
+      combined-recipe and landblock pairs show no link or recipe loss.
+
+  Landblock.Landblock -> <null>
+      Computed DB column (ObjCellId >> 16), deliberately not assigned:
         //result.Landblock = input.key; ACE uses a virtual column here of
         //(result.ObjCellId >> 16)
-      It is a computed DB column, intentionally not assigned.
 
-  LandblockInstanceLink.Count: 2 -> 0
-      HARNESS ARTIFACT. Links are returned through the separate `out links`
-      parameter, not on the instance's navigation collection. The differ
-      compares the navigation property, so it sees an empty list. Not a defect.
+  Landblock GUID reassignment
+      Out-of-range GUIDs are reassigned to 0x7LLLL000 upward and link endpoints
+      follow them. Probed directly; behaves as documented.
 
-  Id: 2 -> 0   and   LastModified: <date> -> default
-      EXPECTED. Database surrogate key and audit timestamp; neither is carried
-      in the external formats. Seen on Quest and CookBook.
+  Weenie.ClassName
+      Not in the Lifestoned format; import derives it from the WCID.
 
-  => Quest <-> Models.Quest and CookBook <-> Models.RecipePrecursor round trip
-     CLEANLY apart from those two DB-metadata columns. Those two pairs are the
-     healthiest converters in the project.
+  Recipe mod ExecutesOnSuccess
+      Encoded by slot (0-3 success, 4-7 failure), not carried as a field. With
+      schema-valid seeding it round trips.
+
+  Book page and emote action numbering
+      Renumbered 0..n on export, so non-sequential source numbering is not
+      preserved. Ordering is.
+
+FORMAT GAPS - the external model has no member to carry the data:
+  WeeniePropertiesAnimPart, WeeniePropertiesEventFilter,
+  WeeniePropertiesPalette, WeeniePropertiesTextureMap      (LSDWeenie)
+  RecipeRequirementsString.Message                         (bugs-adapter.txt G.2)
 
 --------------------------------------------------------------------------------
 5. THE SYSTEMIC FINDING
@@ -152,11 +181,10 @@ Individually the above are separate defects. Together they point at one problem:
     EVERY FAILURE MODE IN THIS SUBSYSTEM IS SILENT.
 
 Each converter ends in `catch { return false; }` with no logging, no exception
-detail, no indication of which field or record failed. Consequences observed
-directly in this run:
-  - RT.1 discards an entire weenie and reports only `false`.
+detail, no indication of which field or record failed. Consequence observed
+directly in this run: RT.1 discards an entire weenie and reports only `false`.
 
-Recommendation, ranked above any individual fix above: give the converters a
+Recommendation, ranked above any individual fix: give the converters a
 diagnostic channel - at minimum log the exception and the identifying key
 (ClassId / RecipeId / landblock) in each catch. Content pipelines that fail
 silently produce databases that are quietly wrong, which is exactly the failure
@@ -167,36 +195,27 @@ mode the Section A findings in bugs-adapter.txt keep describing.
 --------------------------------------------------------------------------------
 1. SYNTHETIC INPUT. Objects are reflection-populated, not loaded from a real
    world database. Values are valid-shaped but not realistic. A real corpus
-   would likely surface more, and would also rule out any harness artifacts I
-   have misclassified in section 5.
-2. THE THREE ONE-WAY CONVERTERS ARE UNTESTED (section 2). This suite cannot
-   reach them.
-3. NO JSON LAYER. Tests exercise object-to-object conversion. The
-   serialise/deserialise round trip through GDLELoader / LifestonedLoader is not
-   covered, so JSON-shape defects (missing property names, casing, converters)
-   would not appear here.
-4. COLLECTIONS HELD AT 2 ELEMENTS and recursion capped at depth 4, to keep the
-   diff readable. Deeper or wider structures are not explored.
-5. Nothing in the ACE source tree was modified to produce these results.
+   would likely surface more.
+2. THE THREE ONE-WAY CONVERTERS ARE UNTESTED (section 2).
+3. JSON LAYER BARELY COVERED. One probe takes a weenie through JSON and back.
+   The other pairs are tested object-to-object only, so JSON-shape defects
+   (missing property names, casing - bugs-adapter.txt A.5, A.14) would not
+   appear here.
+4. COLLECTIONS HELD AT 2 ELEMENTS and recursion capped at depth 4. Deeper or
+   wider structures are not explored.
+5. VALUE RANGES ARE SMALL. Seeded integers are small and positive, so sign and
+   width defects (bugs-adapter.txt G.3, palette ids above 127) are not reached.
 
 --------------------------------------------------------------------------------
 7. RECOMMENDED NEXT STEP
 --------------------------------------------------------------------------------
-Promote this harness into the repository as ACE.Adapter.Tests. It found several
-undocumented-or-unverified defects on first run, in a subsystem that already had
-a written audit - and it is the only mechanism here that PREVENTS recurrence
-rather than fixing instances. The generic sweep plus the two-polarity boolean
-pass is about 300 lines and needs no database.
+Merge `adapter-roundtrip-tests`, or at least its converter fixes. It fixes RT.1
+and A.4, A.8, A.11, A.13 and G.4, and its tests prove each fix.
 
-THE HARNESS ITSELF NO LONGER EXISTS - it was built outside the repository and
-was lost with its scratch directory. Rebuilding it is the first task. Do not
-skip the FirstChanceException handler described in section 1; without it the
-suite finds almost nothing.
-
-Suggested order for the remaining findings:
-  1. RT.1 - small refactor, also removes 18 redundant LINQ scans.
-  2. The systemic logging change in section 5.
-  3. RT.6 after verifying its caveat.
+After that:
+  1. The systemic logging change in section 5.
+  2. Extend the harness to a real content corpus and to the JSON layer for the
+     GDLE pairs.
 
 ================================================================================
 END OF ROUND-TRIP TEST RESULTS
