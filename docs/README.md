@@ -107,7 +107,7 @@ defect, not just its symptom.
 
 | Report | What was run | Outcome |
 |---|---|---|
-| [roundtrip-adapter-tests.txt](roundtrip-adapter-tests.txt) | Round-trip tests over all 6 round-trippable `ACE.Adapter` conversion pairs, on .NET 10 (`Source/ACE.Adapter.Tests`, branch `adapter-roundtrip-tests`) | Open defect RT.1; also reproduced `bugs-adapter.txt` A.4, A.8, A.11, A.13 and a wider G.4 |
+| [roundtrip-adapter-tests.txt](roundtrip-adapter-tests.txt) | Round-trip tests over all 6 round-trippable `ACE.Adapter` conversion pairs, on .NET 10 (`Source/ACE.Adapter.Tests`) | All 23 tests pass; no open defects. Gaps: real content corpus, the GDLE JSON layer, the one-way converters |
 
 Unlike the audit reports, that document records **observed program output**, not
 analysis. The result worth pulling out:
@@ -459,8 +459,6 @@ lists in `Landblock` — and the same principle applies elsewhere.
 5. Consider a fourth physics pass. Both remaining gaps are named in
    `bugs-physics.txt` Section F: `Common/` (7,677 lines, untouched by pass 3) then
    `MotionTable.cs` against the original client's `CMotionTable` semantics.
-6. **Merge the `ACE.Adapter` round-trip tests and fixes** (branch
-   `adapter-roundtrip-tests`). The tests reproduced six documented findings by
-   running code, and the branch fixes all six. The remaining coverage gaps are a
-   real content corpus, the JSON layer for the GDLE pairs and the one-way
-   converters (`roundtrip-adapter-tests.txt` section 6).
+6. Extend the `ACE.Adapter` round-trip tests to a real content corpus, the JSON
+   layer for the GDLE pairs and the one-way converters
+   (`roundtrip-adapter-tests.txt` section 6).
