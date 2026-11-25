@@ -414,7 +414,7 @@ Worth knowing before picking up individual fixes.
 
 **Non-atomic transfers.** Nine of thirteen WorldObjects findings share one shape:
 remove from source, add to destination unchecked, no rollback. The correct pattern
-exists in-tree in exactly one place (`Player_Inventory.cs:3349-3376`). A single
+exists in-tree in exactly one place (`Player_Inventory.cs:3350-3377`). A single
 checked-transfer helper would close the whole class.
 
 **Unvalidated counts as allocation sizes or loop bounds.** Dominates

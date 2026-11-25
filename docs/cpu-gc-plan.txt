@@ -64,7 +64,7 @@ first makes later measurement cleaner because they remove noise.
         -> perf-managers.txt P.1
 
  5. Guard the instrumentation CALL SITES, not just the callee.
-    WorldObject_Tick.cs:291, 373; Player_Tick.cs:297, 324, 430, 528;
+    WorldObject_Tick.cs:292, 374; Player_Tick.cs:298, 325, 431, 529;
     Landblock.cs:439-597. `stopwatch.Elapsed.TotalSeconds` is evaluated at the
     call site before AddToCumulativeEvent's IsRunning check.
         -> perf-managers.txt P.3, perf-common.txt K.3, perf-worldobjects.txt P.11
@@ -74,7 +74,7 @@ first makes later measurement cleaner because they remove noise.
         -> perf-network.txt P.5
 
  7. Replace Enum.Parse with a static lookup table.
-    Player_Combat.cs:175, 546; Monster_Combat.cs:324, 411. Reflection parse plus
+    Player_Combat.cs:176, 547; Monster_Combat.cs:325, 412. Reflection parse plus
     three string allocations, twice per landed hit.
         -> perf-worldobjects.txt O.3
 
@@ -141,7 +141,7 @@ behaviour change. Each needs its own validation.
 
 16. Throttle monster position broadcasts.
     Monster_Navigation.cs:255-263 sends unconditionally at 5Hz with no movement
-    threshold, while players are throttled to 1s (Player_Tick.cs:514). 5x the
+    threshold, while players are throttled to 1s (Player_Tick.cs:515). 5x the
     packet rate per monster. VISIBLE BEHAVIOUR CHANGE - validate movement
     smoothness for observers.
         -> perf-worldobjects.txt P.5
@@ -201,7 +201,7 @@ Measure before and after - several are large enough to regress if done wrong.
 23. Transition pooling.
     VERIFIED ESCAPE HAZARD: transition() returns the object and five callers
     OUTSIDE physics retain it (WorldObject.cs:332/370/392/421,
-    Player_Inventory.cs:1491). Needs an explicit release point or the data
+    Player_Inventory.cs:1492). Needs an explicit release point or the data
     copied out. Also needs items 25, the SpherePath.InitSphere append fix, and
     CollisionInfo.CollideObject clearing - otherwise the pool becomes a leak.
         -> perf-physics.txt M.3

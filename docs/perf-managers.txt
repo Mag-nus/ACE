@@ -114,7 +114,7 @@ P.2  ServerPerformanceMonitor.Tick polls DateTime.UtcNow three times per tick
      method behind a 1Hz RateLimiter.
 
 P.3  Instrumentation call sites are not cheaply disabled
-     WorldObject_Tick.cs:291, 373; Player_Tick.cs; Landblock.cs:439, 454, 474,
+     WorldObject_Tick.cs:292, 374; Player_Tick.cs; Landblock.cs:439, 454, 474,
      494, 516, 559
 
      Only the INSIDE of AddToCumulativeEvent checks IsRunning. The stopwatch
@@ -129,7 +129,7 @@ P.3  Instrumentation call sites are not cheaply disabled
 P.4  Shared lock in AddToCumulativeEvent contended by parallel landblock threads
      ServerPerformanceMonitor.cs:250 - `lock (cumulative5m[i])`
 
-     Callers include WorldObject_Tick.cs:374 and Player_Tick.cs:325, 529 -
+     Callers include WorldObject_Tick.cs:375 and Player_Tick.cs:326, 530 -
      once per moving object per frame - plus 8 per landblock
      (Landblock.cs:447-614). Every landblock-group worker thread contends on
      the same lock object per event type, 30-60 times per second, multiplied by
@@ -216,7 +216,7 @@ P.10 PropertyManager getters do three hash lookups where one suffices
      PropertyManager.cs:102-103, 153-154, 203-204
 
      `ContainsKey(key)` followed by two indexer reads (.Item, .Description).
-     Called from per-movement and per-heartbeat code: Player_Tick.cs:91, 191;
+     Called from per-movement and per-heartbeat code: Player_Tick.cs:92, 192;
      Landblock.cs:302, 304, 323, 908.
 
      FIX: a single TryGetValue. (Property<T> is a struct, so there is no heap
@@ -252,7 +252,7 @@ P.12 HouseManager startup is O(n^2) over slumlords (STARTUP)
      into QueryMultiHouse.
 
 P.13 Minor, same family
-     WorldObject_Generators.cs:406-410 calls IsEventAvailable, IsEventEnabled
+     WorldObject_Generators.cs:407-411 calls IsEventAvailable, IsEventEnabled
      and IsEventStarted back to back - three dictionary lookups, each preceded
      by GetEventName (EventManager.cs:171, a Substring allocation), plus a
      Time.GetUnixTime(), per generator per update. One lookup would do.

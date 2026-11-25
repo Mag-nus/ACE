@@ -157,7 +157,7 @@ D.1  ConfigManager.Config is a plain auto-property the JIT inlines to a static
      NetworkManager.cs:36, 39 already cache into statics. NOT a finding.
 D.2  StringExtensions.StartsWithVowel genuinely allocates a whole lowercased
      string to read one character (line 13) - but its only reference
-     (WorldObjects/Creature_Combat.cs:990) is COMMENTED OUT.
+     (WorldObjects/Creature_Combat.cs:991) is COMMENTED OUT.
 D.3  EnumHelper.GetFlags (line 14) boxes every enum value through reflection
      plus LINQ, but has ZERO callers.
 D.4  DoubleExtensions.FormatChance formats with "F99" - a 100+ character string

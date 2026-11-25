@@ -26,7 +26,7 @@ D.0a [MEDIUM] Failed player saves never trigger the protective boot
      `catch (Exception ex)` logs and swallows it - and the callback is NEVER
      INVOKED.
 
-     FAILURE: WorldObject_Database.cs:65-75 relies on that callback to set
+     FAILURE: WorldObject_Database.cs:66-76 relies on that callback to set
      player.BiotaSaveFailed = true, which triggers a protective boot. So a
      failed player save is silently logged, the player is never booted, and
      play continues on state that is not persisting - data loss and desync
@@ -141,7 +141,7 @@ D.4  scrollsBySpellID is an unsynchronised Dictionary written from parallel
 
      After /clearcache weenie sets weenieSpecificCachesPopulated = false (line
      90), GetScrollWeenie begins writing scrollsBySpellID[spellID] (line 243)
-     from LootGenerationFactory_Scroll.cs:28 - which runs inside the
+     from LootGenerationFactory_Scroll.cs:29 - which runs inside the
      Parallel.ForEach over landblock groups (LandblockManager.cs:318).
 
      FAILURE: concurrent inserts during a resize corrupt the bucket chain,

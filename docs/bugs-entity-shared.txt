@@ -148,7 +148,7 @@ S.10 Unguarded, unlocked property access
      Currently unreferenced, but a landmine.
      Same class: WeenieExtensions.cs:132
      `GetProperty(PropertyString.Name).Pluralize()` NREs when a weenie has no
-     Name - reachable from Player_Inventory.cs:3771.
+     Name - reachable from Player_Inventory.cs:3772.
 
 S.11 EquipMask.All drops a bit that Clothing uses
      Enum/EquipMask.cs:56-57

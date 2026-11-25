@@ -114,7 +114,7 @@ SECTION A - O(N^2) SERIALIZATION ON ZONE ENTRY
 ================================================================================
 
 P.1  The heaviest serializer is rebuilt PER OBSERVING PLAYER
-     WorldObjects/Player_Tracking.cs:63; WorldObject_Networking.cs:57, 224;
+     WorldObjects/Player_Tracking.cs:63; WorldObject_Networking.cs:58, 225;
      Creature_Networking.cs:35
 
      Each observing player calls
@@ -143,7 +143,7 @@ SECTION B - PER-RECIPIENT COST IN THE SEND PATH
 P.2  Broadcast amplification lives at the FRAGMENT layer, not the message layer
      MessageFragment.cs:91-92
 
-     Good news first: WorldObject_Networking.cs:1377/1419 and Landblock.cs:1213
+     Good news first: WorldObject_Networking.cs:1378/1419 and Landblock.cs:1213
      correctly share ONE GameMessage across all recipients.
 
      But at flush time, each session's SendBundle calls CreateServerFragment,
@@ -227,7 +227,7 @@ P.8  cachedPackets retains every sent packet for 120 seconds
 
 P.9  EnqueueBroadcast allocates a LINQ pipeline plus a List per broadcast
      Physics/Common/ObjectMaint.cs:717, called from
-     WorldObject_Networking.cs:1392, 1435
+     WorldObject_Networking.cs:1393, 1436
 
      `KnownPlayers.Values.Select(...).OfType<Player>().ToList()` allocates a
      list plus two enumerators under a read lock, for EVERY movement, motion
@@ -292,7 +292,7 @@ E.2  InboundMessageManager.DefineMessageHandlers / DefineActionHandlers - full
      assembly reflection scan, but once at startup.
 E.3  Extensions.BuildPacketString and the StringBuilder blocks in
      SendPacketRaw / OnDataReceive - already correctly guarded by
-     IsDebugEnabled.
+     IsEnabled(LogLevel.Debug).
 E.4  DoRequestForRetransmission (NetworkSession.cs:396) - List, MemoryStream,
      per-element BitConverter.GetBytes and a Select/Aggregate string build, but
      rate-limited to once per second per session and only on loss.

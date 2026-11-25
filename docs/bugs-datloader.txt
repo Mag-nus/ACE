@@ -345,7 +345,7 @@ D.1  Entity/MediaDesc.cs:42 - switches on a file-supplied MediaType with NO
 D.2  DatDatabase.cs:115-136 - ExtractCategorizedPortalContents dereferences
      dr.Buffer with no null check; GetReaderForFile can return null.
 D.3  DatDatabase.cs:21, 154 - Iteration is a PROPERTY that performs file I/O
-     and can log.Error on every access. Managers/DDDManager.cs:71 evaluates it
+     and can log an error on every access. Managers/DDDManager.cs:71 evaluates it
      as a loop bound.
 D.4  DatDatabase.cs:33 - FileCache is unbounded; cell.dat has ~800,000 entries.
 D.5  DatManager.cs:13-15 - datFile and count are static fields used purely as

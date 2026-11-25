@@ -24,7 +24,7 @@ N.0a [HIGH] A single malformed packet can crash the entire server
 
      There is no safety net anywhere else. The application's only global handler
      is AppDomain.CurrentDomain.UnhandledException (Program.cs:53, body at
-     353-356), which just calls log.Error - it cannot prevent process
+     353-357), which just calls log.LogError - it cannot prevent process
      termination. A repo-wide grep found NO TaskScheduler.UnobservedTaskException
      handler at all.
 

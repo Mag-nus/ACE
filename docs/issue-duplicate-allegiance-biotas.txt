@@ -216,8 +216,8 @@ monarch id is stored as a biota property, not a first-class column):
 To confirm the mechanism rather than just the symptom, add temporary logging in
 GetAllegiance immediately before the create block:
 
-    log.Warn($"Creating allegiance for monarch {monarch.Guid}: " +
-             $"GetAllegianceID returned {allegianceID}, biota null = {biota == null}");
+    log.LogWarning("Creating allegiance for monarch {MonarchGuid}: GetAllegianceID returned {AllegianceId}, biota null = {BiotaIsNull}",
+                   monarch.Guid, allegianceID, biota == null);
 
 Duplicate creations for the same monarch within a short interval, each logging
 a NULL biota, confirm Vector 1. If two such log lines interleave from different

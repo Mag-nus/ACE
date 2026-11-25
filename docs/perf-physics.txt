@@ -291,7 +291,7 @@ F.1  ObjectMaint.rwLock is STATIC - one global lock for the entire server
 
      It is taken on:
        - every network broadcast - GetKnownPlayersValuesAsPlayer, called from
-         WorldObject_Networking.cs:1050, 1356, 1392, 1435, 1473
+         WorldObject_Networking.cs:1051, 1357, 1393, 1436, 1474
        - every monster target scan - Monster_Awareness.cs:242, 351, 513, at 5Hz
          times every monster on the shard
        - every cell change
@@ -760,7 +760,7 @@ M.1  Visibility lists are the only reliably PROMOTED allocation
      PhysicsObj.cs:2183: it sits in the `else` branch after `leave_cell(true)`,
      so it fires on an ACTUAL CELL CHANGE, not every frame.
      ObjMaint.DestroyObjects() additionally runs per player Heartbeat (~5s,
-     Player_Tick.cs:127).
+     Player_Tick.cs:128).
 
      Cell transitions are frequent for a moving player - cells are small - but
      they are roughly an order of magnitude rarer than 60Hz. Treat this as a
@@ -818,7 +818,7 @@ M.3  Pooling Transition is viable - but NOT with a naive free-list
          Transition, and five callers OUTSIDE the physics subsystem hold it and
          then read trans.SpherePath.CurPos:
              WorldObjects/WorldObject.cs:332, 370, 392, 421
-             WorldObjects/Player_Inventory.cs:1491
+             WorldObjects/Player_Inventory.cs:1492
          The object therefore outlives the physics call. Returning a pooled
          object to a caller that retains it is a use-after-free-style aliasing
          bug - strictly worse than the allocation it saves. A pool needs an
@@ -1227,7 +1227,7 @@ N.12 KnownObjectsContainsValue is an O(n) linear scan of a keyed dictionary
      ObjectMaint.cs:137-148
      Uses `KnownObjects.Values.Contains(value)`, called from
      Player.AddTrackedObject (Player_Tracking.cs:82) on every object-creation
-     broadcast (WorldObject_Networking.cs:1474). The dictionary is keyed by
+     broadcast (WorldObject_Networking.cs:1475). The dictionary is keyed by
      obj.ID - use ContainsKey(value.ID) for O(1).
 
 N.13 RemoveKnownPlayer mutates under a READ lock

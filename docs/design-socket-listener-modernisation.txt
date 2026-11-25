@@ -86,7 +86,7 @@ D3. Listen() RECURSES INTO ITSELF FROM ITS OWN CATCH   [VERIFIED]
 
         catch (SocketException socketException)
         {
-            log.DebugFormat(...);
+            log.LogDebug(...);
             Listen();          // <-- unbounded recursion
         }
 
@@ -133,7 +133,7 @@ D4. THE CompletedSynchronously DANCE EXISTS ONLY TO AVOID D3
                  ...
                  catch (SocketException socketException)
                  {
-                     log.DebugFormat(...);
+                     log.LogDebug(...);
         -            Listen();
         +            return true;
                  }
@@ -280,8 +280,8 @@ NetworkSession need no changes.
             }
             catch (Exception ex)
             {
-                log.Fatal($"Network socket failed to start on " +
-                          $"{listeningHost}:{listeningPort}", ex);
+                log.LogCritical(ex, "Network socket failed to start on {ListeningHost}:{ListeningPort}",
+                                listeningHost, listeningPort);
             }
         }
 
@@ -327,9 +327,8 @@ NetworkSession need no changes.
                 }
                 catch (SocketException se)
                 {
-                    log.Error($"ReceiveFromAsync failed on " +
-                              $"{listeningHost}:{listeningPort}: " +
-                              $"{se.SocketErrorCode}", se);
+                    log.LogError(se, "ReceiveFromAsync failed on {ListeningHost}:{ListeningPort}: {SocketErrorCode}",
+                                 listeningHost, listeningPort, se.SocketErrorCode);
                     continue;                    // do NOT recurse (D3)
                 }
 
@@ -343,8 +342,8 @@ NetworkSession need no changes.
                 {
                     // Drop the packet, keep the listener alive. This is the
                     // whole point of the rewrite - see bugs-network.txt N.0a.
-                    log.Error("Unhandled exception processing inbound packet " +
-                              $"from {receivedAddress}; packet dropped.", ex);
+                    log.LogError(ex, "Unhandled exception processing inbound packet from {ReceivedAddress}; packet dropped.",
+                                 receivedAddress);
                 }
             }
         }
@@ -353,12 +352,12 @@ NetworkSession need no changes.
                                      SocketAddress from,
                                      IPEndPoint endPointTemplate)
         {
-            if (packetLog.IsDebugEnabled)
+            if (packetLog.IsEnabled(LogLevel.Debug))
             {
                 // D5: no byte[] copy - BuildPacketString already takes a range.
-                packetLog.Debug(
-                    $"Received Packet (Len: {data.Length}) " +
-                    $"[{from} => {ListenerEndpoint}]\n" +
+                packetLog.LogDebug(
+                    "Received Packet (Len: {Length}) [{From} => {ListenerEndpoint}]\n{Packet:l}",
+                    data.Length, from, ListenerEndpoint,
                     buffer.BuildPacketString(0, data.Length));
             }
 

@@ -39,14 +39,14 @@ E.1  ReaderWriterLockSlim acquired on EVERY Biota property read
          }
          finally { rwLock.ExitReadLock(); }
 
-     CALL PATH: WorldObject_Properties.cs:42-90 ->
+     CALL PATH: WorldObject_Properties.cs:43-91 ->
      Biota.GetProperty(property, BiotaDatabaseLock). This is THE standard read
      primitive for the entire server - 899 explicit GetProperty( call sites and
      819 SetProperty( in ACE.Server, plus roughly 333 generated accessors in
      WorldObject_Properties.cs that all funnel through it.
 
      *** THE EPHEMERAL FAST PATH DOES NOT HELP ***   [VERIFIED DIRECTLY]
-     WorldObject_Properties.cs:70 probes ephemeralPropertyInts before falling
+     WorldObject_Properties.cs:71 probes ephemeralPropertyInts before falling
      through to the lock. I checked the tagging density myself:
 
          [Ephemeral]-tagged PropertyInt members :   9
@@ -62,7 +62,7 @@ E.1  ReaderWriterLockSlim acquired on EVERY Biota property read
      3-5ns for the Dictionary<enum,T> lookup it guards. That is a 10-15x
      overhead on the server's single most common operation.
 
-     Supporting evidence the team already felt this: WorldObject_Tick.cs:25
+     Supporting evidence the team already felt this: WorldObject_Tick.cs:26
      caches HeartbeatInterval into a plain field specifically to stop
      re-reading it per tick.
 
@@ -70,11 +70,11 @@ E.1  ReaderWriterLockSlim acquired on EVERY Biota property read
      Derived by tracing Entity/DamageEvent.cs:164-369 (DoCalculateDamage) and
      summing biota reads in each helper it fans out to: ~10 direct in
      DoCalculateDamage; ~6-11 in GetEffectiveAttackSkill
-     (Player_Combat.cs:222-239); ~6-12 in GetEffectiveDefenseSkill
-     (Creature_Combat.cs:482-504); ~8-10 in GetBaseDamage (:400-433); ~15-20 in
+     (Player_Combat.cs:223-240); ~6-12 in GetEffectiveDefenseSkill
+     (Creature_Combat.cs:483-505); ~8-10 in GetBaseDamage (:400-433); ~15-20 in
      the modifier block (:226-238); ~8 in the crit block (:249-288); ~9-15 in
      the armor block (:290-330, at 3 reads per armor layer via
-     Monster_Melee.cs:492-531); ~12-18 in the resistance block (:331-366).
+     Monster_Melee.cs:493-532); ~12-18 in the resistance block (:331-366).
 
          Player -> monster    ~70-110  read-lock acquisitions per swing
          Player -> PLAYER    ~150-220
@@ -85,17 +85,17 @@ E.1  ReaderWriterLockSlim acquired on EVERY Biota property read
 
      The player-versus-player figure is dominated by TWO PER-EQUIPPED-ITEM
      LOOPS that acquire a lock per item across roughly 25 items:
-       Creature_Combat.cs:1294 - EquippedObjects.Values.Count(i =>
+       Creature_Combat.cs:1295 - EquippedObjects.Values.Count(i =>
                                  i.ImbuedEffect.HasFlag(...)), hit on EVERY
                                  GetEffectiveDefenseSkill
-       Monster_Melee.cs:417
+       Monster_Melee.cs:418
      Both are also reported from the consuming side in perf-worldobjects.txt
      O.2 - three audits converged on this pair.
 
      FREQUENCY CEILING: the world ticks at 60Hz (WorldManager.cs:314,
      `new RateLimiter(60, TimeSpan.FromSeconds(1))`), iterating every object in
      every active landblock (Landblock.cs:409). Monster think and creature
-     physics run at 5Hz (Monster_Tick.cs:10, WorldObject_Tick.cs:208).
+     physics run at 5Hz (Monster_Tick.cs:10, WorldObject_Tick.cs:209).
 
      FIX: landblock groups tick in Parallel.ForEach (LandblockManager.cs:318,
      380) but are ISOLATED BY DESIGN - cross-thread biota access is essentially
@@ -113,12 +113,12 @@ SECTION B - STRUCTURAL
 
 E.2  WorldObject.Location is a property-dictionary access; writing it takes a
      write lock and allocates
-     WorldObject_Properties.cs:2457 defines Location as
+     WorldObject_Properties.cs:2458 defines Location as
      GetPosition(PositionType.Location).
 
-     Reads become cache-served after the first call (positionCache, line 775)
+     Reads become cache-served after the first call (positionCache, line 776)
      but still cost two dictionary probes - and Location is touched 5-10 TIMES
-     PER OBJECT PER FRAME (WorldObject_Tick.cs:317-328,
+     PER OBJECT PER FRAME (WorldObject_Tick.cs:318-329,
      Monster_Navigation.cs:279-317).
 
      Writes reach Models/BiotaExtensions.cs:344-360, which takes EnterWriteLock
@@ -188,9 +188,9 @@ E.5  Position copy constructor allocates a DISCARDED Tuple<bool,bool>
      copying an already-valid position.
 
      These are genuine movement paths: Monster_Navigation.cs:378,
-     Creature_Missile.cs:102, PositionExtensions.cs:53, plus Motion.cs:68 (93
+     Creature_Missile.cs:103, PositionExtensions.cs:53, plus Motion.cs:68 (93
      `new Motion(` sites, per movement broadcast), SpellProjectileInfo.cs:26,
-     29 per projectile, Creature_Death.cs:441 per corpse item.
+     29 per projectile, Creature_Death.cs:442 per corpse item.
 
      FIX: assign the eight fields directly in the copy constructor; change
      SetPosition to `out bool blockUpdate, out bool cellUpdate`.
@@ -253,12 +253,12 @@ SECTION D - CHEAP WINS IN THE COMBAT FAN-OUT
 Single-file, near-zero-risk edits that remove redundant lock acquisitions.
 (These live in ACE.Server but exist only because of E.1, so they belong here.)
 
-D.1  WorldObject_Properties.cs:1504 - VisualClothingPriority reads the
+D.1  WorldObject_Properties.cs:1505 - VisualClothingPriority reads the
      property, DISCARDS it, then reads it again.
-D.2  WorldObject_Properties.cs:1561-1591 - Workmanship reads ItemWorkmanship
+D.2  WorldObject_Properties.cs:1562-1592 - Workmanship reads ItemWorkmanship
      THREE TIMES and performs a SetProperty (write lock plus
      ChangesDetected = true) FROM INSIDE A GETTER.
-D.3  WorldObject_Weapon.cs:120-121 - WeaponDefense read three times across two
+D.3  WorldObject_Weapon.cs:121-122 - WeaponDefense read three times across two
      lines, on every attack.
 D.4  Monster_Awareness.cs:266, 270 - this.Tolerance re-read twice inside the
      per-creature target-selection loop.
@@ -281,11 +281,11 @@ E.3  HasFlag - 459 uses, 377 in physics and combat. JIT-intrinsified since
 E.4  Position.DistanceTo / SquaredDistanceTo / Distance2D / GetOffset - about
      52 call sites, and physics uses its own ACE.Server/Physics/Common/Position.
      The sqrt-free variants already exist and are used correctly for range
-     checks (WorldObject_Networking.cs:1366, 1405).
+     checks (WorldObject_Networking.cs:1367, 1406).
 E.5  ACEPosition() (PositionExtensions.cs:330) - CORRECTION to an earlier
      assumption: this is EVENT-DRIVEN (deaths, projectiles, magic), not
      per-frame. The Physics<->Entity conversion is NOT a per-frame allocator.
-     The hot sync paths (WorldObject_Tick.cs:324-326,
+     The hot sync paths (WorldObject_Tick.cs:325-327,
      Monster_Navigation.cs:310-312, WorldObject.cs:228-239) already
      deliberately bypass the allocating Pos setter and assign PositionX/Y/Z
      individually.
@@ -306,8 +306,8 @@ SECTION F - RECOMMENDED ORDER
   1. MEASURE FIRST. Given how concentrated the cost is in the two
      equipped-item loops, the right first measurement is a PLAYER-VERSUS-PLAYER
      MELEE EXCHANGE, not a general landblock trace. That scenario exercises the
-     ~150-220 acquisition path and both Creature_Combat.cs:1294 and
-     Monster_Melee.cs:417 simultaneously, on both sides.
+     ~150-220 acquisition path and both Creature_Combat.cs:1295 and
+     Monster_Melee.cs:418 simultaneously, on both sides.
   2. The five cheap wins in Section D, plus E.4, E.7, E.8 and E.11 -
      near-zero-risk, mostly one-liners, worth doing regardless of profiling.
      E.8 also fixes a correctness bug.

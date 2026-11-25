@@ -8,14 +8,14 @@ Companion document: bugs-factories.txt
 UNPROFILED. All costs are reasoned from reading the code, not measured.
 
 CALL PATH (established by reading)
-  Creature_Death.GenerateTreasure (WorldObjects/Creature_Death.cs:654)
+  Creature_Death.GenerateTreasure (WorldObjects/Creature_Death.cs:655)
     -> LootGenerationFactory.CreateRandomLootObjects
       -> three loops (Item / MagicItem / Mundane)
         -> RollWcid -> CreateAndMutateWcid -> per-type Mutate*
           -> AssignMagic -> AssignSpells -> MutateValue
 
   Runs ON THE LANDBLOCK WORKER THREAD inside the parallel tick, roughly 3-10
-  items per corpse. Also reached from Creature_Equipment.cs:792 (per spawn) and
+  items per corpse. Also reached from Creature_Equipment.cs:793 (per spawn) and
   Corpse.cs:331 (rare roll).
 
 ANSWER TO THE PRIMARY QUESTION: THE DATA TABLES ARE CORRECTLY STATIC.
@@ -34,7 +34,7 @@ SECTION A - REDUNDANT WORK PER GENERATED ITEM
 ================================================================================
 
 G.1  The same spellbook is re-walked with FRESH Spell objects in 3-4 passes
-     LootGenerationFactory_Magic.cs:56 (GetMaxBaseMana), :150, :160
+     LootGenerationFactory_Magic.cs:57 (GetMaxBaseMana), :150, :160
      (GetMaxSpellPower); LootGenerationFactory.cs:740, 748 (MutateValue_Spells);
      plus _Magic.cs:29 and _Caster.cs:~127
 
@@ -54,7 +54,7 @@ G.1  The same spellbook is re-walked with FRESH Spell objects in 3-4 passes
      exists in-tree and currently has exactly one caller.
 
 G.2  RollEnchantmentDifficulty does OrderBy().ToList() per magic item
-     LootGenerationFactory_Spells.cs:231-239
+     LootGenerationFactory_Spells.cs:232-240
 
      To compute "sum of levels excluding the maximum" it allocates a
      List<Spell>, N Spell objects, an OrderedEnumerable plus its sort buffer,

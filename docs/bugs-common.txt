@@ -66,7 +66,7 @@ C.1  DerethDateTime date decoding loops once per in-game hour since PY 10
      66,000 iterations per year.
 
      CALLERS: Timers.cs:39 (CurrentInGameTime) ->
-     WorldObject_Generators.cs:369 CheckTimeOfDayStatus(), called per Day/Night
+     WorldObject_Generators.cs:370 CheckTimeOfDayStatus(), called per Day/Night
      generator per heartbeat ON THE LANDBLOCK TICK THREAD. Also AddTicks,
      SubtractTicks, SubtractMonths, SubtractDays, SubtractHours.
 
@@ -172,7 +172,7 @@ C.6  Real-world to Derethian year conversion double-counts a year for Jan-Mar
      months forward on 1 January and roughly 11 months BACKWARD on 1 April -
      lore time is non-monotonic across those boundaries.
 
-     CALLERS: Player_House.cs:158 (GiveDeed - the value is PERSISTED in
+     CALLERS: Player_House.cs:159 (GiveDeed - the value is PERSISTED in
      deed.LongDesc), Timers.CurrentLoreTime.
 
      FIX: subtract 1 from convertedYear when Month <= 3.
@@ -260,7 +260,7 @@ I.2  ThreadSafeRandom.Next(int,int) is genuinely INCLUSIVE of max as
      NOTE the contrast with the FLOAT overload, which is [min,max) - see
      bugs-entity-server.txt N.1.
 I.3  ThreadSafeRandom.Next(0, 1) at
-     Factories/LootGenerationFactory_Clothing.cs:262 - deliberately a 0-or-1
+     Factories/LootGenerationFactory_Clothing.cs:263 - deliberately a 0-or-1
      coin flip, not a mis-resolved overload.
 I.4  ISAAC.Next() offset walk (ISAAC.cs:38-45) - emits exactly 256 values per
      scramble (255 down to 0, rescramble, 255). No skipped or duplicated word.

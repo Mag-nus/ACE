@@ -67,7 +67,7 @@ E.0c [MEDIUM] Missing null check on Adjacents, inconsistent with the whole file
      happens.
 
 E.0d [HIGH] ActionQueue has no exception isolation
-     Actions/ActionQueue.cs:20-58
+     Actions/ActionQueue.cs:22-60
 
      Neither ActionQueue.RunActions() - which calls result.Act() on every
      queued action - nor DelayManager.RunActions, nor any caller up through
@@ -226,7 +226,7 @@ E.11 HouseList: KeyNotFoundException plus an unsynchronised static cache
      landblock) throws.
 
      Separately, AddToAvailable/RemoveFromAvailable are called from player
-     house purchase and abandon on landblock threads (Player_House.cs:517, 665)
+     house purchase and abandon on landblock threads (Player_House.cs:518, 666)
      while GetAvailableLocations:97 LINQ-enumerates the same lists with no
      lock - "Collection was modified", plus a double DB rebuild race at line 95.
 
@@ -261,7 +261,7 @@ E.13 MinDamage is not clamped, so damage can go negative
      FAILURE: Variance * VarianceMod > 1 - reachable via a stacked variance
      enchantment (lines 50, 58) - makes MinDamage negative, so
      DamageEvent.cs:432 can roll a negative BaseDamage and therefore negative
-     Damage. Player_Combat.cs:161 then does (uint)Math.Round(damageEvent.Damage),
+     Damage. Player_Combat.cs:162 then does (uint)Math.Round(damageEvent.Damage),
      which wraps to ~4e9 in the client notification - the player sees a
      four-billion damage hit.
 

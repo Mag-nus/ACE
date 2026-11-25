@@ -30,18 +30,18 @@ W.0b [MEDIUM] Burden check bypass for direct side-pack placement
 
 W.0c [LOW] TryConsumeFromInventoryWithNetworking can under-consume and still
      report success
-     Player_Inventory.cs:150-167
+     Player_Inventory.cs:151-168
 
      The loop sums removeNum across matching stacks and breaks once
      leftReq <= 0, but falls through to an UNCONDITIONAL `return true` even if
      it exhausted all matching stacks before satisfying `amount`.
 
-     Currently only reachable via Player_Commerce.cs:350 (alt-currency vendor
+     Currently only reachable via Player_Commerce.cs:351 (alt-currency vendor
      spend, pre-validated upstream), so not exploitable today - but any future
      caller trusting `true` to mean "the full amount was spent" will be wrong.
 
 W.0d [LOW] Equipped-item give-back leaves the receiving player bugged
-     Player_Inventory.cs:3360
+     Player_Inventory.cs:3361
 
      Developers document this inline: "Player A equips weapon, gives weapon
      (while equipped) to player B. Player B then gives weapon back to A. Player
@@ -51,7 +51,7 @@ W.0d [LOW] Equipped-item give-back leaves the receiving player bugged
      client-desync bug in the give path.
 
 W.0e [INFO] Overly conservative trade burden check (not exploitable)
-     Player_Trade.cs:369-390
+     Player_Trade.cs:370-391
 
      VerifyTrade_Inventory evaluates CanAddToInventory(partner_items) against
      each player's PRE-ESCROW encumbrance, double-counting weight that is about
@@ -71,7 +71,7 @@ SECTION A - HIGH SEVERITY (duplication / loss)
 
 W.2  Duplicate GUIDs in a client-supplied list are counted multiple times
      (house purchase)
-     Player_House.cs:732-782, 336-346; Network/Structure/HousePayment.cs:102-134
+     Player_House.cs:733-783, 337-347; Network/Structure/HousePayment.cs:102-134
 
      VerifyPurchase builds sentItems by calling GetInventoryItem per id with NO
      DE-DUPLICATION - even though HasItems documents "requires: no duplicate
@@ -92,7 +92,7 @@ SECTION B - MEDIUM SEVERITY
 ================================================================================
 
 W.3  Failed removals are still processed by the vendor (DUPLICATION)
-     Player_Commerce.cs:200-210
+     Player_Commerce.cs:201-211
 
      sellList is passed whole to vendor.ProcessItemsForPurchase even for
      entries where both TryRemoveFromInventoryWithNetworking and
@@ -106,7 +106,7 @@ W.3  Failed removals are still processed by the vendor (DUPLICATION)
      FIX: build a soldItems list of successfully removed items and pass that.
 
 W.4  Partial-stack sells sell the entire stack (ITEM LOSS)
-     Player_Commerce.cs:256-266, 200-206
+     Player_Commerce.cs:257-267, 201-207
 
      sellItem.Amount is validated (Amount > StackSize is rejected) and then
      NEVER USED: the payout uses GetBuyCost(item) - the full stack Value - and
@@ -118,7 +118,7 @@ W.4  Partial-stack sells sell the entire stack (ITEM LOSS)
      removal and payout.
 
 W.5  Salvage consumes the source, then discards the result of bag creation
-     Player_Crafting.cs:177-182
+     Player_Crafting.cs:178-183
 
      TryConsumeFromInventoryWithNetworking(item) destroys the source items;
      the later TryCreateInInventoryWithNetworking(salvageBag) return value is
@@ -132,7 +132,7 @@ W.5  Salvage consumes the source, then discards the result of bag creation
      it explicitly.
 
 W.6  Stack merge destroys the source before adjusting the target, no rollback
-     Player_Inventory.cs:3125-3128 (full-consume branch; partial-branch mirror at 3166)
+     Player_Inventory.cs:3126-3129 (full-consume branch; partial-branch mirror at 3166)
 
      In the full-consume branch, sourceStack is removed and Destroy()ed, THEN
      AdjustStack(targetStack, amount, ...) runs. If that returns false - for
@@ -145,7 +145,7 @@ W.6  Stack merge destroys the source before adjusting the target, no rollback
      FIX: adjust the target first, or restore the source on failure.
 
 W.7  IOU turn-in has no space pre-check and ignores the removal result
-     Player_Inventory.cs:3546-3547 (HandleIOUTurnIn)
+     Player_Inventory.cs:3547-3548 (HandleIOUTurnIn)
 
      RemoveItemForGive(iouToTurnIn, ..., destroy: true) result is discarded,
      and TryCreateInInventoryWithNetworking(item) result only gates chat
@@ -175,7 +175,7 @@ W.8  Any close marks a corpse looted, bypassing rare and PK protection
      IsLooted, and check rare/PK before the IsLooted shortcut.
 
 W.9  Rent payment moves items with no rollback
-     Player_House.cs:392-403, 452-457
+     Player_House.cs:393-404, 453-458
 
      TryMoveItemForRent removes the item from the player and then calls
      slumlord.TryAddToInventory(item); on failure the item belongs to NOBODY -
@@ -223,7 +223,7 @@ W.11 A running success flag is used as a per-item guard
 
 
 W.13 Stack decremented before the replacement object is created
-     Player_Inventory.cs:2555-2563 (SplitTo3D); RemoveItemForGive split branch
+     Player_Inventory.cs:2556-2564 (SplitTo3D); RemoveItemForGive split branch
 
      In HandleActionStackableSplitTo3D the source is adjusted at 2555; if
      WorldObjectFactory.CreateNewWorldObject returns null at 2563 the method
@@ -235,7 +235,7 @@ W.13 Stack decremented before the replacement object is created
      does), or restore on null.
 
 W.14 Corpse loot insertion results discarded
-     Creature_Death.cs:658, 681, 703, 725
+     Creature_Death.cs:659, 682, 704, 726
 
      corpse.TryAddToInventory(wo) is unchecked in all four treasure paths. If
      the corpse's 120-item / 10-container capacity is exceeded - a large
@@ -245,7 +245,7 @@ W.14 Corpse loot insertion results discarded
      FIX: check the result and Destroy() or place on the landblock.
 
 W.15  DeleteObject destroys the object even when removal from its owner failed
-     WorldObject_Decay.cs:151-168
+     WorldObject_Decay.cs:152-169
 
      DeleteObject detaches the object from its Wielder or rootOwner via
      TryDequipObjectWithNetworking / TryRemoveFromInventoryWithNetworking /
@@ -271,22 +271,22 @@ V.1  Chest.cs:203-206 `public override void Close(Player player) { Close(player)
      overridden base declaration, so the call binds to
      Close(Player, bool tryReset = true). Verified with a minimal dotnet repro.
      No stack overflow.
-V.2  Creature_Death.cs:35, 97 - double-death and double-loot are guarded by
+V.2  Creature_Death.cs:36, 98 - double-death and double-loot are guarded by
      onDeathEntered / dieEntered.
 V.3  Container.cs:923-956 MergeAllStackables - container EncumbranceVal and
      Value net out correctly, because the emptied source's own values are zero
      at removal time.
-V.4  Player_Magic.cs:81, 1015 - casterItem is always resolved from the player's
-     own inventory or equipment in Player_Use.cs:41. No cross-player item
+V.4  Player_Magic.cs:82, 1016 - casterItem is always resolved from the player's
+     own inventory or equipment in Player_Use.cs:42. No cross-player item
      casting.
 V.5  AugmentationDevice.cs:130 ignoring the consume result looked like an
      aug-gem duplication, but Confirmation.cs:97 re-resolves the gem in
      MyInventory before ActOnUse(player, true).
-V.6  Player_Inventory.cs:2447-2464 - the split adds the new stack before
+V.6  Player_Inventory.cs:2448-2465 - the split adds the new stack before
      decrementing the source, but StackSize <= amount is re-validated
      immediately before at 2383, so AdjustStack cannot fail there.
-V.7  Player_Commerce.cs:336-362 SpendCurrency returning null into AddRange
-     (Player_Death.cs:516) is unreachable - CoinValue is pre-checked and
+V.7  Player_Commerce.cs:337-363 SpendCurrency returning null into AddRange
+     (Player_Death.cs:517) is unreachable - CoinValue is pre-checked and
      numCoinsDropped > 0 is guarded.
 V.8  Corpse.cs:189-198 - decay timer and fellowship loot-share checks behave as
      documented.
@@ -304,7 +304,7 @@ SECTION E - SUGGESTED PRIORITY
   5. W.4, W.5, W.7, W.9 - the remaining non-atomic transfer paths. Fix them as
           one work item: every one of them is "removed from source, add to
           destination unchecked, no rollback", and the correct pattern already
-          exists in-tree at Player_Inventory.cs:3349-3376.
+          exists in-tree at Player_Inventory.cs:3350-3377.
   6. W.6, W.13 - operation ordering in stack split/merge.
   7. W.10, W.11, W.14, W.15 as follow-up.
 

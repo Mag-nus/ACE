@@ -26,7 +26,7 @@ SECTION A - PER-FRAME ITERATION AND LIST MAINTENANCE
 ================================================================================
 
 E.1  TickPhysics walks EVERY object in the landblock, every frame
-     Landblock.cs:409-416 -> WorldObjects/WorldObject_Tick.cs:229
+     Landblock.cs:409-416 -> WorldObjects/WorldObject_Tick.cs:230
 
      30-60Hz per landblock. It fully iterates worldObjects - thousands of
      static items in a town block - just to early-out on
@@ -61,7 +61,7 @@ SECTION B - BROADCAST AND ALLOCATION
 
 E.3  Every broadcast allocates a fresh recipient list
      Physics/Common/ObjectMaint.cs:717, called from
-     WorldObject_Networking.cs:1043, 1377, 1414/1419/1446 and PlayersInRange
+     WorldObject_Networking.cs:1044, 1378, 1415/1419/1446 and PlayersInRange
 
      GetKnownPlayersValuesAsPlayer() does
      `Values.Select(...).OfType<Player>().ToList()` under a rwLock, allocating
@@ -125,20 +125,20 @@ E.8  PropertyManager getters are a triple dictionary lookup
      Managers/PropertyManager.cs:102-103
      `ContainsKey(key)`, then `Cached[key].Item`, then `Cached[key].Description`
      - three string hashes per call on a ConcurrentDictionary. Hot callers on
-     tick paths include Player_Tick.cs:91 (per house-owning player per tick)
+     tick paths include Player_Tick.cs:92 (per house-owning player per tick)
      and Entity/GeneratorProfile.cs:330.
      FIX: one TryGetValue removes two thirds of the cost for free; hoist out of
      loops into locals.
      (Also reported in perf-managers.txt P.10.)
 
 E.9  Generator update re-evaluates LINQ properties inside a loop
-     WorldObjects/WorldObject_Generators.cs:75, 99, 104, 320
+     WorldObjects/WorldObject_Generators.cs:76, 100, 105, 321
 
      `CurrentCreate => GeneratorProfiles.Select(...).Sum()` plus two Any()
-     calls, all consumed by GenStopSelectProfileConditions (line 320) - which
+     calls, all consumed by GenStopSelectProfileConditions (line 321) - which
      evaluates CurrentCreate UP TO THREE TIMES plus both Any()s PER GET. And it
-     is the condition of a while loop bounded at 1000 iterations (line 666),
-     re-checked inside SelectAProfile's per-profile loop (line 175).
+     is the condition of a while loop bounded at 1000 iterations (line 667),
+     re-checked inside SelectAProfile's per-profile loop (line 176).
 
      Runs every 5 seconds per generator, and generators are numerous.
 
@@ -147,7 +147,7 @@ E.9  Generator update re-evaluates LINQ properties inside a loop
 
 E.10 GetFellowshipMembers allocates a Dictionary plus a HashSet per call
      Fellowship.cs:739
-     Called from Player_Tick.cs:87 (OnVitalUpdate - flag-gated, but fires on
+     Called from Player_Tick.cs:88 (OnVitalUpdate - flag-gated, but fires on
      every vital change), TWICE per SplitXp (line 507, and again inside
      GetMemberSharePercent at line 607), and THREE TIMES per SplitLuminance
      (line 584, line 592 via WithinRange, plus an Intersect allocating another

@@ -436,7 +436,7 @@ G.1  [VERIFIED EMPIRICALLY] NaN accepted as a projectile impact time -
      TRIGGER: a close, fast target with vertical velocity - a strafing or
      jumping player at roughly 5 metres.
 
-     FAILURE: the live caller WorldObjects/Creature_Missile.cs:328 checks only
+     FAILURE: the live caller WorldObjects/Creature_Missile.cs:329 checks only
      `numSolutions > 0` and returns the NaN vector as the projectile velocity.
      The projectile's position becomes NaN permanently; it never registers a
      collision, never expires, and leaks as a live physics object for the rest
@@ -536,7 +536,7 @@ G.9  set_vector_heading feeds pitch into the yaw slot
      Animation/AFrame.cs:214
      `CreateFromYawPitchRoll(xRot, 0, zRot)` rotates about Y, not X; the
      intended frame is rotZ * rotX. Any pitched projectile heading
-     (WorldObject_Magic.cs:1807, PhysicsObj.cs:1681) is silently flattened and
+     (WorldObject_Magic.cs:1808, PhysicsObj.cs:1681) is silently flattened and
      replaced by a roll - projectiles fired up or down travel level.
      `Math.Asin(normal.Z)` is also UNCLAMPED: 1.0000001f yields NaN which
      propagates into Orientation, after which every epsilon test on that frame

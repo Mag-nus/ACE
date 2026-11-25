@@ -110,12 +110,12 @@ F.3  qualityMod acts as a cliff rather than a scale
      does - instead of thresholding cumulative totals.
 
 F.4  Missing null check on GetSpellLevels aborts the whole corpse's loot
-     LootGenerationFactory_Spells.cs:103, 289
+     LootGenerationFactory_Spells.cs:104, 290
 
      SpellLevelProgression.GetSpellLevels returns null for unregistered spells.
-     Line 103 does `spellLevels.Count != 8` and line 289
+     Line 104 does `spellLevels.Count != 8` and line 290
      `cantripLevels.Count != 4` with no null guard - while every sibling call
-     site guards correctly (LootGenerationFactory_Caster.cs:111, _Gem.cs:83,
+     site guards correctly (LootGenerationFactory_Caster.cs:112, _Gem.cs:83,
      _Spells.cs:371).
 
      FAILURE: adding a spell to ArmorSpells or SpellSelectionTable without
@@ -129,7 +129,7 @@ F.5  Inconsistent Tier - 1 bounds checking
      LootGenerationFactory.cs:784 plus 8 further sites
 
      UNCLAMPED: coinRanges[profile.Tier - 1]; QualityChance.cs:188;
-     LootGenerationFactory_Spells.cs:199; ArmorTypeChance.cs:125;
+     LootGenerationFactory_Spells.cs:200; ArmorTypeChance.cs:125;
      SpellLevelChance.cs:92; CantripChance.cs:86, 148; ScrollLevelChance.cs:60;
      AetheriaChance.cs:58 (Tier - 5).
      CLAMPED in the same codebase: LootGenerationFactory.cs:436, 716;
@@ -174,7 +174,7 @@ SECTION C - LOW SEVERITY
 ================================================================================
 
 F.8  Nullable comparison silently skips the legendary-cantrip level requirement
-     LootGenerationFactory_Spells.cs:307, 310
+     LootGenerationFactory_Spells.cs:308, 311
      `wo.WieldDifficulty < 180` on an int?: when WieldDifficulty is null the
      comparison is FALSE in C#, so an item with WieldRequirements == Level but
      no difficulty set keeps a legendary cantrip with no level gate.
@@ -183,7 +183,7 @@ F.8  Nullable comparison silently skips the legendary-cantrip level requirement
      FIX: `(wo.WieldDifficulty ?? 0) < 180`.
 
 F.9  Missing `> 0` guard clobbers cloak MaterialType
-     LootGenerationFactory_Clothing.cs:395
+     LootGenerationFactory_Clothing.cs:396
      `wo.MaterialType = GetMaterialType(wo, profile.Tier)` runs
      unconditionally, whereas MutateArmor:48, MutateCaster:56,
      MutateMeleeWeapon:58 and MutateMissileWeapon:55 all guard
@@ -194,7 +194,7 @@ F.9  Missing `> 0` guard clobbers cloak MaterialType
      MaterialType overwritten with 0, breaking salvage and appraisal.
 
 F.10 Unbounded retry loop
-     LootGenerationFactory_Scroll.cs:20-25
+     LootGenerationFactory_Scroll.cs:21-26
      `do { ... } while (spellId == SpellId.Undef)` has no attempt cap.
      ScrollSpells.AddSpells (ScrollSpells.cs:390-401) continues on a missing or
      malformed progression, leaving that pre-allocated row all-Undef. If a data
@@ -235,7 +235,7 @@ N.2  TryRollAetheria (LootGenerationFactory.cs:407-415): `Next(0, 1/rate)` with
      a `< 0.02` test correctly yields 2% x rate, saturating at 100% for
      rate >= 50. Correct, just unusually formulated.
 N.3  MutateCloak setting wo.Workmanship (float) rather than ItemWorkmanship
-     (int) - the Workmanship setter (WorldObject_Properties.cs:1591) delegates
+     (int) - the Workmanship setter (WorldObject_Properties.cs:1592) delegates
      to ItemWorkmanship, so they are equivalent.
 N.4  TryMutateGearRating:262 Next(0, 1); OlthoiPlay slag Next(1, slagChance);
      TryCreateRare Next(1, t1_chance); GetDefaultMaterialType:482 Next(0, 4)
@@ -257,7 +257,7 @@ N.10 RollWeaponSpeedMod (_Weapon.cs:27-42): max quality 12 gives 0.675-0.725,
      matching the documented range.
 N.11 MutateValue_Generic:716 correctly clamps tier; TreasureProfile_*.Roll
      correctly range-check their profile index.
-N.12 LootGenerationFactory_Rare.cs:60-83 sequential cascading rarity checks are
+N.12 LootGenerationFactory_Rare.cs:61-84 sequential cascading rarity checks are
      intentional and match the documented wiki odds.
 N.13 CloakChance.cs:142 `Next(0, surgeSpells.Count)` without -1 is intentional:
      the extra value is a reserved "no proc" sentinel, explicitly checked at
@@ -303,7 +303,7 @@ VERIFICATION FOR THIS SECTION
 
 
 G.0  *** SEVERITY ESCALATION AFFECTING EVERY FINDING IN THIS DOCUMENT ***
-     LootGenerationFactory.cs:41-105, Creature_Death.cs:654
+     LootGenerationFactory.cs:41-105, Creature_Death.cs:655
      [VERIFIED DIRECTLY]
 
      CreateRandomLootObjects wraps all three category loops in:
@@ -386,7 +386,7 @@ G.2  [VERIFIED DIRECTLY] Gems and dinnerware NEVER have their value mutated
 
      This is precisely why the equivalent check is COMMENTED OUT for
      weapons/armor/jewelry with `// fixme: data`
-     (LootGenerationFactory_Clothing.cs:102, _Melee.cs:96, _Jewelry.cs:72) - the same
+     (LootGenerationFactory_Clothing.cs:103, _Melee.cs:96, _Jewelry.cs:72) - the same
      gap was already known there and worked around.
 
      FIX: comment out these two guards for consistency with the sibling
@@ -553,7 +553,7 @@ G.13 Item count from the world DB is unbounded
 
 G.14 Wielded-treasure stack fields unvalidated - and an int overflow that
      produces NEGATIVE-VALUE items
-     WorldObject_Equipment.cs:169-178, WorldObject_Properties.cs:3131-3141
+     WorldObject_Equipment.cs:169-178, WorldObject_Properties.cs:3132-3142
      With a negative StackSizeVariance, minStack exceeds maxStack and
      Random.Next throws ArgumentOutOfRangeException DURING MONSTER SPAWN.
      Separately, SetStackSize never clamps to MaxStackSize and computes
@@ -565,7 +565,7 @@ G.14 Wielded-treasure stack fields unvalidated - and an int overflow that
      in long and saturate.
 
 G.15 Script-driven property writes are unbounded and untyped at the sink
-     Entity/Mutations/EffectArgument.cs:241-274, ToInt at :120
+     Entity/Mutations/EffectArgument.cs:242-275, ToInt at :120
      StoreValue writes whatever arrives: `(uint)result.ToInt()` for DataIDs
      turns a negative into ~4.29e9 (an invalid ClothingBase/Icon DID sent to
      clients); `(int)DoubleVal` casts of an out-of-range or NaN double yield

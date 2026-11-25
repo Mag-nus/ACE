@@ -27,7 +27,7 @@ THE DOMINANT COST IN THIS SUBSYSTEM
   EquippedObjects or Inventory, where each item tested costs one or more
   GetProperty calls - and every GetProperty takes a
   ReaderWriterLockSlim.EnterReadLock (ACE.Entity/Models/BiotaExtensions.cs:18-90,
-  WorldObject_Properties.cs:42-90).
+  WorldObject_Properties.cs:43-91).
 
   The lock-per-property-read cost is analysed in perf-entity-shared.txt. This
   report is about how many times this subsystem pays it.
@@ -39,30 +39,30 @@ SECTION A - EQUIPMENT SCANS
 
 O.1  GetEquippedWeapon family: full scan plus locked reads, per monster tick and
      several times per swing
-     Creature_Equipment.cs:113-195
+     Creature_Equipment.cs:114-196
 
      Every getter is `EquippedObjects.Values.FirstOrDefault(...)`, and each item
-     tested costs 1-3 GetProperty calls. Line 126 reads e.CurrentWieldedLocation
+     tested costs 1-3 GetProperty calls. Line 127 reads e.CurrentWieldedLocation
      TWICE PER ITEM. GetEquippedWeapon then falls through to a SECOND full scan
      for missile.
 
      Call path: Monster_Tick.cs:93 (5Hz per awake monster),
-     Player_Combat.cs:67, 110, 224; Creature_Combat.cs:437, 1163;
-     Monster_Melee.cs:62; DamageEvent - roughly 5-10 scans per swing.
+     Player_Combat.cs:68, 111, 225; Creature_Combat.cs:438, 1164;
+     Monster_Melee.cs:63; DamageEvent - roughly 5-10 scans per swing.
 
      FIX: cache weapon/shield/ammo references, invalidated on equip and dequip.
      The pattern already exists in this very file - equippedItemsRatingCache at
-     Creature_Equipment.cs:214. At minimum, hoist the property to a local inside
+     Creature_Equipment.cs:215. At minimum, hoist the property to a local inside
      the lambda.
 
 O.2  Per-attack equipment rescans for imbues and cloak
-     Creature_Combat.cs:1292-1294, 1301
+     Creature_Combat.cs:1293-1295, 1302
 
      GetDefenseImbues is `EquippedObjects.Values.Count(closure)` with a locked
      ImbuedEffect read per item, called from GetEffectiveDefenseSkill on EVERY
      INCOMING ATTACK. EquippedCloak is another full scan with a locked
-     ValidLocations read per item, hit at Player_Combat.cs:496,
-     SpellProjectile.cs:767, WorldObject_Magic.cs:497, 751.
+     ValidLocations read per item, hit at Player_Combat.cs:497,
+     SpellProjectile.cs:767, WorldObject_Magic.cs:498, 752.
 
      FIX: fold both into the equip-time cache from O.1.
 
@@ -71,7 +71,7 @@ SECTION B - PER-HIT AND PER-READ WASTE
 ================================================================================
 
 O.3  Enum.Parse plus string concatenation on every landed hit
-     Player_Combat.cs:175, 546; Monster_Combat.cs:324, 411
+     Player_Combat.cs:176, 547; Monster_Combat.cs:325, 412
 
          (PlayScript)Enum.Parse(typeof(PlayScript),
                                 "Splatter" + GetSplatterHeight() + GetSplatterDir(target))
@@ -99,15 +99,15 @@ O.4  Skill and attribute Current fully recomputed on every read
 
      FIX: memoise Current with a dirty flag set by enchantment and attribute
      changes; at minimum hoist to locals in GetEffectiveDefenseSkill
-     (Creature_Combat.cs:482-501).
+     (Creature_Combat.cs:483-502).
 
 O.5  Expensive properties evaluated inside loops
      Creature_Networking.cs:251-254 references wo.CSetup THREE TIMES per
-     iteration over ~50 parts. CSetup (WorldObject_Properties.cs:948) is a
+     iteration over ~50 parts. CSetup (WorldObject_Properties.cs:949) is a
      locked SetupTableId read plus a DatManager.PortalDat.ReadFromDat
      concurrent-dictionary lookup. Line 230 in the same file does it correctly
      with a local - so the fix pattern is adjacent.
-     Same shape: WeenieClassName (WorldObject_Properties.cs:1162-1173) calls
+     Same shape: WeenieClassName (WorldObject_Properties.cs:1163-1174) calls
      GetCachedWeenie twice.
      Per appearance recalculation (equip change, object create), not per tick.
 
@@ -157,7 +157,7 @@ O.7  Per-heartbeat list and LINQ allocation in every container and creature
      FIX: lazily allocate expireItems; plain foreach with continue.
 
 O.8  CheckMonsters allocates a creature list on every player movement packet
-     Player_Monster.cs:17-31, called from Player_Tick.cs:495
+     Player_Monster.cs:17-31, called from Player_Tick.cs:496
      (UpdatePlayerPosition) and Player_Location.cs:762
      ObjectMaint.GetVisibleObjectsValuesOfTypeCreature()
      (Physics/Common/ObjectMaint.cs:321-332) does
@@ -177,7 +177,7 @@ O.9  EmoteManager.GetEmoteSet LINQ chain per idle creature per heartbeat
      sides.)
 
 O.10 Inventory full re-scan per mutation
-     Player_Commerce.cs:320-334 (UpdateCoinValue) ->
+     Player_Commerce.cs:321-335 (UpdateCoinValue) ->
      Container.GetInventoryItemsOfTypeWeenieType (Container.cs:293-308)
      walks the main pack (Where + OrderBy + ToList) and then every side
      container recursively - and it is invoked from SIXTEEN sites in
@@ -189,14 +189,12 @@ O.10 Inventory full re-scan per mutation
      FIX: maintain CoinValue incrementally, the way EncumbranceVal already is.
 
 O.11 Minor and low-hanging
-     Player_Tick.cs:91 calls PropertyManager.GetBool("house_rent_enabled")
+     Player_Tick.cs:92 calls PropertyManager.GetBool("house_rent_enabled")
      (three string-keyed ConcurrentDictionary lookups,
      Managers/PropertyManager.cs:97-115) EVERY TICK for house owners - test
      houseRentWarnTimestamp first.
-     Creature_Death.cs:734, 737 build interpolated strings for log.Debug with no
-     IsDebugEnabled guard, per loot item.
-     WorldObject_Decay.cs:50-101 reads TimeToRot 5-6 times (each a lock) per
-     decayable object per landblock heartbeat, and IsDecayable() (lines 28-46)
+     WorldObject_Decay.cs:51-102 reads TimeToRot 5-6 times (each a lock) per
+     decayable object per landblock heartbeat, and IsDecayable() (lines 29-47)
      adds three more locked reads for EVERY object in every landblock.
 
 
@@ -209,7 +207,7 @@ recipient. perf-network.txt P.1 found that object creation DOES. I read both
 call sites; they are different paths and both reports are accurate.
 
   SHARED (correct, no amplification):
-    WorldObject_Networking.cs:1377
+    WorldObject_Networking.cs:1378
       `EnqueueBroadcast(GameMessage msg, float range, ...)` takes ONE message
       and enqueues that SAME INSTANCE inside the recipient foreach. Confirmed.
       This covers ongoing position, motion and effect broadcasts.
@@ -252,10 +250,10 @@ F.6  Container.SortWorldObjectsIntoInventory (Container.cs:156-197) - inventory
      load path, once per container load.
 F.7  Player_Skills.cs XP-table walks and Player_Character.cs save paths - per
      level-up and per periodic save.
-F.8  WorldObject.UpdateObjectPhysics (WorldObject_Tick.cs:229-403) - its
+F.8  WorldObject.UpdateObjectPhysics (WorldObject_Tick.cs:230-404) - its
      stopwatch instrumentation sits AFTER the early-outs, and
      ServerPerformanceMonitor.AddToCumulativeEvent is guarded by IsRunning.
-     Only Player.UpdateObjectPhysics (Player_Tick.cs:293) pays it
+     Only Player.UpdateObjectPhysics (Player_Tick.cs:294) pays it
      unconditionally.
      (Contrast perf-managers.txt P.3, where the Landblock-level instrumentation
      is NOT guarded at the call site. The two are genuinely different.)
@@ -303,7 +301,7 @@ FREQUENCIES VERIFIED BY THIS PASS (from Landblock.cs dispatch)
 --- P: HIGH IMPACT ---
 
 P.1  Every projectile allocates a full Biota plus a manager set
-     WorldObject_Magic.cs:1775, Creature_Missile.cs:93 ->
+     WorldObject_Magic.cs:1776, Creature_Missile.cs:94 ->
      WorldObject.cs:105-117, 247-259
 
      Each spell projectile or arrow calls
@@ -329,7 +327,7 @@ P.1  Every projectile allocates a full Biota plus a manager set
 
 P.2  GameMessageCreateObject is rebuilt per recipient, and creature ObjDesc is
      recomputed every time
-     Player_Tracking.cs:63, WorldObject_Networking.cs:57, 224,
+     Player_Tracking.cs:63, WorldObject_Networking.cs:58, 225,
      Creature_Networking.cs:35-243
 
      Each player gaining visibility of an object constructs its OWN message
@@ -389,7 +387,7 @@ P.2  GameMessageCreateObject is rebuilt per recipient, and creature ObjDesc is
      ~100 lock acquisitions per recipient inside it.
 
 P.3  Spell-component inventory walks, 10-16 times per cast
-     Player_Magic.cs:1228-1247 and 1204, via Container.cs:313-336
+     Player_Magic.cs:1229-1248 and 1204, via Container.cs:313-336
 
      HasComponentsForSpell calls GetNumInventoryItemsOfWCID once per required
      component (typically 4-8), and TryBurnComponents calls
@@ -405,10 +403,10 @@ P.3  Spell-component inventory walks, 10-16 times per cast
      TryAddToInventory / TryRemoveFromInventory.
 
 P.4  Per-recipient biota read inside every broadcast loop
-     WorldObject_Networking.cs:1392-1408, 1435-1442, 1456-1463, 1050-1059,
-     1355-1368
+     WorldObject_Networking.cs:1393-1409, 1436-1443, 1457-1464, 1051-1060,
+     1356-1369
 
-     `Visibility` (WorldObject_Properties.cs:2411 -> Biota.GetProperty under
+     `Visibility` (WorldObject_Properties.cs:2412 -> Biota.GetProperty under
      BiotaDatabaseLock, a ReaderWriterLockSlim) is read INSIDE the recipient
      loop. A broadcast to 40 known players therefore takes 40 lock acquisitions
      on the SENDER's biota. `isDungeon` is likewise loop-invariant.
@@ -425,7 +423,7 @@ P.4  Per-recipient biota read inside every broadcast loop
 
 P.5  [VERIFIED DIRECTLY] Monsters broadcast UpdatePosition UNCONDITIONALLY at
      5Hz, while players are throttled
-     Monster_Navigation.cs:255-263, versus Player_Tick.cs:404, 514
+     Monster_Navigation.cs:255-263, versus Player_Tick.cs:405, 515
 
      Monster_Navigation.UpdatePosition ends with:
 
@@ -433,12 +431,12 @@ P.5  [VERIFIED DIRECTLY] Monsters broadcast UpdatePosition UNCONDITIONALLY at
              SendUpdatePosition();
 
      with NO movement threshold and NO dedupe. Players, by contrast, are
-     explicitly throttled at Player_Tick.cs:514:
+     explicitly throttled at Player_Tick.cs:515:
 
          if (RequestedLocationBroadcast ||
              DateTime.UtcNow - LastUpdatePosition >= MoveToState_UpdatePosition_Threshold)
 
-     with MoveToState_UpdatePosition_Threshold = 1 second (line 404).
+     with MoveToState_UpdatePosition_Threshold = 1 second (line 405).
 
      So every moving or returning monster sends a full GameMessageUpdatePosition
      to all known players every 200ms - a 5x higher rate per monster than per
@@ -466,7 +464,7 @@ P.6  Idle faction mobs run a full visible-target scan at 5Hz
 
 P.7  Repeated recomputation inside a single monster tick
      Monster_Navigation.cs:203-224, 239-253, 385-404, 406-419;
-     Monster_Combat.cs:218-244
+     Monster_Combat.cs:219-245
      GetDistanceToTarget() - CylinderDistance plus four virtual
      GetRadius/GetHeight calls - is evaluated in Monster_Tick.cs:122, again in
      Movement(), again inside IsFacing(), and again in GetMovementParameters():
@@ -490,7 +488,7 @@ P.8  GetAttackTargets re-reads biota properties per candidate and allocates
      scratch lists; sort in place with List.Sort.
 
 P.9  ProjectileSpellType rebuilds an entire Spell object per cast
-     WorldObject_Magic.cs:1518 -> SpellProjectile.cs:129-167
+     WorldObject_Magic.cs:1519 -> SpellProjectile.cs:129-167
      GetProjectileSpellType(spell.Id) constructs a BRAND-NEW Spell - dat
      lookup, DatabaseManager.World.GetCachedSpell, new SpellFormula - even
      though the caller already holds the identical Spell, and then does
@@ -513,7 +511,7 @@ P.10 AlertFriendly scans ALL server objects in the landblock group
      and filter by AuralAwarenessRangeSq BEFORE the property reads.
 
 P.11 Unconditional Stopwatch instrumentation on the 60Hz object path
-     WorldObject_Tick.cs:291, 373; Player_Tick.cs:297, 324, 430, 528
+     WorldObject_Tick.cs:292, 374; Player_Tick.cs:298, 325, 431, 529
      Every object that runs a physics update, and every player, every tick,
      does stopwatch.Restart() plus Elapsed.TotalSeconds (two QPC calls) and
      ServerPerformanceMonitor.AddToCumulativeEvent - which, when cumulative
@@ -555,7 +553,7 @@ Player_Tracking.cs:223-273 HandlePreTeleportVisibility - teleport only, and
 disabled by default (teleport_visibility_fix < 1).
 Monster_Awareness.cs:335-371 CheckTargets_Inner - spawn-time only, once per
 monster.
-Player_Tick.cs:37-106 itself is lean at 60Hz - field checks plus a coalesced
+Player_Tick.cs:38-107 itself is lean at 60Hz - field checks plus a coalesced
 fellowship flag. The 7-second Age write and the house-rent PropertyManager
 lookup are not worth changing.
 
@@ -566,8 +564,8 @@ Monster_Navigation.cs, Monster_Missile.cs, Creature_Networking.cs,
 Creature_Tick.cs, Creature_Vitals.cs, WorldObject_Tick.cs, Player_Tracking.cs,
 Player_Networking.cs, Hotspot.cs; plus WorldObject_Networking.cs (all but ~440
 lines of flag/serialiser boilerplate), Vendor.cs:1-331,
-SpellProjectile.cs:1-460, WorldObject_Magic.cs:1501-1901,
-Monster_Melee.cs:1-401, Container.cs inventory/burden regions,
+SpellProjectile.cs:1-460, WorldObject_Magic.cs:1502-1902,
+Monster_Melee.cs:1-402, Container.cs inventory/burden regions,
 WorldObject.cs:1-261.
 CROSS-CHECKED OUTSIDE THE DIRECTORY: ObjectMaint.cs, Landblock.cs dispatch,
 WeenieConverter.cs, WorldObjectFactory.cs, SpellFormula.cs, Spell.cs,
@@ -631,9 +629,9 @@ Mixed - and the pattern of what IS cached shows the codebase already knows how.
            (WorldObject.cs:252)
     Equipped-item gear rating sums (GearDamage, GearCrit, GearMaxHealth, ...)
         -> INCREMENTAL dictionary maintained on equip/unequip, NO O(n) scan
-           (Creature_Equipment.cs:214-277). This is the correct pattern and it
+           (Creature_Equipment.cs:215-278). This is the correct pattern and it
            already exists in the file that needs it most.
-    Max spell level for armor cleaving -> lazy (WorldObject_Magic.cs:1951)
+    Max spell level for armor cleaving -> lazy (WorldObject_Magic.cs:1952)
 
   NOT CACHED
     Armor level totals across pieces  -> full LINQ rescan per attack
@@ -686,8 +684,8 @@ Q.2  CreatureSkill.Current costs ~8 Biota locks each, and is read 6-12x per
      GetProperty, so all ReaderWriterLockSlim. Plus AttributeFormula (1-2
      attribute recomputes) and Vitae (Q.1).
 
-     Callers per attack: GetEffectiveAttackSkill (Player_Combat.cs:225),
-     GetEffectiveDefenseSkill (Creature_Combat.cs:496), GetSneakAttackMod
+     Callers per attack: GetEffectiveAttackSkill (Player_Combat.cs:226),
+     GetEffectiveDefenseSkill (Creature_Combat.cs:497), GetSneakAttackMod
      (:772, 781, 802, 821 - up to four), GetRecklessnessMod (two), GetShieldMod
      (:704), GetCriticalStrikeMod / GetArmorRendingMod / GetRendingMod (.Base,
      three), FightDirty (two, on 25% of hits).
@@ -698,19 +696,19 @@ Q.2  CreatureSkill.Current costs ~8 Biota locks each, and is read 6-12x per
 
 Q.3  GetCurrentWeaponSkill is called 4-5x per attack, each time re-scanning
      equipped items
-     Player_Combat.cs:65-86
+     Player_Combat.cs:66-87
      Each call does a fresh equipped-item scan plus, when dual-wielding, two
-     `.Current` recomputes. Call sites: Player_Combat.cs:225, DamageEvent.cs:250,
-     Creature_Combat.cs:802 (via GetCurrentAttackSkill), GetRecklessnessMod,
-     Creature_Combat.cs:876.
+     `.Current` recomputes. Call sites: Player_Combat.cs:226, DamageEvent.cs:250,
+     Creature_Combat.cs:803 (via GetCurrentAttackSkill), GetRecklessnessMod,
+     Creature_Combat.cs:877.
      FIX: resolve the CreatureSkill once in DoCalculateDamage and thread it
      through - DamageEvent ALREADY has an attackSkill local at line 250 that the
      other four paths ignore.
 
 Q.4  Armor layers: LINQ Where().ToList() over all equipped items, per attack,
      with a Biota lock per candidate
-     Creature_BodyPart.cs:101-108, Monster_Melee.cs:410-420
-     e.ClothingPriority (WorldObject_Properties.cs:1493) is a GetProperty, so
+     Creature_BodyPart.cs:101-108, Monster_Melee.cs:411-421
+     e.ClothingPriority (WorldObject_Properties.cs:1494) is a GetProperty, so
      one lock per equipped clothing item - roughly 10-20 for a geared player -
      to select the 2-4 that actually cover the body part. Allocates a closure,
      an iterator, a List and its backing array.
@@ -745,8 +743,8 @@ Q.6  Per armor piece: three Biota locks, none cached
 
 
 Q.7  ignoreMagicArmor / ignoreMagicResist recomputed 3-4x per attack
-     Creature_BodyPart.cs:38-39, Monster_Melee.cs:428-429,
-     Creature_Combat.cs:670, Creature_Properties.cs:102, DamageEvent.cs:114-116
+     Creature_BodyPart.cs:38-39, Monster_Melee.cs:429-430,
+     Creature_Combat.cs:671, Creature_Properties.cs:102, DamageEvent.cs:114-116
      Each is `Weapon.IgnoreMagicArmor || Attacker.IgnoreMagicArmor` = two
      GetProperty locks, so roughly EIGHT LOCKS PER ATTACK FOR TWO BOOLEANS.
      DamageEvent already exposes both as properties; compute once into fields
@@ -765,29 +763,29 @@ Q.8  PropertyManager.GetBool/GetDouble does three dictionary lookups where one
      three audits, one fix.)
 
 Q.9  Monster attacker: GetAttackPart LINQ-scans the body-part table every attack
-     Monster_Melee.cs:591-619, called from DamageEvent.cs:440
+     Monster_Melee.cs:592-620, called from DamageEvent.cs:440
      `Biota.PropertiesBodyPart.Where(...).ToList()` - closure, iterator and List
      allocation, on the 5Hz think path across every monster in every landblock
      group, on Parallel.ForEach worker threads. The valid-part list is STATIC
      per weenie.
-     FIX: cache alongside the existing BPTableCache (Monster_Combat.cs:421).
+     FIX: cache alongside the existing BPTableCache (Monster_Combat.cs:422).
 
 Q.10 Aetheria proc scan: LINQ over all equipped items, 2-3x per attack
-     WorldObject_Combat.cs:52-58, called from Player_Melee.cs:312 (self-proc)
-     and :339 (target proc), and Monster_Melee.cs:79, 137. Allocates a closure
+     WorldObject_Combat.cs:52-58, called from Player_Melee.cs:313 (self-proc)
+     and :339 (target proc), and Monster_Melee.cs:80, 138. Allocates a closure
      per call. Aetheria slots are known at equip time - keep a small list.
 
 Q.11 Health.MaxValue read 3-4x for the same target in the same attack
-     Player_Combat.cs:164, 170; defender side re-reads at :424, :494, :505 plus
-     inside UpdateVital (Creature_Vitals.cs:54).
+     Player_Combat.cs:165, 171; defender side re-reads at :424, :494, :505 plus
+     inside UpdateVital (Creature_Vitals.cs:55).
      Each is a FULL recompute: AttributeFormula + Enlightenment (Biota lock) +
      GetGearMaxHealth + the Vitae registry scan (Q.1) + two dictionary lookups.
      All identical within one attack.
-     FIX: hoist to a local. Creature_Vitals.cs:105 already does exactly this and
+     FIX: hoist to a local. Creature_Vitals.cs:106 already does exactly this and
      documents why.
 
 Q.12 Unarmed attacks: HandArmor / FootArmor are LINQ FirstOrDefault scans
-     Player_Combat.cs:1152-1154, hit from GetBaseDamageMod (:362-364) and
+     Player_Combat.cs:1153-1155, hit from GetBaseDamageMod (:362-364) and
      GetDamageType (:1100-1102) - two full equipped-item scans per unarmed
      attack.
 
@@ -796,14 +794,14 @@ Q.12 Unarmed attacks: HandArmor / FootArmor are LINQ FirstOrDefault scans
 
 Q.13 Countdown properties dirty the biota of every decaying object and every
      generator on a timer
-     WorldObject_Decay.cs:87, WorldObject_Tick.cs:118 and :132, with
+     WorldObject_Decay.cs:88, WorldObject_Tick.cs:119 and :132, with
      ACE.Entity/Enum/Properties/PropertyFloat.cs
 
      *** CORRECTED - AN EARLIER VERSION OF THIS ENTRY RECOMMENDED A FIX THAT
          WOULD HAVE BROKEN GAMEPLAY. THE CORRECTION IS THE IMPORTANT PART. ***
 
      THE OBSERVATION (still valid):
-     `TimeToRot -= elapsed` (WorldObject_Decay.cs:87) -> SetProperty ->
+     `TimeToRot -= elapsed` (WorldObject_Decay.cs:88) -> SetProperty ->
      ChangesDetected = true on EVERY decaying object EVERY landblock heartbeat
      (Entity/Landblock.cs:526-530). The generator timestamps do the same on
      every generator in every loaded landblock every 5 seconds
@@ -835,7 +833,7 @@ Q.13 Countdown properties dirty the biota of every decaying object and every
 
        RegenerationTimestamp - MUST PERSIST, and for a non-obvious reason. The
          only functional read is GetNextRegenerationTime
-         (WorldObject_Generators.cs:499-504), which tests `== 0` to distinguish
+         (WorldObject_Generators.cs:500-505), which tests `== 0` to distinguish
          "never regenerated" from "has regenerated before": zero returns
          Time.GetUnixTime() (spawn now), non-zero applies generatorInitialDelay.
          Making it ephemeral would make EVERY generator look fresh after a
@@ -869,15 +867,15 @@ Q.13 Countdown properties dirty the biota of every decaying object and every
      load-bearing.
 
 Q.14 Every property getter takes a ReaderWriterLockSlim - quantified
-     WorldObject_Properties.cs:42-90 -> ACE.Entity/Models/BiotaExtensions.cs:94-110
+     WorldObject_Properties.cs:43-91 -> ACE.Entity/Models/BiotaExtensions.cs:94-110
      All seven GetProperty overloads fall through to the locked path, backing
      ~333 accessors. Uncontended that is still roughly two interlocked
      operations plus a try/finally per read.
-     Hot readers: IsDecayable() (WorldObject_Decay.cs:28) does 2-3 per object
+     Hot readers: IsDecayable() (WorldObject_Decay.cs:29) does 2-3 per object
      per heartbeat; the Container_Tick/Creature_Tick predicates do 1-2 per item
      per heartbeat; Monster_Tick reads dozens per monster at 5Hz.
      FIX: cache hot properties in fields at load - the CachedHeartbeatInterval
-     pattern at WorldObject_Tick.cs:25 already does this - and consider skipping
+     pattern at WorldObject_Tick.cs:26 already does this - and consider skipping
      the lock for biotas confined to a single landblock group.
      (This is the WorldObjects-side quantification of perf-entity-shared.txt
      E.1, which holds the full analysis and the per-swing lock counts.)
@@ -892,12 +890,12 @@ Q.15 Per-heartbeat inventory and equipment sweeps allocate regardless of content
      hasEnchantedOrLifespanItems flag updated in OnAddItem/OnRemoveItem.
 
 Q.16 CSetup is a dat lookup plus a locked read, used inside loops
-     WorldObject_Properties.cs:948 - `CSetup => DatManager.PortalDat.ReadFromDat
+     WorldObject_Properties.cs:949 - `CSetup => DatManager.PortalDat.ReadFromDat
      <SetupModel>(SetupTableId)`, and SetupTableId is itself a locked
      GetProperty.
      Creature_Networking.cs:251-254 evaluates wo.CSetup TWICE PER BODY PART over
      ~50 parts - roughly 100 lookups per CalculateObjDesc - and
-     WorldObject_Networking.cs:667, 677, 682 re-evaluates it three more times per
+     WorldObject_Networking.cs:668, 678, 683 re-evaluates it three more times per
      object serialisation. Called per object per player visibility event.
      FIX: hoist into a local; optionally cache the SetupModel on the WorldObject.
      (Pass 1 O.5 flagged the loop; this quantifies the cost and adds the
@@ -946,12 +944,12 @@ Q.20 Combat pets rescan visible objects 5x per second, forever
 Q.21 Player_House - the "no per-tick work" claim CONFIRMED, with two caveats
      Pass 2 asserted this without reading the file. Verified: no Tick or
      Heartbeat exists in Player_House.cs and nothing in it is called from
-     Player_Tick.cs; the rent-warning block lives in Player_Tick.cs:91-105
+     Player_Tick.cs; the rent-warning block lives in Player_Tick.cs:92-106
      behind a `House != null` guard.
-     BUT: Player_House.cs:557 LoadHouse -> House.Load (House.cs:119-144) does an
+     BUT: Player_House.cs:558 LoadHouse -> House.Load (House.cs:119-144) does an
      UNCONDITIONAL synchronous GetBiota on every login even when the landblock
      is already loaded - compare the correct IsLoaded check at
-     Player_House.cs:956-969. And CheckHouse (:1414-1442, called from
+     Player_House.cs:957-970. And CheckHouse (:1414-1442, called from
      OnTeleportComplete, which also runs at login) evaluates house.RootHouse -
      uncached, and itself capable of a synchronous House.Load
      (House.cs:503-528) - for every house on the landblock BEFORE the cheap
@@ -966,7 +964,7 @@ Q.22 Inventory enumeration - the prior claim HOLDS, but the scans allocate
      `Inventory.Values.Where(...).ToList()` passes (:516, 526, 569, 571), each
      removal 2-3 more (:659, 661, 675), and GetInventoryItem allocates a fresh
      side-container list per recursion level (:274) - with UseBackpackSlot
-     (WorldObject_Properties.cs:2057) doing a locked property read per item per
+     (WorldObject_Properties.cs:2058) doing a locked property read per item per
      pass. Bulk operations - vendor buys, salvage, looting - multiply this by
      item count.
      FIX: allocation-free foreach; cache the side-container set.
@@ -979,7 +977,7 @@ Q.23 Monster_Magic cast chain - largely COLD, with two real nits
      Delete it. Per cast, PreCastMotion_Human (:245) re-derives
      Formula.WindupGestures, which rebuilds the Scarabs list and a gesture list
      on each access, and TryRollSpell (:86) allocates a Spell plus SpellFormula
-     per roll. GetMaxRange (Monster_Combat.cs:172-203) can loop up to ten times
+     per roll. GetMaxRange (Monster_Combat.cs:173-204) can loop up to ten times
      re-rolling spells but correctly caches the LOS check across iterations.
      Low priority.
 
@@ -996,18 +994,18 @@ Q.24 The only non-trivial property getters, enumerated
 --- Q: CHECKED AND COLD ---
 Creature_Rating.cs:15-200 GetXxxRating overloads and ModToRating/AdditiveCombine
 - pure arithmetic over a params float[] (one small gen-0 array per call).
-GetEquippedItemsRatingSum (Creature_Equipment.cs:267) - a single dictionary hit;
+GetEquippedItemsRatingSum (Creature_Equipment.cs:268) - a single dictionary hit;
 the expensive part already runs at equip time.
 EnchantmentManagerWithCaching per-value getters - dictionary or nullable-field
 hits.
 CreatureAttribute.Current - reads propertiesAttribute fields directly, NO Biota
 lock.
 GetCombatStance / HandleSwitchTo*CombatMode / SwitchCombatStyles
-(Creature_Combat.cs:61-361) - mode switch only.
+(Creature_Combat.cs:62-362) - mode switch only.
 Creature_Melee.cs GetNumStrikes / MultiStrike are flag tests; GetCleaveTarget
 (:113) sorts visible objects but is gated on weapon.IsCleaving.
 DamageEvent.ShowInfo / HandleLogging - gated on DebugDamage flags.
-Monster_Combat.cs:88 _attackHeights - memoised. GetOverpower* - gated on a null
+Monster_Combat.cs:89 _attackHeights - memoised. GetOverpower* - gated on a null
 Overpower.
 Corpse.cs - all per-action; the decay timer and fellowship loot-share checks are
 correct. Its only cost is Q.13, which lives in WorldObject_Decay.cs.
