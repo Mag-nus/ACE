@@ -1,0 +1,762 @@
+diff -ru '--exclude=bin' '--exclude=obj' a/Source/ACE.Server/Entity/Chess/ChessMatch.cs b/Source/ACE.Server/Entity/Chess/ChessMatch.cs
+--- a/Source/ACE.Server/Entity/Chess/ChessMatch.cs	2026-09-22 08:52:25.000000000 -0500
++++ b/Source/ACE.Server/Entity/Chess/ChessMatch.cs	2026-11-25 08:37:15.704438148 -0600
+@@ -556,7 +556,7 @@
+                 SendOpponentStalemate(opSide.GetPlayer(), side.Color, action.Stalemate);
+         }
+ 
+-        public void CalculateWeeniePosition(ChessPieceCoord coord, ChessColor color, AFrame frame)
++        public void CalculateWeeniePosition(ChessPieceCoord coord, ChessColor color, ref AFrame frame)
+         {
+             var heading = (uint)ChessBoard.PhysicsObj.Position.Frame.get_heading();
+             heading += color == ChessColor.Black ? 180u : 0u;
+@@ -569,7 +569,7 @@
+         public void AddWeeniePiece(BasePiece piece)
+         {
+             var frame = new AFrame(ChessBoard.PhysicsObj.Position.Frame);
+-            CalculateWeeniePosition(piece.Coord, piece.Color, frame);
++            CalculateWeeniePosition(piece.Coord, piece.Color, ref frame);
+ 
+             var monster = piece.Color == ChessColor.White ? "drudge" : "mosswart";
+             var weeniename = "";
+@@ -621,7 +621,7 @@
+             }
+ 
+             var frame = new AFrame(ChessBoard.PhysicsObj.Position.Frame);
+-            CalculateWeeniePosition(piece.Coord, piece.Color, frame);
++            CalculateWeeniePosition(piece.Coord, piece.Color, ref frame);
+ 
+             var position = new Position(ChessBoard.Location);
+             position.Pos = frame.Origin;
+@@ -643,7 +643,7 @@
+             Debug.Assert(gamePiece != null);
+ 
+             var frame = new AFrame(ChessBoard.PhysicsObj.Position.Frame);
+-            CalculateWeeniePosition(piece.Coord, piece.Color, frame);
++            CalculateWeeniePosition(piece.Coord, piece.Color, ref frame);
+ 
+             var position = new Position(ChessBoard.Location);
+             position.Pos = frame.Origin;
+diff -ru '--exclude=bin' '--exclude=obj' a/Source/ACE.Server/Physics/Animation/AFrame.cs b/Source/ACE.Server/Physics/Animation/AFrame.cs
+--- a/Source/ACE.Server/Physics/Animation/AFrame.cs	2024-03-12 21:37:50.000000000 -0500
++++ b/Source/ACE.Server/Physics/Animation/AFrame.cs	2026-11-25 08:28:59.442608422 -0600
+@@ -1,239 +1,255 @@
+-using System;
+-using System.Numerics;
+-using ACE.Server.Physics.Common;
+-using ACE.Server.Physics.Extensions;
+-
+-namespace ACE.Server.Physics.Animation
+-{
+-    public class AFrame: IEquatable<AFrame>
+-    {
+-        public Vector3 Origin;
+-        public Quaternion Orientation;
+-
+-        public AFrame()
+-        {
+-            Origin = Vector3.Zero;
+-            Orientation = Quaternion.Identity;
+-        }
+-
+-        public AFrame(Vector3 origin, Quaternion orientation)
+-        {
+-            Origin = origin;
+-            Orientation = orientation;
+-        }
+-
+-        public AFrame(AFrame frame)
+-        {
+-            Origin = frame.Origin;
+-            Orientation = new Quaternion(frame.Orientation.X, frame.Orientation.Y, frame.Orientation.Z, frame.Orientation.W);
+-        }
+-
+-        public AFrame(DatLoader.Entity.Frame frame)
+-        {
+-            Origin = frame.Origin;
+-            Orientation = new Quaternion(frame.Orientation.X, frame.Orientation.Y, frame.Orientation.Z, frame.Orientation.W);
+-        }
+-
+-        public AFrame(ACE.Entity.Frame frame)
+-        {
+-            Origin = frame.Origin;
+-            Orientation = new Quaternion(frame.Orientation.X, frame.Orientation.Y, frame.Orientation.Z, frame.Orientation.W);
+-        }
+-
+-        public static AFrame Combine(AFrame a, AFrame b)
+-        {
+-            var frame = new AFrame();
+-            frame.Origin = a.Origin + Vector3.Transform(b.Origin, a.Orientation);
+-            frame.Orientation = Quaternion.Multiply(a.Orientation, b.Orientation);
+-            return frame;
+-        }
+-
+-        public void Combine(AFrame a, AFrame b, Vector3 scale)
+-        {
+-            Origin = a.Origin + Vector3.Transform(b.Origin * scale, a.Orientation);
+-            Orientation = Quaternion.Multiply(a.Orientation, b.Orientation);
+-        }
+-
+-        public Vector3 GlobalToLocal(Vector3 point)
+-        {
+-            var offset = point - Origin;
+-            var rotate = GlobalToLocalVec(offset); 
+-            return rotate;
+-        }
+-
+-        public Vector3 GlobalToLocalVec(Vector3 point)
+-        {
+-            var rotate = Matrix4x4.Transpose(Matrix4x4.CreateFromQuaternion(Orientation));
+-            return Vector3.Transform(point, rotate);
+-        }
+-
+-        public void InterpolateOrigin(AFrame from, AFrame to, float t)
+-        {
+-            Origin = Vector3.Lerp(from.Origin, to.Origin, t);
+-        }
+-
+-        public void InterpolateRotation(AFrame from, AFrame to, float t)
+-        {
+-            Orientation = Quaternion.Lerp(from.Orientation, to.Orientation, t);
+-        }
+-
+-        public bool IsEqual(AFrame frame)
+-        {
+-            // implement IEquatable
+-            return frame.Equals(this);  
+-        }
+-
+-        public bool IsQuaternionEqual(AFrame frame)
+-        {
+-            return Orientation.Equals(frame.Orientation);
+-        }
+-
+-        public bool IsValid()
+-        {
+-            return Origin.IsValid() && Orientation.IsValid();
+-        }
+-
+-        public bool IsValidExceptForHeading()
+-        {
+-            return Origin.IsValid();
+-        }
+-
+-        public Vector3 LocalToGlobal(Vector3 point)
+-        {
+-            return Origin + LocalToGlobalVec(point);
+-        }
+-
+-        public Vector3 LocalToGlobalVec(Vector3 point)
+-        {
+-            return Vector3.Transform(point, Orientation);
+-        }
+-
+-        public void GRotate(Vector3 rotation)
+-        {
+-            Orientation *= Quaternion.CreateFromYawPitchRoll(rotation.X, rotation.Y, rotation.Z);
+-            Orientation  = Quaternion.Normalize(Orientation);
+-        }
+-
+-        public void Rotate(Vector3 rotation)
+-        {
+-            var angles = Vector3.Transform(rotation, Orientation);
+-            GRotate(angles);
+-        }
+-
+-        public void Rotate(Quaternion rotation)
+-        {
+-            Orientation = Quaternion.Multiply(rotation, Orientation);
+-            Orientation = Quaternion.Normalize(Orientation);
+-        }
+-
+-        public void Subtract(AFrame frame)
+-        {
+-            Origin -= Vector3.Transform(frame.Origin, frame.Orientation);
+-            //Orientation *= Quaternion.Conjugate(frame.Orientation);
+-            Orientation *= Quaternion.Inverse(frame.Orientation);
+-        }
+-
+-        public bool close_rotation(AFrame a, AFrame b)
+-        {
+-            var ao = a.Orientation;
+-            var bo = b.Orientation;
+-
+-            return Math.Abs(ao.X - bo.X) < PhysicsGlobals.EPSILON &&
+-                   Math.Abs(ao.Y - bo.Y) < PhysicsGlobals.EPSILON &&
+-                   Math.Abs(ao.Z - bo.Z) < PhysicsGlobals.EPSILON &&
+-                   Math.Abs(ao.W - bo.W) < PhysicsGlobals.EPSILON;
+-        }
+-
+-        public float get_heading()
+-        {
+-            var matrix = Matrix4x4.CreateFromQuaternion(Orientation);
+-            var heading = (float)Math.Atan2(matrix.M22, matrix.M21);
+-            return (450.0f - heading.ToDegrees()) % 360.0f;
+-        }
+-
+-        public Vector3 get_vector_heading()
+-        {
+-            var matrix = Matrix4x4.CreateFromQuaternion(Orientation);
+-
+-            var heading = new Vector3();
+-
+-            heading.X = matrix.M21;
+-            heading.Y = matrix.M22;
+-            heading.Z = matrix.M23;
+-
+-            return heading;
+-        }
+-
+-        public static Quaternion get_rotate_offset(Vector3 offset)
+-        {
+-            var rotate = Quaternion.CreateFromYawPitchRoll(offset.X, offset.Y, offset.Z);
+-            rotate = Quaternion.Normalize(rotate);
+-            return rotate;
+-        }
+-
+-        public void rotate_around_axis_to_vector(int axis, Vector3 dir)
+-        {
+-            // will implement when actually needed...
+-        }
+-
+-        public void set_heading(float degrees)
+-        {
+-            //Console.WriteLine($"set_heading({degrees})");
+-
+-            var rads = degrees.ToRadians();
+-
+-            var matrix = Matrix4x4.CreateFromQuaternion(Orientation);
+-            var heading = new Vector3((float)Math.Sin(rads), (float)Math.Cos(rads), matrix.M23 + matrix.M13);
+-            set_vector_heading(heading);
+-
+-            var newHeading = get_heading();
+-            //Console.WriteLine("new_heading: " + newHeading);
+-        }
+-
+-        public void set_position(AFrame frame)
+-        {
+-            var offset = frame.Origin - Origin;
+-            Origin += Vector3.Transform(offset, Orientation);
+-        }
+-
+-        public void set_rotate(Quaternion orientation)
+-        {
+-            Orientation = Quaternion.Normalize(orientation);
+-        }
+-
+-        public void set_vector_heading(Vector3 heading)
+-        {
+-            var normal = heading;
+-            if (Vec.NormalizeCheckSmall(ref normal)) return;
+-
+-            var zDeg = 450.0f - ((float)Math.Atan2(normal.Y, normal.X)).ToDegrees();
+-            var zRot = -(zDeg % 360.0f).ToRadians();
+-
+-            var xRot = (float)Math.Asin(normal.Z);
+-
+-            var rotate = Quaternion.CreateFromYawPitchRoll(xRot, 0, zRot);
+-            set_rotate(rotate);
+-        }
+-
+-        public override string ToString()
+-        {
+-            return $"[{Origin.X} {Origin.Y} {Origin.Z}] {Orientation.W} {Orientation.X} {Orientation.Y} {Orientation.Z}";
+-        }
+-
+-        public bool Equals(AFrame frame)
+-        {
+-            var originEpsilonEqual = Math.Abs(frame.Origin.X - Origin.X) <= PhysicsGlobals.EPSILON &&
+-                Math.Abs(frame.Origin.Y - Origin.Y) <= PhysicsGlobals.EPSILON &&
+-                Math.Abs(frame.Origin.Z - Origin.Z) <= PhysicsGlobals.EPSILON;
+-
+-            if (!originEpsilonEqual) return false;
+-
+-            var orientationEpsilonEqual = Math.Abs(frame.Orientation.X - frame.Orientation.X) <= PhysicsGlobals.EPSILON &&
+-                Math.Abs(frame.Orientation.Y - frame.Orientation.Y) <= PhysicsGlobals.EPSILON &&
+-                Math.Abs(frame.Orientation.Z - frame.Orientation.Z) <= PhysicsGlobals.EPSILON &&
+-                Math.Abs(frame.Orientation.W - frame.Orientation.W) <= PhysicsGlobals.EPSILON;
+-
+-            return orientationEpsilonEqual;
+-        }
+-    }
+-}
++using System;
++using System.Numerics;
++using ACE.Server.Physics.Common;
++using ACE.Server.Physics.Extensions;
++
++namespace ACE.Server.Physics.Animation
++{
++    public struct AFrame: IEquatable<AFrame>
++    {
++        public Vector3 Origin;
++        public Quaternion Orientation;
++
++        public AFrame()
++        {
++            Origin = Vector3.Zero;
++            Orientation = Quaternion.Identity;
++        }
++
++        public AFrame(Vector3 origin, Quaternion orientation)
++        {
++            Origin = origin;
++            Orientation = orientation;
++        }
++
++        public AFrame(AFrame frame)
++        {
++            Origin = frame.Origin;
++            Orientation = new Quaternion(frame.Orientation.X, frame.Orientation.Y, frame.Orientation.Z, frame.Orientation.W);
++        }
++
++        public AFrame(DatLoader.Entity.Frame frame)
++        {
++            Origin = frame.Origin;
++            Orientation = new Quaternion(frame.Orientation.X, frame.Orientation.Y, frame.Orientation.Z, frame.Orientation.W);
++        }
++
++        public AFrame(ACE.Entity.Frame frame)
++        {
++            Origin = frame.Origin;
++            Orientation = new Quaternion(frame.Orientation.X, frame.Orientation.Y, frame.Orientation.Z, frame.Orientation.W);
++        }
++
++        public static AFrame Combine(AFrame a, AFrame b)
++        {
++            var frame = new AFrame();
++            frame.Origin = a.Origin + Vector3.Transform(b.Origin, a.Orientation);
++            frame.Orientation = Quaternion.Multiply(a.Orientation, b.Orientation);
++            return frame;
++        }
++
++        
++
++        public Vector3 GlobalToLocal(Vector3 point)
++        {
++            var offset = point - Origin;
++            var rotate = GlobalToLocalVec(offset); 
++            return rotate;
++        }
++
++        public Vector3 GlobalToLocalVec(Vector3 point)
++        {
++            var rotate = Matrix4x4.Transpose(Matrix4x4.CreateFromQuaternion(Orientation));
++            return Vector3.Transform(point, rotate);
++        }
++
++        
++
++        
++
++        public bool IsEqual(AFrame frame)
++        {
++            // implement IEquatable
++            return frame.Equals(this);  
++        }
++
++        public bool IsQuaternionEqual(AFrame frame)
++        {
++            return Orientation.Equals(frame.Orientation);
++        }
++
++        public bool IsValid()
++        {
++            return Origin.IsValid() && Orientation.IsValid();
++        }
++
++        public bool IsValidExceptForHeading()
++        {
++            return Origin.IsValid();
++        }
++
++        public Vector3 LocalToGlobal(Vector3 point)
++        {
++            return Origin + LocalToGlobalVec(point);
++        }
++
++        public Vector3 LocalToGlobalVec(Vector3 point)
++        {
++            return Vector3.Transform(point, Orientation);
++        }
++
++        
++
++        
++
++        
++
++        
++
++        public bool close_rotation(AFrame a, AFrame b)
++        {
++            var ao = a.Orientation;
++            var bo = b.Orientation;
++
++            return Math.Abs(ao.X - bo.X) < PhysicsGlobals.EPSILON &&
++                   Math.Abs(ao.Y - bo.Y) < PhysicsGlobals.EPSILON &&
++                   Math.Abs(ao.Z - bo.Z) < PhysicsGlobals.EPSILON &&
++                   Math.Abs(ao.W - bo.W) < PhysicsGlobals.EPSILON;
++        }
++
++        public float get_heading()
++        {
++            var matrix = Matrix4x4.CreateFromQuaternion(Orientation);
++            var heading = (float)Math.Atan2(matrix.M22, matrix.M21);
++            return (450.0f - heading.ToDegrees()) % 360.0f;
++        }
++
++        public Vector3 get_vector_heading()
++        {
++            var matrix = Matrix4x4.CreateFromQuaternion(Orientation);
++
++            var heading = new Vector3();
++
++            heading.X = matrix.M21;
++            heading.Y = matrix.M22;
++            heading.Z = matrix.M23;
++
++            return heading;
++        }
++
++        public static Quaternion get_rotate_offset(Vector3 offset)
++        {
++            var rotate = Quaternion.CreateFromYawPitchRoll(offset.X, offset.Y, offset.Z);
++            rotate = Quaternion.Normalize(rotate);
++            return rotate;
++        }
++
++        
++
++        
++
++        
++
++        
++
++        
++
++        public override string ToString()
++        {
++            return $"[{Origin.X} {Origin.Y} {Origin.Z}] {Orientation.W} {Orientation.X} {Orientation.Y} {Orientation.Z}";
++        }
++
++        public bool Equals(AFrame frame)
++        {
++            var originEpsilonEqual = Math.Abs(frame.Origin.X - Origin.X) <= PhysicsGlobals.EPSILON &&
++                Math.Abs(frame.Origin.Y - Origin.Y) <= PhysicsGlobals.EPSILON &&
++                Math.Abs(frame.Origin.Z - Origin.Z) <= PhysicsGlobals.EPSILON;
++
++            if (!originEpsilonEqual) return false;
++
++            var orientationEpsilonEqual = Math.Abs(frame.Orientation.X - frame.Orientation.X) <= PhysicsGlobals.EPSILON &&
++                Math.Abs(frame.Orientation.Y - frame.Orientation.Y) <= PhysicsGlobals.EPSILON &&
++                Math.Abs(frame.Orientation.Z - frame.Orientation.Z) <= PhysicsGlobals.EPSILON &&
++                Math.Abs(frame.Orientation.W - frame.Orientation.W) <= PhysicsGlobals.EPSILON;
++
++            return orientationEpsilonEqual;
++        }
++    }
++
++    public static class AFrameMutators
++    {
++public static void Combine(this ref AFrame self, AFrame a, AFrame b, Vector3 scale)
++{
++            self.Origin = a.Origin + Vector3.Transform(b.Origin * scale, a.Orientation);
++            self.Orientation = Quaternion.Multiply(a.Orientation, b.Orientation);
++        }
++public static void InterpolateOrigin(this ref AFrame self, AFrame from, AFrame to, float t)
++{
++            self.Origin = Vector3.Lerp(from.Origin, to.Origin, t);
++        }
++public static void InterpolateRotation(this ref AFrame self, AFrame from, AFrame to, float t)
++{
++            self.Orientation = Quaternion.Lerp(from.Orientation, to.Orientation, t);
++        }
++public static void GRotate(this ref AFrame self, Vector3 rotation)
++{
++            self.Orientation *= Quaternion.CreateFromYawPitchRoll(rotation.X, rotation.Y, rotation.Z);
++            self.Orientation  = Quaternion.Normalize(self.Orientation);
++        }
++public static void Rotate(this ref AFrame self, Vector3 rotation)
++{
++            var angles = Vector3.Transform(rotation, self.Orientation);
++            self.GRotate(angles);
++        }
++public static void Rotate(this ref AFrame self, Quaternion rotation)
++{
++            self.Orientation = Quaternion.Multiply(rotation, self.Orientation);
++            self.Orientation = Quaternion.Normalize(self.Orientation);
++        }
++public static void Subtract(this ref AFrame self, AFrame frame)
++{
++            self.Origin -= Vector3.Transform(frame.Origin, frame.Orientation);
++            //self.Orientation *= Quaternion.Conjugate(frame.Orientation);
++            self.Orientation *= Quaternion.Inverse(frame.Orientation);
++        }
++public static void set_heading(this ref AFrame self, float degrees)
++{
++            //Console.WriteLine($"set_heading({degrees})");
++
++            var rads = degrees.ToRadians();
++
++            var matrix = Matrix4x4.CreateFromQuaternion(self.Orientation);
++            var heading = new Vector3((float)Math.Sin(rads), (float)Math.Cos(rads), matrix.M23 + matrix.M13);
++            self.set_vector_heading(heading);
++
++            var newHeading = self.get_heading();
++            //Console.WriteLine("new_heading: " + newHeading);
++        }
++public static void set_position(this ref AFrame self, AFrame frame)
++{
++            var offset = frame.Origin - self.Origin;
++            self.Origin += Vector3.Transform(offset, self.Orientation);
++        }
++public static void set_rotate(this ref AFrame self, Quaternion orientation)
++{
++            self.Orientation = Quaternion.Normalize(orientation);
++        }
++public static void set_vector_heading(this ref AFrame self, Vector3 heading)
++{
++            var normal = heading;
++            if (Vec.NormalizeCheckSmall(ref normal)) return;
++
++            var zDeg = 450.0f - ((float)Math.Atan2(normal.Y, normal.X)).ToDegrees();
++            var zRot = -(zDeg % 360.0f).ToRadians();
++
++            var xRot = (float)Math.Asin(normal.Z);
++
++            var rotate = Quaternion.CreateFromYawPitchRoll(xRot, 0, zRot);
++            self.set_rotate(rotate);
++        }
++public static void rotate_around_axis_to_vector(this ref AFrame self, int axis, Vector3 dir)
++{
++            // will implement when actually needed...
++        }
++    }
++}
+diff -ru '--exclude=bin' '--exclude=obj' a/Source/ACE.Server/Physics/Animation/Sequence.cs b/Source/ACE.Server/Physics/Animation/Sequence.cs
+--- a/Source/ACE.Server/Physics/Animation/Sequence.cs	2026-09-22 08:50:21.000000000 -0500
++++ b/Source/ACE.Server/Physics/Animation/Sequence.cs	2026-11-25 08:37:15.702976898 -0600
+@@ -136,9 +136,9 @@
+                 update_internal(quantum, ref CurrAnim, ref FrameNumber, ref offsetFrame);
+                 apricot();
+             }
+-            else if (offsetFrame != null)
++            else if (true)
+             {
+-                apply_physics(offsetFrame, quantum, quantum);
++                apply_physics(ref offsetFrame, quantum, quantum);
+             }
+         }
+ 
+@@ -148,12 +148,12 @@
+ 
+             if (timeElapsed >= 0.0f)
+             {
+-                if (frame != null && currAnim.Framerate < 0.0f)
++                if (true && currAnim.Framerate < 0.0f)
+                 {
+                     if (currAnim.Anim.PosFrames.Count > 0)
+                         frame.Subtract(currAnim.get_pos_frame((int)frameNum));
+                     if (Math.Abs(currAnim.Framerate) > PhysicsGlobals.EPSILON)
+-                        apply_physics(frame, 1.0f / currAnim.Framerate, timeElapsed);
++                        apply_physics(ref frame, 1.0f / currAnim.Framerate, timeElapsed);
+                 }
+                 if (animNode.Next != null)
+                     animNode = animNode.Next;
+@@ -164,22 +164,22 @@
+ 
+                 frameNum = currAnim.get_starting_frame();
+ 
+-                if (frame != null && currAnim.Framerate > 0.0f)
++                if (true && currAnim.Framerate > 0.0f)
+                 {
+                     if (currAnim.Anim.PosFrames.Count > 0)
+                         frame = AFrame.Combine(frame, currAnim.get_pos_frame((int)frameNum));
+                     if (Math.Abs(currAnim.Framerate) > PhysicsGlobals.EPSILON)
+-                        apply_physics(frame, 1.0f / currAnim.Framerate, timeElapsed);
++                        apply_physics(ref frame, 1.0f / currAnim.Framerate, timeElapsed);
+                 }
+             }
+             else
+             {
+-                if (frame != null && currAnim.Framerate >= 0.0f)
++                if (true && currAnim.Framerate >= 0.0f)
+                 {
+                     if (currAnim.Anim.PosFrames.Count > 0)
+                         frame.Subtract(currAnim.get_pos_frame((int)frameNum));
+                     if (Math.Abs(currAnim.Framerate) > PhysicsGlobals.EPSILON)
+-                        apply_physics(frame, 1.0f / currAnim.Framerate, timeElapsed);
++                        apply_physics(ref frame, 1.0f / currAnim.Framerate, timeElapsed);
+                 }
+                 if (animNode.Previous != null)
+                     animNode = animNode.Previous;
+@@ -190,12 +190,12 @@
+ 
+                 frameNum = currAnim.get_ending_frame();
+ 
+-                if (frame != null && currAnim.Framerate < 0.0f)
++                if (true && currAnim.Framerate < 0.0f)
+                 {
+                     if (currAnim.Anim.PosFrames.Count > 0)
+                         frame = AFrame.Combine(frame, currAnim.get_pos_frame((int)frameNum));
+                     if (Math.Abs(currAnim.Framerate) > PhysicsGlobals.EPSILON)
+-                        apply_physics(frame, 1.0f / currAnim.Framerate, timeElapsed);
++                        apply_physics(ref frame, 1.0f / currAnim.Framerate, timeElapsed);
+                 }
+             }
+         }
+@@ -218,7 +218,7 @@
+         /// <summary>
+         /// Performs the translation and rotation on the frame
+         /// </summary>
+-        public void apply_physics(AFrame frame, float quantum, float sign)
++        public void apply_physics(ref AFrame frame, float quantum, float sign)
+         {
+             if (sign >= 0.0)
+                 quantum = Math.Abs(quantum);
+@@ -377,13 +377,13 @@
+                 }
+                 while (Math.Floor(frameNum) > lastFrame)
+                 {
+-                    if (frame != null)
++                    if (true)
+                     {
+                         if (currAnim.Anim.PosFrames != null)
+                             frame = AFrame.Combine(frame, currAnim.get_pos_frame(lastFrame));
+ 
+                         if (Math.Abs(framerate) > PhysicsGlobals.EPSILON)
+-                            apply_physics(frame, 1.0f / framerate, timeElapsed);
++                            apply_physics(ref frame, 1.0f / framerate, timeElapsed);
+                     }
+ 
+                     execute_hooks(currAnim.get_part_frame(lastFrame), AnimationHookDir.Forward);
+@@ -406,13 +406,13 @@
+                 }
+                 while (Math.Floor(frameNum) < lastFrame)
+                 {
+-                    if (frame != null)
++                    if (true)
+                     {
+                         if (currAnim.Anim.PosFrames != null)
+                             frame.Subtract(currAnim.get_pos_frame(lastFrame));
+ 
+                         if (Math.Abs(framerate) > PhysicsGlobals.EPSILON)
+-                            apply_physics(frame, 1.0f / framerate, timeElapsed);
++                            apply_physics(ref frame, 1.0f / framerate, timeElapsed);
+                     }
+ 
+                     execute_hooks(currAnim.get_part_frame(lastFrame), AnimationHookDir.Backward);
+@@ -421,8 +421,8 @@
+             }
+             else
+             {
+-                if (frame != null && Math.Abs(timeElapsed) > PhysicsGlobals.EPSILON)
+-                    apply_physics(frame, timeElapsed, timeElapsed);
++                if (true && Math.Abs(timeElapsed) > PhysicsGlobals.EPSILON)
++                    apply_physics(ref frame, timeElapsed, timeElapsed);
+             }
+ 
+             if (!animDone)
+diff -ru '--exclude=bin' '--exclude=obj' a/Source/ACE.Server/Physics/Managers/ConstraintManager.cs b/Source/ACE.Server/Physics/Managers/ConstraintManager.cs
+--- a/Source/ACE.Server/Physics/Managers/ConstraintManager.cs	2026-09-22 06:18:41.000000000 -0500
++++ b/Source/ACE.Server/Physics/Managers/ConstraintManager.cs	2026-11-25 08:37:15.698701722 -0600
+@@ -59,7 +59,7 @@
+             // empty
+         }
+ 
+-        public void adjust_offset(AFrame offset, double quantum)
++        public void adjust_offset(ref AFrame offset, double quantum)
+         {
+             if (PhysicsObj == null || !IsConstrained) return;
+ 
+diff -ru '--exclude=bin' '--exclude=obj' a/Source/ACE.Server/Physics/Managers/InterpolationManager.cs b/Source/ACE.Server/Physics/Managers/InterpolationManager.cs
+--- a/Source/ACE.Server/Physics/Managers/InterpolationManager.cs	2026-09-22 08:52:25.000000000 -0500
++++ b/Source/ACE.Server/Physics/Managers/InterpolationManager.cs	2026-11-25 08:37:15.700000070 -0600
+@@ -196,7 +196,7 @@
+             }
+         }
+ 
+-        public void adjust_offset(AFrame frame, double quantum)
++        public void adjust_offset(ref AFrame frame, double quantum)
+         {
+             if (PositionQueue.Count == 0 || PhysicsObj == null || !PhysicsObj.TransientState.HasFlag(TransientStateFlags.Contact))
+                 return;
+diff -ru '--exclude=bin' '--exclude=obj' a/Source/ACE.Server/Physics/Managers/PositionManager.cs b/Source/ACE.Server/Physics/Managers/PositionManager.cs
+--- a/Source/ACE.Server/Physics/Managers/PositionManager.cs	2020-11-04 08:30:06.000000000 -0600
++++ b/Source/ACE.Server/Physics/Managers/PositionManager.cs	2026-11-25 08:37:15.701560208 -0600
+@@ -17,14 +17,14 @@
+             SetPhysicsObject(obj);
+         }
+ 
+-        public void AdjustOffset(AFrame frame, double quantum)
++        public void AdjustOffset(ref AFrame frame, double quantum)
+         {
+             if (InterpolationManager != null)
+-                InterpolationManager.adjust_offset(frame, quantum);
++                InterpolationManager.adjust_offset(ref frame, quantum);
+             if (StickyManager != null)
+-                StickyManager.adjust_offset(frame, quantum);
++                StickyManager.adjust_offset(ref frame, quantum);
+             if (ConstraintManager != null)
+-                ConstraintManager.adjust_offset(frame, quantum);
++                ConstraintManager.adjust_offset(ref frame, quantum);
+         }
+ 
+         public void ConstrainTo(Position position, float startDistance, float maxDistance)
+diff -ru '--exclude=bin' '--exclude=obj' a/Source/ACE.Server/Physics/Managers/StickyManager.cs b/Source/ACE.Server/Physics/Managers/StickyManager.cs
+--- a/Source/ACE.Server/Physics/Managers/StickyManager.cs	2026-09-22 08:52:25.000000000 -0500
++++ b/Source/ACE.Server/Physics/Managers/StickyManager.cs	2026-11-25 08:37:15.698592584 -0600
+@@ -88,7 +88,7 @@
+                 ClearTarget();
+         }
+ 
+-        public void adjust_offset(AFrame offset, double quantum)
++        public void adjust_offset(ref AFrame offset, double quantum)
+         {
+             if (PhysicsObj == null || TargetID == 0 || !Initialized)
+                 return;
+diff -ru '--exclude=bin' '--exclude=obj' a/Source/ACE.Server/Physics/Particles/ParticleEmitter.cs b/Source/ACE.Server/Physics/Particles/ParticleEmitter.cs
+--- a/Source/ACE.Server/Physics/Particles/ParticleEmitter.cs	2024-03-12 21:37:50.000000000 -0500
++++ b/Source/ACE.Server/Physics/Particles/ParticleEmitter.cs	2026-11-25 08:29:22.722043074 -0600
+@@ -217,7 +217,7 @@
+                 {
+                     for (var i = 0; i < Info.MaxParticles; i++)
+                     {
+-                        AFrame frame = null;
++                        AFrame frame = default;
+                         var part = Parts[i];
+                         if (part != null)
+                         {
+diff -ru '--exclude=bin' '--exclude=obj' a/Source/ACE.Server/Physics/PhysicsObj.cs b/Source/ACE.Server/Physics/PhysicsObj.cs
+--- a/Source/ACE.Server/Physics/PhysicsObj.cs	2026-11-25 02:42:12.000000000 -0600
++++ b/Source/ACE.Server/Physics/PhysicsObj.cs	2026-11-25 08:37:15.696420543 -0600
+@@ -1874,7 +1874,7 @@
+                     offsetFrame.Origin *= 0.0f;     // OnWalkable getting reset?
+             }
+             if (PositionManager != null)
+-                PositionManager.AdjustOffset(offsetFrame, quantum);
++                PositionManager.AdjustOffset(ref offsetFrame, quantum);
+ 
+             newFrame = AFrame.Combine(Position.Frame, offsetFrame);
+ 
+@@ -2031,7 +2031,7 @@
+             }
+             if (State.HasFlag(PhysicsState.HasDefaultAnim))
+             {
+-                AFrame empty = null;
++                AFrame empty = default;
+                 PartArray.Update(deltaTime, ref empty);
+                 Position.Frame.Rotate(Omega);
+                 UpdatePartsInternal();
+diff -ru '--exclude=bin' '--exclude=obj' a/Source/ACE.Server/WorldObjects/WorldObject_Magic.cs b/Source/ACE.Server/WorldObjects/WorldObject_Magic.cs
+--- a/Source/ACE.Server/WorldObjects/WorldObject_Magic.cs	2026-11-25 02:41:50.000000000 -0600
++++ b/Source/ACE.Server/WorldObjects/WorldObject_Magic.cs	2026-11-25 08:29:22.725067652 -0600
+@@ -1,4 +1,5 @@
+-using System;
++using System;
++using ACE.Server.Physics.Animation;
+ using System.Collections.Concurrent;
+ using System.Collections.Generic;
+ using System.Linq;

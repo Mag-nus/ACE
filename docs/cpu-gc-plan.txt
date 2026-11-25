@@ -56,6 +56,10 @@ first makes later measurement cleaner because they remove noise.
     NetworkSession.cs:190-251 - up to 8 UtcNow reads per session per ~1000Hz
     tick. At 100 sessions that is ~800k clock reads/sec.
         -> perf-common.txt K.2, perf-network.txt P.4
+    [MEASURED 2026-11-25: the snapshot alone takes an idle session from 182 to
+     111 ns, because the early return never fires while nextSend is in the
+     past. The dirty-group mask in perf-network.txt NT.1 gets 12 ns; do that
+     instead.]
 
  4. One Stopwatch instead of three in ServerPerformanceMonitor.
     ServerPerformanceMonitor.cs:213-231 - monitors5m/1h/24h each hold their own
@@ -120,6 +124,9 @@ behaviour change. Each needs its own validation.
     make_plane(). That is an IMMUTABILITY assumption - the Tier 3 failure
     category. Verify no consumer mutates them before caching. ***
         -> perf-physics.txt O.2
+    [MEASURED 2026-11-25: the immutability audit is done (safe in-tree), but
+     the gain is small on top of a flattened layout. perf-physics.txt PG.6
+     (Vector3[] vertices) is the larger win; see Q.C.]
 
 13. Batch the biota child-table loads.
     ShardDatabase.cs:225-262 - up to 26 round-trips PER OBJECT; a 200-item
@@ -230,6 +237,10 @@ Measure before and after - several are large enough to regress if done wrong.
     CellStruct has all-public mutable fields, and this codebase has a PROVEN
     counterexample of a cached dat object being mutated in place
     (bugs-datloader.txt D.6, the Palette). Audit consumers for writes first.
+    [AUDITED 2026-11-25: no post-construction writes to Polygon, Vertex,
+     BSPNode or their Spheres in-tree; sharing is safe except against mods.
+     Do perf-physics.txt PG.4 (stop building ~70% of the geometry on the
+     server) first. See perf-physics.txt Q.C.]
 
 27. Quadratic insertion nesting (O.1).
     Real 3-5x structural multiplier - but it also changes HOW MANY

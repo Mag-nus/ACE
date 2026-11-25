@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><Nullable>disable</Nullable><PlatformTarget>x64</PlatformTarget><Optimize>true</Optimize><StartupObject>AB</StartupObject><NoWarn>MSB3277;MSB3246</NoWarn></PropertyGroup>
+  <ItemGroup><FrameworkReference Include="Microsoft.AspNetCore.App" /></ItemGroup>
+  <ItemGroup><Compile Include="../Shared/AB.cs" /></ItemGroup>
+  <ItemGroup>
+    <Reference Include="$(AceBin)/*.dll" Exclude="$(AceBin)/ACE.Server.dll;$(AceBin)/ACE.Server.exe" Private="true" />
+    <Reference Include="$(AceBin)/ACE.Server.dll" Private="true" />
+  </ItemGroup>
+  <PropertyGroup>
+    <AceBin Condition="'$(AceBin)' == ''">$(MSBuildThisFileDirectory)../../../../../Source/ACE.Server/bin/x64/Release/net10.0</AceBin>
+  </PropertyGroup>
+</Project>

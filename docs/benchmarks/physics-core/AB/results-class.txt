@@ -1,0 +1,14 @@
+AFrame is class
+new Position()                                                        8.7 ns     80.0 B/op
+new Position(Position)                                                8.7 ns     80.0 B/op
+new Transition()                                                     84.3 ns   1176.0 B/op
+Transition ctor + InitSphere(2) + InitPath                          132.1 ns   1496.0 B/op
+SpherePath.SetCheckPos                                               13.6 ns     80.0 B/op
+SpherePath.SaveCheckPos + RestoreCheckPos                            24.3 ns    160.0 B/op
+Transition.SetCurrentCheckPos                                        27.1 ns    160.0 B/op
+SpherePath.CacheLocalSpaceSphere                                     48.9 ns     80.0 B/op
+PhysicsObj.UpdateObjectInternal (bare obj)                           42.7 ns    224.0 B/op
+PhysicsObj.set_frame(Position.Frame)                                  7.7 ns     48.0 B/op
+PhysicsObj.UpdatePositionInternal                                    30.7 ns     96.0 B/op
+UpdateObjectInternal moving (Velocity 1,1,0)                         45.2 ns    224.0 B/op
+check final origin: <100, 100, 50>

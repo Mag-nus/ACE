@@ -181,6 +181,10 @@ D7. THE SEND PATH IS SYNCHRONOUS
     is a syscall rather than a stall - but it is a syscall per packet on the
     tick threads, and it CAN block if the socket send buffer fills.
     Lower priority than the receive path; noted for completeness.
+    [MEASURED 2026-11-25: UNDERSTATED. SendTo costs ~2.5 us per packet, more
+     than 10x all the managed work per flush - roughly 90 ms of every second
+     at ~35k packets/s, on the world thread's critical path. See
+     perf-network.txt NT.9.]
 
 
 --------------------------------------------------------------------------------
@@ -198,6 +202,20 @@ M2. Multiple concurrent receives   [the structural fix for D1]
     Post N independent receive loops, each with its own buffer, so unpacking
     overlaps receiving. N of 2-4 per listener is a sensible starting point;
     it is a tuning knob, not a correctness parameter.
+    [MEASURED 2026-11-25 - WRONG on both counts; see perf-network.txt NT.2:
+     (1) N > 1 IS a correctness parameter. Two datagrams from one client
+         would run CryptoSystem.Search / ConsumeKey concurrently, and those
+         mutate ISAAC state and a plain HashSet<uint> with no lock. That
+         desyncs the CRC key stream and kills the session. Keep N = 1, or
+         shard receive work by session.
+     (2) N > 1 is not needed: one receive thread spends 2-7 us per datagram
+         all-in, i.e. over 100k datagrams/s, against roughly 10-30k at 1000
+         clients.
+     Also measured: ReceiveFromAsync (M3) did NOT use less CPU than today's
+     APM path on Linux. A dedicated thread with a blocking
+     ReceiveFrom(Span, SocketFlags, SocketAddress) - not considered here - was
+     allocation-free AND the cheapest. In 5b, prefer option 2 (compare
+     SocketAddress, 0 B / 2 ns) over option 1 (72 B per datagram).]
 
 M3. ReceiveFromAsync returning ValueTask instead of APM
     Removes the IAsyncResult and delegate allocation per operation. Modern

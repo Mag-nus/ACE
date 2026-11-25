@@ -1,0 +1,435 @@
+Type ACE.Server.Physics.Common.Position  total records 407
+---- counts by category ----
+    1  ALIAS(call:TargetManager.GetInterpolatedPosition) LOCAL-INIT
+   11  ALIAS(field) ASSIGN field
+    4  ALIAS(field) LOCAL-INIT
+    2  ALIAS(local) ASSIGN field
+    6  ALIAS(param) ASSIGN field
+    1  ARG-SHARED(call:SpherePath.GetWalkablePos)
+  121  ARG-SHARED(field)
+   38  ARG-SHARED(local)
+   68  ARG-SHARED(param)
+    1  CALLS-PARAM-MUTATOR PhysicsObj.AdjustPosition(arg0) arg=param
+    1  CALLS-PARAM-MUTATOR PhysicsObj.CheckPositionInternal(arg1) arg=param
+    3  CTOR-ARG-SHARED(call:PositionExtensions.PhysPosition)
+   35  CTOR-ARG-SHARED(field)
+   17  CTOR-ARG-SHARED(param)
+    1  MUTATE-CALL via field
+    3  MUTATE-CALL via LOCAL
+    1  MUTATE-CALL via PARAM(by-value)
+   49  MUTATE-FIELD via field
+   30  MUTATE-FIELD via LOCAL
+    2  MUTATE-FIELD via PARAM(by-value)
+   11  NULL-CHECK
+    1  RETURN-SHARED(field)
+---- by-value-parameter mutators ----
+  PhysicsObj.AdjustPosition params[0]
+  PhysicsObj.CheckPositionInternal params[1]
+---- detail ----
+ALIAS(call:TargetManager.GetInterpolatedPosition) LOCAL-INIT | Physics/Managers/TargetManager.cs:83 | newPos = GetInterpolatedPosition(voyeur.Quantum)
+ALIAS(field) ASSIGN field | Physics/Managers/InterpolationManager.cs:110 | BlipToPosition = head.Position
+ALIAS(field) ASSIGN field | Physics/Managers/InterpolationManager.cs:119 | BlipToPosition = head.Position
+ALIAS(field) ASSIGN field | Physics/Managers/StickyManager.cs:62 | TargetPosition = targetInfo.TargetPosition
+ALIAS(field) ASSIGN field | Physics/Managers/TargetManager.cs:164 | info.TargetPosition = PhysicsObj.Position
+ALIAS(field) ASSIGN field | Physics/PartArray.cs:600 | Parts[0].Pos = Owner.Position
+ALIAS(field) ASSIGN field | Physics/PhysicsObj.cs:2436 | setPos.Pos = Position
+ALIAS(field) ASSIGN field | Physics/PhysicsObj.cs:4282 | setPosition.Pos = RequestPos
+ALIAS(field) ASSIGN field | Physics/PhysicsObj.cs:4379 | setPosition.Pos = RequestPos
+ALIAS(field) ASSIGN field | Physics/PhysicsPart.cs:120 | Pos = template.Pos
+ALIAS(field) ASSIGN field | Physics/Transition.cs:941 | SpherePath.CurPos = SpherePath.CheckPos
+ALIAS(field) ASSIGN field | Physics/Transition.cs:964 | SpherePath.CurPos = SpherePath.CheckPos
+ALIAS(field) LOCAL-INIT | Physics/Managers/InterpolationManager.cs:41 | dest = PositionQueue.Count > 0 && PositionQueue.Last.Value.Type == InterpolationNodeType.PositionType ?                 PositionQueue.Last.Value.Posit...
+ALIAS(field) LOCAL-INIT | Physics/Managers/StickyManager.cs:97 | targetPosition = target == null ? TargetPosition : target.Position
+ALIAS(field) LOCAL-INIT | Physics/PhysicsObj.cs:1177 | curPos = transition.SpherePath.CurPos
+ALIAS(field) LOCAL-INIT | WorldObjects/Monster_Navigation.cs:283 | newPos = PhysicsObj.Position
+ALIAS(local) ASSIGN field | Physics/Common/Landblock.cs:448 | building.PartArray.Parts[0].Pos = position
+ALIAS(local) ASSIGN field | Physics/Common/Landblock.cs:449 | building.Position = position
+ALIAS(param) ASSIGN field | Physics/Animation/InterpolationNode.cs:26 | Position = position
+ALIAS(param) ASSIGN field | Physics/Common/SetPosition.cs:45 | Pos = pos
+ALIAS(param) ASSIGN field | Physics/Common/SetPosition.cs:54 | Pos = pos
+ALIAS(param) ASSIGN field | Physics/PhysicsObj.cs:1366 | setPos.Pos = pos
+ALIAS(param) ASSIGN field | Physics/SpherePath.cs:87 | BeginPos = beginPos
+ALIAS(param) ASSIGN field | Physics/SpherePath.cs:89 | EndPos = endPos
+ARG-SHARED(call:SpherePath.GetWalkablePos) -> SpherePath.CacheLocalSpaceSphere | Physics/Transition.cs:306 | SpherePath.CacheLocalSpaceSphere(SpherePath.GetWalkablePos(), SpherePath.WalkableScale)
+ARG-SHARED(field) -> BBox.ConvertToGlobal | Physics/PartArray.cs:167 | partBox.ConvertToGlobal(part.Pos)
+ARG-SHARED(field) -> BBox.LocalToGlobal | Physics/Common/LandCell.cs:164 | bbox.LocalToGlobal(otherPart.GetBoundingBox(), otherPart.Pos, loc)
+ARG-SHARED(field) -> BBox.LocalToLocal | Physics/Common/EnvCell.cs:180 | box.LocalToLocal(part.GetBoundingBox(), part.Pos, Pos)
+ARG-SHARED(field) -> BBox.LocalToLocal | Physics/Common/EnvCell.cs:180 | box.LocalToLocal(part.GetBoundingBox(), part.Pos, Pos)
+ARG-SHARED(field) -> BBox.LocalToLocal | Physics/Common/EnvCell.cs:279 | box.LocalToLocal(bbox, part.Pos, Pos)
+ARG-SHARED(field) -> BBox.LocalToLocal | Physics/Common/EnvCell.cs:279 | box.LocalToLocal(bbox, part.Pos, Pos)
+ARG-SHARED(field) -> BBox.LocalToLocal | Physics/Common/EnvCell.cs:299 | cellBox.LocalToLocal(bbox, part.Pos, otherCell.Pos)
+ARG-SHARED(field) -> BBox.LocalToLocal | Physics/Common/EnvCell.cs:299 | cellBox.LocalToLocal(bbox, part.Pos, otherCell.Pos)
+ARG-SHARED(field) -> CylSphere.IntersectsSphere | Physics/PhysicsObj.cs:437 | cylSpheres[i].IntersectsSphere(Position, Scale, transition)
+ARG-SHARED(field) -> LoggerExtensions.LogDebug | Command/Handlers/DeveloperCommands.cs:2251 | log.LogDebug("AuditObjectMaint removed 0x{KvpID:X8}:{KvpName} (IsDestroyed:{WeenieObjIsDestroyed}, Position:{KvpPosition}) from 0x{ValueID:X8}:{ValueN...
+ARG-SHARED(field) -> LoggerExtensions.LogDebug | Command/Handlers/DeveloperCommands.cs:2251 | log.LogDebug("AuditObjectMaint removed 0x{KvpID:X8}:{KvpName} (IsDestroyed:{WeenieObjIsDestroyed}, Position:{KvpPosition}) from 0x{ValueID:X8}:{ValueN...
+ARG-SHARED(field) -> LoggerExtensions.LogDebug | Command/Handlers/DeveloperCommands.cs:2264 | log.LogDebug("AuditObjectMaint removed 0x{KvpID:X8}:{KvpName} (IsDestroyed:{WeenieObjIsDestroyed}, Position:{KvpPosition}) from 0x{ValueID:X8}:{ValueN...
+ARG-SHARED(field) -> LoggerExtensions.LogDebug | Command/Handlers/DeveloperCommands.cs:2264 | log.LogDebug("AuditObjectMaint removed 0x{KvpID:X8}:{KvpName} (IsDestroyed:{WeenieObjIsDestroyed}, Position:{KvpPosition}) from 0x{ValueID:X8}:{ValueN...
+ARG-SHARED(field) -> LoggerExtensions.LogDebug | Command/Handlers/DeveloperCommands.cs:2277 | log.LogDebug("AuditObjectMaint removed 0x{KvpID:X8}:{KvpName} (IsDestroyed:{WeenieObjIsDestroyed}, Position:{KvpPosition}) from 0x{ValueID:X8}:{ValueN...
+ARG-SHARED(field) -> LoggerExtensions.LogDebug | Command/Handlers/DeveloperCommands.cs:2277 | log.LogDebug("AuditObjectMaint removed 0x{KvpID:X8}:{KvpName} (IsDestroyed:{WeenieObjIsDestroyed}, Position:{KvpPosition}) from 0x{ValueID:X8}:{ValueN...
+ARG-SHARED(field) -> LoggerExtensions.LogDebug | Physics/PhysicsObj.cs:1705 | log.LogDebug("{Name} ({ID:X8}).UpdateObjectInternal({Quantum}) - failed transition from {Position} to {NewPos}", Name, ID, quantum, Position, newPos)
+ARG-SHARED(field) -> LoggerExtensions.LogDebug | Physics/PhysicsObj.cs:1786 | log.LogDebug("{Name}.UpdateObjectInternalServer({Quantum}) - failed transition from {Position} to {RequestPos}", Name, quantum, Position, RequestPos)
+ARG-SHARED(field) -> LoggerExtensions.LogDebug | Physics/PhysicsObj.cs:1786 | log.LogDebug("{Name}.UpdateObjectInternalServer({Quantum}) - failed transition from {Position} to {RequestPos}", Name, quantum, Position, RequestPos)
+ARG-SHARED(field) -> LoggerExtensions.LogInformation | WorldObjects/Creature_Death.cs:627 | log.LogInformation("[CORPSE] {Name}'s corpse (0x{Guid}) is located at {Position}", Name, corpse.Guid, corpse.PhysicsObj.Position)
+ARG-SHARED(field) -> LoggerExtensions.LogWarning | Physics/PhysicsObj.cs:1688 | log.LogWarning("WARNING: failed transition for {Name} from {Position} to {NewPos}", Name, Position, newPos)
+ARG-SHARED(field) -> LoggerExtensions.LogWarning | Physics/PhysicsObj.cs:1707 | log.LogWarning("{Name} ({ID:X8}).UpdateObjectInternal({Quantum}) - avoided CurCell=null from {Position} to {NewPos}", Name, ID, quantum, Position, new...
+ARG-SHARED(field) -> LoggerExtensions.LogWarning | Physics/PhysicsObj.cs:1773 | log.LogWarning("WARNING: failed transition for {Name} from {Position} to {RequestPos}", Name, Position, RequestPos)
+ARG-SHARED(field) -> LoggerExtensions.LogWarning | Physics/PhysicsObj.cs:1773 | log.LogWarning("WARNING: failed transition for {Name} from {Position} to {RequestPos}", Name, Position, RequestPos)
+ARG-SHARED(field) -> LoggerExtensions.LogWarning | Physics/PhysicsObj.cs:4334 | log.LogWarning("WARNING: failed transition for {Name} from {Position} to {RequestPos}", Name, Position, RequestPos)
+ARG-SHARED(field) -> LoggerExtensions.LogWarning | Physics/PhysicsObj.cs:4334 | log.LogWarning("WARNING: failed transition for {Name} from {Position} to {RequestPos}", Name, Position, RequestPos)
+ARG-SHARED(field) -> MoveToManager.MoveToObject_Internal | Physics/Managers/MoveToManager.cs:660 | MoveToObject_Internal(targetInfo.TargetPosition, targetInfo.InterpolatedPosition)
+ARG-SHARED(field) -> MoveToManager.MoveToObject_Internal | Physics/Managers/MoveToManager.cs:660 | MoveToObject_Internal(targetInfo.TargetPosition, targetInfo.InterpolatedPosition)
+ARG-SHARED(field) -> MoveToManager.MoveToPosition | Physics/Managers/MoveToManager.cs:101 | MoveToPosition(mvs.Position, mvs.Params)
+ARG-SHARED(field) -> MoveToManager.TurnToObject_Internal | Physics/Managers/MoveToManager.cs:662 | TurnToObject_Internal(targetInfo.TargetPosition)
+ARG-SHARED(field) -> ObjCell.CheckAttack | Physics/PhysicsObj.cs:2067 | cell.CheckAttack(ID, Position, Scale, attackCone, attackInfo)
+ARG-SHARED(field) -> ObjCell.find_cell_list | Physics/Common/ObjCell.cs:448 | find_cell_list(path.CheckPos, path.NumSphere, path.GlobalSphere, cellArray, ref checkCell, path)
+ARG-SHARED(field) -> ObjCell.find_cell_list | Physics/PhysicsObj.cs:2060 | ObjCell.find_cell_list(Position, sphere, cellArray, null)
+ARG-SHARED(field) -> ObjCell.find_cell_list | Physics/PhysicsObj.cs:2096 | ObjCell.find_cell_list(Position, PartArray.GetNumCylsphere(), PartArray.GetCylSphere(), CellArray, null)
+ARG-SHARED(field) -> ObjCell.find_cell_list | Physics/PhysicsObj.cs:2101 | ObjCell.find_cell_list(Position, sphere, CellArray, null)
+ARG-SHARED(field) -> ObjCell.find_cell_list | Physics/PhysicsObj.cs:2113 | ObjCell.find_cell_list(Position, PartArray.GetNumCylsphere(), PartArray.GetCylSphere(), CellArray, null)
+ARG-SHARED(field) -> PhysicsObj.GetBlockDist | Physics/PhysicsObj.cs:1686 | GetBlockDist(Position, newPos)
+ARG-SHARED(field) -> PhysicsObj.GetBlockDist | Physics/PhysicsObj.cs:1771 | GetBlockDist(Position, RequestPos)
+ARG-SHARED(field) -> PhysicsObj.GetBlockDist | Physics/PhysicsObj.cs:1771 | GetBlockDist(Position, RequestPos)
+ARG-SHARED(field) -> PhysicsObj.GetBlockDist | Physics/PhysicsObj.cs:4332 | GetBlockDist(Position, RequestPos)
+ARG-SHARED(field) -> PhysicsObj.GetBlockDist | Physics/PhysicsObj.cs:4332 | GetBlockDist(Position, RequestPos)
+ARG-SHARED(field) -> PhysicsObj.set_current_pos | Physics/PhysicsObj.cs:4271 | set_current_pos(RequestPos)
+ARG-SHARED(field) -> PhysicsObj.set_current_pos | Physics/PhysicsObj.cs:4370 | set_current_pos(RequestPos)
+ARG-SHARED(field) -> PhysicsObj.SetPositionInternal | Physics/PhysicsObj.cs:1355 | SetPositionInternal(setPos.Pos, setPos, transition)
+ARG-SHARED(field) -> PhysicsObj.SetPositionSimple | Physics/Managers/InterpolationManager.cs:154 | PhysicsObj.SetPositionSimple(last.Position, true)
+ARG-SHARED(field) -> PhysicsObj.SetPositionSimple | Physics/Managers/InterpolationManager.cs:168 | PhysicsObj.SetPositionSimple(node.Position, true)
+ARG-SHARED(field) -> PhysicsObj.SetPositionSimple | Physics/Managers/InterpolationManager.cs:178 | PhysicsObj.SetPositionSimple(BlipToPosition, true)
+ARG-SHARED(field) -> PhysicsObj.SetPositionSimple | WorldObjects/Player.cs:1143 | PhysicsObj.SetPositionSimple(PhysicsObj.Position, true)
+ARG-SHARED(field) -> PhysicsObj.store_position | Physics/PhysicsObj.cs:2895 | store_position(Position)
+ARG-SHARED(field) -> PhysicsObj.transition | Command/Handlers/AdminCommands.cs:2850 | item.PhysicsObj.transition(item.PhysicsObj.Position, new Physics.Common.Position(item.Location), false)
+ARG-SHARED(field) -> PhysicsObj.transition | Command/Handlers/DeveloperContentCommands.cs:2910 | obj.PhysicsObj.transition(obj.PhysicsObj.Position, newPos, true)
+ARG-SHARED(field) -> PhysicsObj.transition | Physics/PhysicsObj.cs:1692 | transition(Position, newPos, false)
+ARG-SHARED(field) -> PhysicsObj.transition | Physics/PhysicsObj.cs:1779 | transition(Position, RequestPos, false)
+ARG-SHARED(field) -> PhysicsObj.transition | Physics/PhysicsObj.cs:1779 | transition(Position, RequestPos, false)
+ARG-SHARED(field) -> PhysicsObj.transition | Physics/PhysicsObj.cs:4360 | transition(Position, RequestPos, false)
+ARG-SHARED(field) -> PhysicsObj.transition | Physics/PhysicsObj.cs:4360 | transition(Position, RequestPos, false)
+ARG-SHARED(field) -> PhysicsObj.transition | WorldObjects/Player_Inventory.cs:1492 | item.PhysicsObj.transition(item.PhysicsObj.Position, new Physics.Common.Position(targetPos), false)
+ARG-SHARED(field) -> PlaneExtensions.LocalToGlobal | Physics/BSP/BSPTree.cs:176 | hitPoly.Plane.LocalToGlobal(path.CheckPos, path.LocalSpacePos, hitPoly.Plane)
+ARG-SHARED(field) -> PlaneExtensions.LocalToGlobal | Physics/BSP/BSPTree.cs:176 | hitPoly.Plane.LocalToGlobal(path.CheckPos, path.LocalSpacePos, hitPoly.Plane)
+ARG-SHARED(field) -> PlaneExtensions.LocalToGlobal | Physics/BSP/BSPTree.cs:344 | polyHit.Plane.LocalToGlobal(path.CheckPos, path.LocalSpacePos, polyHit.Plane)
+ARG-SHARED(field) -> PlaneExtensions.LocalToGlobal | Physics/BSP/BSPTree.cs:344 | polyHit.Plane.LocalToGlobal(path.CheckPos, path.LocalSpacePos, polyHit.Plane)
+ARG-SHARED(field) -> Position.CylinderDistance | Physics/Managers/MoveToManager.cs:739 | Position.CylinderDistance(PhysicsObj.GetRadius(), PhysicsObj.GetHeight(), PhysicsObj.Position,                 SoughtObjectRadius, SoughtObjectHeight,...
+ARG-SHARED(field) -> Position.CylinderDistance | Physics/Managers/MoveToManager.cs:740 | Position.CylinderDistance(PhysicsObj.GetRadius(), PhysicsObj.GetHeight(), PhysicsObj.Position,                 SoughtObjectRadius, SoughtObjectHeight,...
+ARG-SHARED(field) -> Position.CylinderDistance | Physics/PhysicsObj.cs:2524 | Position.CylinderDistance(curRadius, curHeight, Position, radius, height, obj.Position)
+ARG-SHARED(field) -> Position.CylinderDistance | Physics/PhysicsObj.cs:2524 | Position.CylinderDistance(curRadius, curHeight, Position, radius, height, obj.Position)
+ARG-SHARED(field) -> Position.CylinderDistance | WorldObjects/Monster_Navigation.cs:216 | Physics.Common.Position.CylinderDistance(PhysicsObj.GetRadius(), PhysicsObj.GetHeight(), PhysicsObj.Position,                 AttackTarget.PhysicsObj....
+ARG-SHARED(field) -> Position.CylinderDistance | WorldObjects/Monster_Navigation.cs:217 | Physics.Common.Position.CylinderDistance(PhysicsObj.GetRadius(), PhysicsObj.GetHeight(), PhysicsObj.Position,                 AttackTarget.PhysicsObj....
+ARG-SHARED(field) -> Position.CylinderDistance | WorldObjects/WorldObject_Use.cs:62 | Physics.Common.Position.CylinderDistance(PhysicsObj.GetRadius(), PhysicsObj.GetHeight(), PhysicsObj.Position,                 wo.PhysicsObj.GetRadius(...
+ARG-SHARED(field) -> Position.CylinderDistance | WorldObjects/WorldObject_Use.cs:63 | Physics.Common.Position.CylinderDistance(PhysicsObj.GetRadius(), PhysicsObj.GetHeight(), PhysicsObj.Position,                 wo.PhysicsObj.GetRadius(...
+ARG-SHARED(field) -> Position.CylinderDistanceNoZ | Physics/Managers/StickyManager.cs:104 | Position.CylinderDistanceNoZ(radius, PhysicsObj.Position, TargetRadius, targetPosition)
+ARG-SHARED(field) -> Position.CylinderDistanceSq | Physics/PhysicsObj.cs:2539 | Position.CylinderDistanceSq(curRadius, curHeight, Position, radius, height, obj.Position)
+ARG-SHARED(field) -> Position.CylinderDistanceSq | Physics/PhysicsObj.cs:2539 | Position.CylinderDistanceSq(curRadius, curHeight, Position, radius, height, obj.Position)
+ARG-SHARED(field) -> Position.DetermineQuadrant | Physics/PhysicsObj.cs:3417 | obj.Position.DetermineQuadrant(obj.GetHeight(), Position)
+ARG-SHARED(field) -> Position.Distance | Physics/Managers/ConstraintManager.cs:34 | position.Distance(PhysicsObj.Position)
+ARG-SHARED(field) -> Position.Distance | Physics/Managers/InterpolationManager.cs:105 | PhysicsObj.Position.Distance(next.Position)
+ARG-SHARED(field) -> Position.Distance | Physics/Managers/InterpolationManager.cs:208 | PhysicsObj.Position.Distance(first.Position)
+ARG-SHARED(field) -> Position.Distance | Physics/Managers/MoveToManager.cs:488 | StartingPosition.Distance(PhysicsObj.Position)
+ARG-SHARED(field) -> Position.Distance | Physics/Managers/MoveToManager.cs:737 | PhysicsObj.Position.Distance(CurrentTargetPosition)
+ARG-SHARED(field) -> Position.Distance | Physics/Managers/TargetManager.cs:86 | newPos.Distance(voyeur.LastSentPosition)
+ARG-SHARED(field) -> Position.Distance | Physics/PhysicsObj.cs:2516 | Position.Distance(obj.Position)
+ARG-SHARED(field) -> Position.Distance | WorldObjects/Player_Magic.cs:1342 | StartPos.Distance(PhysicsObj.Position)
+ARG-SHARED(field) -> Position.Distance | WorldObjects/Player_Magic.cs:873 | StartPos.Distance(PhysicsObj.Position)
+ARG-SHARED(field) -> Position.Distance2DSquared | Physics/Common/ObjectMaint.cs:1044 | PhysicsObj.Position.Distance2DSquared(obj.Position)
+ARG-SHARED(field) -> Position.Distance2DSquared | Physics/Common/ObjectMaint.cs:440 | PhysicsObj.Position.Distance2DSquared(obj.Position)
+ARG-SHARED(field) -> Position.Distance2DSquared | Physics/Common/ObjectMaint.cs:975 | PhysicsObj.Position.Distance2DSquared(obj.Position)
+ARG-SHARED(field) -> Position.DistanceSquared | Physics/PhysicsObj.cs:2531 | Position.DistanceSquared(obj.Position)
+ARG-SHARED(field) -> Position.Equals | Physics/Transition.cs:988 | SpherePath.CheckPos.Equals(SpherePath.CurPos)
+ARG-SHARED(field) -> Position.GetOffset | Physics/Common/LandCell.cs:291 | Pos.GetOffset(transition.SpherePath.CurPos)
+ARG-SHARED(field) -> Position.GetOffset | Physics/Managers/TargetManager.cs:127 | PhysicsObj.Position.GetOffset(TargetInfo.InterpolatedPosition)
+ARG-SHARED(field) -> Position.GetOffset | Physics/PhysicsObj.cs:1698 | Position.GetOffset(transit.SpherePath.CurPos)
+ARG-SHARED(field) -> Position.GetOffset | Physics/PhysicsObj.cs:1782 | Position.GetOffset(transit.SpherePath.CurPos)
+ARG-SHARED(field) -> Position.GetOffset | Physics/PhysicsObj.cs:1898 | Render.ViewerPos.GetOffset(Position)
+ARG-SHARED(field) -> Position.GetOffset | Physics/Transition.cs:106 | SpherePath.BeginPos.GetOffset(SpherePath.EndPos)
+ARG-SHARED(field) -> Position.GetOffset | WorldObjects/WorldObject_Magic.cs:1718 | PhysicsObj.Position.GetOffset(target.PhysicsObj.Position)
+ARG-SHARED(field) -> Position.GetOffset | WorldObjects/WorldObject_Magic.cs:1789 | PhysicsObj.Position.GetOffset(target.PhysicsObj.Position)
+ARG-SHARED(field) -> Position.heading | Physics/Managers/MoveToManager.cs:273 | PhysicsObj.Position.heading(CurrentTargetPosition)
+ARG-SHARED(field) -> Position.heading | Physics/Managers/MoveToManager.cs:362 | PhysicsObj.Position.heading(CurrentTargetPosition)
+ARG-SHARED(field) -> Position.heading | Physics/Managers/MoveToManager.cs:424 | curPos.heading(CurrentTargetPosition)
+ARG-SHARED(field) -> Position.heading_diff | WorldObjects/Creature_Navigation.cs:75 | PhysicsObj.Position.heading_diff(target.PhysicsObj.Position)
+ARG-SHARED(field) -> Position.LocalToLocal | Physics/Common/EnvCell.cs:166 | Pos.LocalToLocal(part.Pos, boundingSphere.Center)
+ARG-SHARED(field) -> Position.LocalToLocal | Physics/Common/EnvCell.cs:262 | Pos.LocalToLocal(part.Pos, sphere.Center)
+ARG-SHARED(field) -> Position.LocalToLocal | Physics/SpherePath.cs:199 | pos.LocalToLocal(CurPos, LocalSphere[i].Center)
+ARG-SHARED(field) -> Position.LocalToLocal | Physics/SpherePath.cs:202 | pos.LocalToLocal(CheckPos, LocalSphere[i].Center)
+ARG-SHARED(field) -> Position.Subtract | Physics/Managers/InterpolationManager.cs:240 | first.Position.Subtract(PhysicsObj.Position)
+ARG-SHARED(field) -> Sphere.Attack | Physics/PhysicsObj.cs:2197 | Sphere.Attack(Position, targetRadius, targetHeight, attackerPos, attackCone.Left, attackCone.Right, attackRad, attackHeight)
+ARG-SHARED(field) -> Sphere.IntersectsSphere | Physics/PhysicsObj.cs:422 | spheres[i].IntersectsSphere(Position, Scale, transition, isCreature)
+ARG-SHARED(field) -> SpherePath.CacheLocalSpaceSphere | Physics/Common/EnvCell.cs:94 | transition.SpherePath.CacheLocalSpaceSphere(Pos, 1.0f)
+ARG-SHARED(field) -> SpherePath.CacheLocalSpaceSphere | Physics/PhysicsPart.cs:56 | transition.SpherePath.CacheLocalSpaceSphere(Pos, GfxObjScale.Z)
+ARG-SHARED(field) -> SpherePath.SetCheckPos | Physics/Transition.cs:1012 | SpherePath.SetCheckPos(SpherePath.CurPos, SpherePath.CurCell)
+ARG-SHARED(field) -> SpherePath.SetCheckPos | Physics/Transition.cs:1088 | SpherePath.SetCheckPos(SpherePath.CurPos, SpherePath.CurCell)
+ARG-SHARED(field) -> SpherePath.SetCheckPos | Physics/Transition.cs:145 | SpherePath.SetCheckPos(SpherePath.CurPos, SpherePath.CurCell)
+ARG-SHARED(field) -> SpherePath.SetCheckPos | Physics/Transition.cs:232 | SpherePath.SetCheckPos(SpherePath.BackupCheckPos, SpherePath.BackupCell)
+ARG-SHARED(field) -> SpherePath.SetCheckPos | Physics/Transition.cs:339 | SpherePath.SetCheckPos(SpherePath.CurPos, SpherePath.CurCell)
+ARG-SHARED(field) -> SpherePath.SetCheckPos | Physics/Transition.cs:402 | SpherePath.SetCheckPos(SpherePath.CurPos, SpherePath.CurCell)
+ARG-SHARED(field) -> SpherePath.SetCheckPos | Physics/Transition.cs:428 | SpherePath.SetCheckPos(SpherePath.CurPos, SpherePath.CurCell)
+ARG-SHARED(field) -> SpherePath.SetCheckPos | Physics/Transition.cs:516 | SpherePath.SetCheckPos(SpherePath.CurPos, SpherePath.CurCell)
+ARG-SHARED(field) -> SpherePath.SetWalkable | Physics/BSP/BSPTree.cs:181 | path.SetWalkable(validPos, hitPoly, path.LocalSpaceZ, path.LocalSpacePos, scale)
+ARG-SHARED(field) -> SpherePath.SetWalkable | Physics/BSP/BSPTree.cs:353 | path.SetWalkable(validPos, polyHit, path.LocalSpaceZ, path.LocalSpacePos, scale)
+ARG-SHARED(field) -> TargetManager.SendVoyeurUpdate | Physics/Managers/TargetManager.cs:118 | SendVoyeurUpdate(voyeur, PhysicsObj.Position, status)
+ARG-SHARED(field) -> TargetManager.SendVoyeurUpdate | Physics/Managers/TargetManager.cs:156 | SendVoyeurUpdate(info, PhysicsObj.Position, TargetStatus.OK)
+ARG-SHARED(field) -> Transition.InitPath | Physics/PhysicsObj.cs:2214 | trans.InitPath(CurCell, Position, Position)
+ARG-SHARED(field) -> Transition.InitPath | Physics/PhysicsObj.cs:2214 | trans.InitPath(CurCell, Position, Position)
+ARG-SHARED(local) -> BBox.LocalToGlobal | Physics/Common/LandCell.cs:164 | bbox.LocalToGlobal(otherPart.GetBoundingBox(), otherPart.Pos, loc)
+ARG-SHARED(local) -> LandDefs.AdjustToOutside | Physics/Common/Landblock.cs:243 | LandDefs.AdjustToOutside(pos)
+ARG-SHARED(local) -> LandDefs.AdjustToOutside | Physics/Common/Landblock.cs:442 | LandDefs.AdjustToOutside(position)
+ARG-SHARED(local) -> LandDefs.AdjustToOutside | Physics/Common/Landblock.cs:496 | LandDefs.AdjustToOutside(position)
+ARG-SHARED(local) -> LandDefs.AdjustToOutside | Physics/Common/LandCell.cs:141 | LandDefs.AdjustToOutside(loc)
+ARG-SHARED(local) -> LandDefs.AdjustToOutside | Physics/PhysicsObj.cs:1418 | LandDefs.AdjustToOutside(newPos)
+ARG-SHARED(local) -> LandDefs.AdjustToOutside | Physics/Transition.cs:192 | LandDefs.AdjustToOutside(checkPos)
+ARG-SHARED(local) -> LoggerExtensions.LogDebug | Physics/PhysicsObj.cs:1440 | log.LogDebug("{Name} ({ID:X8}).SetScatterPositionInternal() - tried to spawn outdoor object @ {NewPos} ground Z {GroundZ} (diff: {HeightAboveGround}),...
+ARG-SHARED(local) -> LoggerExtensions.LogDebug | Physics/PhysicsObj.cs:1705 | log.LogDebug("{Name} ({ID:X8}).UpdateObjectInternal({Quantum}) - failed transition from {Position} to {NewPos}", Name, ID, quantum, Position, newPos)
+ARG-SHARED(local) -> LoggerExtensions.LogWarning | Physics/PhysicsObj.cs:1688 | log.LogWarning("WARNING: failed transition for {Name} from {Position} to {NewPos}", Name, Position, newPos)
+ARG-SHARED(local) -> LoggerExtensions.LogWarning | Physics/PhysicsObj.cs:1707 | log.LogWarning("{Name} ({ID:X8}).UpdateObjectInternal({Quantum}) - avoided CurCell=null from {Position} to {NewPos}", Name, ID, quantum, Position, new...
+ARG-SHARED(local) -> PhysicsObj.enter_world | WorldObjects/WorldObject.cs:210 | PhysicsObj.enter_world(location)
+ARG-SHARED(local) -> PhysicsObj.GetBlockDist | Physics/PhysicsObj.cs:1686 | GetBlockDist(Position, newPos)
+ARG-SHARED(local) -> PhysicsObj.GetBlockDist | WorldObjects/WorldObject.cs:317 | PhysicsObj.GetBlockDist(startPos, targetPos)
+ARG-SHARED(local) -> PhysicsObj.GetBlockDist | WorldObjects/WorldObject.cs:317 | PhysicsObj.GetBlockDist(startPos, targetPos)
+ARG-SHARED(local) -> PhysicsObj.GetBlockDist | WorldObjects/WorldObject.cs:355 | PhysicsObj.GetBlockDist(startPos, targetPos)
+ARG-SHARED(local) -> PhysicsObj.GetBlockDist | WorldObjects/WorldObject.cs:355 | PhysicsObj.GetBlockDist(startPos, targetPos)
+ARG-SHARED(local) -> PhysicsObj.MoveToPosition | WorldObjects/GamePiece.cs:172 | PhysicsObj.MoveToPosition(physPos, mvp)
+ARG-SHARED(local) -> PhysicsObj.MoveToPosition | WorldObjects/Monster_Navigation.cs:495 | PhysicsObj.MoveToPosition(homePos, mvp)
+ARG-SHARED(local) -> PhysicsObj.SetPositionInternal | Physics/PhysicsObj.cs:1477 | SetPositionInternal(newPos, setPos, transition)
+ARG-SHARED(local) -> PhysicsObj.store_position | Physics/PhysicsObj.cs:1182 | store_position(curPos)
+ARG-SHARED(local) -> PhysicsObj.transition | Command/Handlers/DeveloperContentCommands.cs:2910 | obj.PhysicsObj.transition(obj.PhysicsObj.Position, newPos, true)
+ARG-SHARED(local) -> PhysicsObj.transition | Physics/PhysicsObj.cs:1692 | transition(Position, newPos, false)
+ARG-SHARED(local) -> PhysicsObj.transition | WorldObjects/WorldObject.cs:332 | SightObj.transition(startPos, targetPos, false)
+ARG-SHARED(local) -> PhysicsObj.transition | WorldObjects/WorldObject.cs:332 | SightObj.transition(startPos, targetPos, false)
+ARG-SHARED(local) -> PhysicsObj.transition | WorldObjects/WorldObject.cs:370 | SightObj.transition(targetPos, startPos, false)
+ARG-SHARED(local) -> PhysicsObj.transition | WorldObjects/WorldObject.cs:370 | SightObj.transition(targetPos, startPos, false)
+ARG-SHARED(local) -> PhysicsObj.transition | WorldObjects/WorldObject.cs:392 | PhysicsObj.transition(startPos, targetPos, false)
+ARG-SHARED(local) -> PhysicsObj.transition | WorldObjects/WorldObject.cs:392 | PhysicsObj.transition(startPos, targetPos, false)
+ARG-SHARED(local) -> PhysicsObj.transition | WorldObjects/WorldObject.cs:421 | proj.PhysicsObj.transition(startPos, targetPos, false)
+ARG-SHARED(local) -> PhysicsObj.transition | WorldObjects/WorldObject.cs:421 | proj.PhysicsObj.transition(startPos, targetPos, false)
+ARG-SHARED(local) -> Position.CylinderDistanceNoZ | Physics/Managers/StickyManager.cs:104 | Position.CylinderDistanceNoZ(radius, PhysicsObj.Position, TargetRadius, targetPosition)
+ARG-SHARED(local) -> Position.Distance | WorldObjects/Healer.cs:151 | startPos.Distance(endPos)
+ARG-SHARED(local) -> Position.GetOffset | Physics/Managers/StickyManager.cs:99 | PhysicsObj.Position.GetOffset(targetPosition)
+ARG-SHARED(local) -> Position.GetOffset | WorldObjects/WorldObject_Magic.cs:1547 | startPos.GetOffset(endPos)
+ARG-SHARED(local) -> Position.heading | Physics/Managers/StickyManager.cs:124 | PhysicsObj.Position.heading(targetPosition)
+ARG-SHARED(local) -> SpherePath.SetCheckPos | Physics/Transition.cs:197 | SpherePath.SetCheckPos(checkPos, null)
+ARG-SHARED(local) -> TargetManager.SendVoyeurUpdate | Physics/Managers/TargetManager.cs:87 | SendVoyeurUpdate(voyeur, newPos, TargetStatus.OK)
+ARG-SHARED(param) -> BuildingObj.find_building_transit_cells | Physics/Common/SortCell.cs:36 | Building.find_building_transit_cells(position, numSphere, sphere, cellArray, path)
+ARG-SHARED(param) -> ConstraintManager.ConstrainTo | Physics/Managers/PositionManager.cs:35 | ConstraintManager.ConstrainTo(position, startDistance, maxDistance)
+ARG-SHARED(param) -> EnvCell.check_building_transit | Physics/Common/BuildingObj.cs:60 | otherCell.check_building_transit(portal.OtherPortalId, pos, numSphere, sphere, cellArray, path)
+ARG-SHARED(param) -> InterpolationManager.InterpolateTo | Physics/Managers/PositionManager.cs:60 | InterpolationManager.InterpolateTo(position, keepHeading)
+ARG-SHARED(param) -> LandCell.add_all_outside_cells | Physics/Common/EnvCell.cs:370 | LandCell.add_all_outside_cells(position, numSphere, spheres, cellArray)
+ARG-SHARED(param) -> LandCell.add_all_outside_cells | Physics/Common/LandCell.cs:279 | add_all_outside_cells(position, numSphere, sphere, cellArray)
+ARG-SHARED(param) -> LandCell.add_all_outside_cells | Physics/Common/ObjCell.cs:351 | LandCell.add_all_outside_cells(position, numSphere, sphere, cellArray)
+ARG-SHARED(param) -> LandDefs.AdjustToOutside | Physics/Common/LandCell.cs:112 | LandDefs.AdjustToOutside(position)
+ARG-SHARED(param) -> LandDefs.AdjustToOutside | Physics/Common/Position.cs:197 | LandDefs.AdjustToOutside(this)
+ARG-SHARED(param) -> LandDefs.AdjustToOutside | Physics/PhysicsObj.cs:242 | LandDefs.AdjustToOutside(position)
+ARG-SHARED(param) -> LandDefs.AdjustToOutside | Physics/PhysicsObj.cs:4034 | LandDefs.AdjustToOutside(pos)
+ARG-SHARED(param) -> ObjCell.find_cell_list | Physics/Common/ObjCell.cs:433 | find_cell_list(position, numCylSphere, spheres, cellArray, ref empty, path)
+ARG-SHARED(param) -> ObjCell.find_cell_list | Physics/Common/ObjCell.cs:443 | find_cell_list(position, 1, globalSphere, cellArray, ref empty, path)
+ARG-SHARED(param) -> ObjCell.find_cell_list | Physics/Common/ObjCell.cs:453 | find_cell_list(position, numSphere, new List<Sphere>() { sphere }, cellArray, ref currCell, path)
+ARG-SHARED(param) -> ObjCell.find_transit_cells | Physics/Common/ObjCell.cs:360 | cell.find_transit_cells(position, numSphere, sphere, cellArray, path)
+ARG-SHARED(param) -> PhysicsObj.AdjustPosition | Physics/PhysicsObj.cs:1282 | AdjustPosition(pos, transition.SpherePath.LocalSphere[0].Center, setPos.Flags.HasFlag(SetPositionFlags.DontCreateCells), true)
+ARG-SHARED(param) -> PhysicsObj.check_attack | Physics/Common/ObjCell.cs:122 | pObj.check_attack(attackerPos, attackerScale, attackCone, attackInfo.AttackRadius)
+ARG-SHARED(param) -> PhysicsObj.CheckPositionInternal | Physics/PhysicsObj.cs:1299 | CheckPositionInternal(newCell, pos, transition, setPos)
+ARG-SHARED(param) -> PhysicsObj.ForceIntoCell | Physics/PhysicsObj.cs:1294 | ForceIntoCell(newCell, pos)
+ARG-SHARED(param) -> PhysicsObj.InterpolateTo | Physics/PhysicsObj.cs:927 | InterpolateTo(pos, IsMovingTo())
+ARG-SHARED(param) -> PhysicsObj.SetPositionSimple | Physics/PhysicsObj.cs:931 | SetPositionSimple(pos, true)
+ARG-SHARED(param) -> PhysicsObj.store_position | Physics/PhysicsObj.cs:1287 | store_position(pos)
+ARG-SHARED(param) -> PhysicsObj.store_position | Physics/PhysicsObj.cs:2421 | store_position(pos)
+ARG-SHARED(param) -> Position.Distance | Physics/Managers/InterpolationManager.cs:44 | dest.Distance(position)
+ARG-SHARED(param) -> Position.Distance | Physics/Managers/InterpolationManager.cs:48 | PhysicsObj.Position.Distance(position)
+ARG-SHARED(param) -> Position.Distance | Physics/Managers/InterpolationManager.cs:53 | lastNode.Position.Distance(position)
+ARG-SHARED(param) -> Position.GetOffset | Physics/Common/Position.cs:102 | pos.GetOffset(otherPos)
+ARG-SHARED(param) -> Position.GetOffset | Physics/Common/Position.cs:119 | pos.GetOffset(otherPos)
+ARG-SHARED(param) -> Position.GetOffset | Physics/Common/Position.cs:135 | pos.GetOffset(otherPos)
+ARG-SHARED(param) -> Position.GetOffset | Physics/Common/Position.cs:202 | GetOffset(position)
+ARG-SHARED(param) -> Position.GetOffset | Physics/Common/Position.cs:92 | GetOffset(pos)
+ARG-SHARED(param) -> Position.GetOffset | Physics/Common/Position.cs:97 | GetOffset(pos)
+ARG-SHARED(param) -> Position.heading | Physics/Common/Position.cs:213 | heading(position)
+ARG-SHARED(param) -> Position.heading | Physics/Managers/MoveToManager.cs:154 | PhysicsObj.Position.heading(interpolatedPosition)
+ARG-SHARED(param) -> Position.heading | Physics/Managers/MoveToManager.cs:196 | PhysicsObj.Position.heading(position)
+ARG-SHARED(param) -> Position.heading | Physics/Managers/MoveToManager.cs:210 | PhysicsObj.Position.heading(position)
+ARG-SHARED(param) -> Position.LocalToGlobal | Physics/Collision/BBox.cs:105 | toPos.LocalToGlobal(fromPos, fromBox.Min)
+ARG-SHARED(param) -> Position.LocalToGlobal | Physics/Collision/BBox.cs:106 | toPos.LocalToGlobal(fromPos, fromBox.Max)
+ARG-SHARED(param) -> Position.LocalToGlobal | Physics/Collision/BBox.cs:108 | toPos.LocalToGlobal(fromPos, new Vector3(fromBox.Max.X, fromBox.Max.Y, fromBox.Min.Z))
+ARG-SHARED(param) -> Position.LocalToGlobal | Physics/Collision/BBox.cs:109 | toPos.LocalToGlobal(fromPos, new Vector3(fromBox.Max.X, fromBox.Min.Y, fromBox.Max.Z))
+ARG-SHARED(param) -> Position.LocalToGlobal | Physics/Collision/BBox.cs:110 | toPos.LocalToGlobal(fromPos, new Vector3(fromBox.Min.X, fromBox.Max.Y, fromBox.Max.Z))
+ARG-SHARED(param) -> Position.LocalToGlobal | Physics/Collision/BBox.cs:111 | toPos.LocalToGlobal(fromPos, new Vector3(fromBox.Min.X, fromBox.Max.Y, fromBox.Min.Z))
+ARG-SHARED(param) -> Position.LocalToGlobal | Physics/Collision/BBox.cs:112 | toPos.LocalToGlobal(fromPos, new Vector3(fromBox.Max.X, fromBox.Min.Y, fromBox.Min.Z))
+ARG-SHARED(param) -> Position.LocalToGlobal | Physics/Collision/BBox.cs:113 | toPos.LocalToGlobal(fromPos, new Vector3(fromBox.Min.X, fromBox.Min.Y, fromBox.Max.Z))
+ARG-SHARED(param) -> Position.LocalToGlobal | Physics/CylSphere.cs:350 | path.CheckPos.LocalToGlobal(pos, global_cylsphere.LowPoint)
+ARG-SHARED(param) -> Position.LocalToGlobal | Physics/Extensions/PlaneExtensions.cs:15 | to.LocalToGlobal(from, localPlane.Normal * -localPlane.D)
+ARG-SHARED(param) -> Position.LocalToGlobal | Physics/Sphere.cs:266 | transition.SpherePath.CheckPos.LocalToGlobal(position, Center * scale)
+ARG-SHARED(param) -> Position.LocalToLocal | Physics/Collision/BBox.cs:118 | toPos.LocalToLocal(fromPos, fromBox.Min)
+ARG-SHARED(param) -> Position.LocalToLocal | Physics/Collision/BBox.cs:119 | toPos.LocalToLocal(fromPos, fromBox.Max)
+ARG-SHARED(param) -> Position.LocalToLocal | Physics/Collision/BBox.cs:121 | toPos.LocalToLocal(fromPos, new Vector3(fromBox.Max.X, fromBox.Max.Y, fromBox.Min.Z))
+ARG-SHARED(param) -> Position.LocalToLocal | Physics/Collision/BBox.cs:122 | toPos.LocalToLocal(fromPos, new Vector3(fromBox.Max.X, fromBox.Min.Y, fromBox.Max.Z))
+ARG-SHARED(param) -> Position.LocalToLocal | Physics/Collision/BBox.cs:123 | toPos.LocalToLocal(fromPos, new Vector3(fromBox.Min.X, fromBox.Max.Y, fromBox.Max.Z))
+ARG-SHARED(param) -> Position.LocalToLocal | Physics/Collision/BBox.cs:124 | toPos.LocalToLocal(fromPos, new Vector3(fromBox.Min.X, fromBox.Max.Y, fromBox.Min.Z))
+ARG-SHARED(param) -> Position.LocalToLocal | Physics/Collision/BBox.cs:125 | toPos.LocalToLocal(fromPos, new Vector3(fromBox.Max.X, fromBox.Min.Y, fromBox.Min.Z))
+ARG-SHARED(param) -> Position.LocalToLocal | Physics/Collision/BBox.cs:126 | toPos.LocalToLocal(fromPos, new Vector3(fromBox.Min.X, fromBox.Min.Y, fromBox.Max.Z))
+ARG-SHARED(param) -> Position.LocalToLocal | Physics/Common/Position.cs:144 | LocalToLocal(position, Vector3.Zero)
+ARG-SHARED(param) -> Position.LocalToLocal | Physics/Sphere.cs:68 | attackPos.LocalToLocal(targetPos, Vector3.Zero)
+ARG-SHARED(param) -> Position.LocalToLocal | Physics/Sphere.cs:79 | targetPos.LocalToLocal(attackPos, Vector3.Zero)
+ARG-SHARED(param) -> PositionManager.ConstrainTo | Physics/PhysicsObj.cs:330 | PositionManager.ConstrainTo(pos, startDistance, maxDistance)
+ARG-SHARED(param) -> PositionManager.InterpolateTo | Physics/PhysicsObj.cs:826 | PositionManager.InterpolateTo(p, keepHeading)
+ARG-SHARED(param) -> SortCell.find_transit_cells | Physics/Common/LandCell.cs:280 | base.find_transit_cells(position, numSphere, sphere, cellArray, path)
+ARG-SHARED(param) -> Sphere.Attack | Physics/PhysicsObj.cs:2197 | Sphere.Attack(Position, targetRadius, targetHeight, attackerPos, attackCone.Left, attackCone.Right, attackRad, attackHeight)
+ARG-SHARED(param) -> SpherePath.CacheLocalSpaceSphere | Physics/CylSphere.cs:348 | path.CacheLocalSpaceSphere(pos, 1.0f)
+ARG-SHARED(param) -> SpherePath.InitPath | Physics/Transition.cs:638 | SpherePath.InitPath(beginCell, beginPos, endPos)
+ARG-SHARED(param) -> SpherePath.InitPath | Physics/Transition.cs:638 | SpherePath.InitPath(beginCell, beginPos, endPos)
+ARG-SHARED(param) -> Transition.InitPath | Physics/PhysicsObj.cs:305 | transition.InitPath(newCell, null, newPos)
+ARG-SHARED(param) -> Transition.InitPath | Physics/PhysicsObj.cs:4094 | trans.InitPath(CurCell, oldPos, newPos)
+ARG-SHARED(param) -> Transition.InitPath | Physics/PhysicsObj.cs:4094 | trans.InitPath(CurCell, oldPos, newPos)
+CALLS-PARAM-MUTATOR PhysicsObj.AdjustPosition(arg0) arg=param | Physics/PhysicsObj.cs:1282 | AdjustPosition(pos, transition.SpherePath.LocalSphere[0].Center, setPos.Flags.HasFlag(SetPositionFlags.DontCreateCells), true)
+CALLS-PARAM-MUTATOR PhysicsObj.CheckPositionInternal(arg1) arg=param | Physics/PhysicsObj.cs:1299 | CheckPositionInternal(newCell, pos, transition, setPos)
+CTOR-ARG-SHARED(call:PositionExtensions.PhysPosition) -> new SetPosition | Command/Handlers/AdminCommands.cs:4755 | new Physics.Common.SetPosition(newLoc.PhysPosition(), Physics.Common.SetPositionFlags.Teleport | Physics.Common.SetPositionFlags.Slide)
+CTOR-ARG-SHARED(call:PositionExtensions.PhysPosition) -> new SetPosition | Command/Handlers/DeveloperContentCommands.cs:2871 | new Physics.Common.SetPosition(newLoc.PhysPosition(), Physics.Common.SetPositionFlags.Teleport /* | Physics.Common.SetPositionFlags.Slide */)
+CTOR-ARG-SHARED(call:PositionExtensions.PhysPosition) -> new SetPosition | Command/Handlers/DeveloperContentCommands.cs:2896 | new Physics.Common.SetPosition(homePos.PhysPosition(), Physics.Common.SetPositionFlags.Teleport /* | Physics.Common.SetPositionFlags.Slide*/)
+CTOR-ARG-SHARED(field) -> new Position | Command/Handlers/DeveloperContentCommands.cs:2907 | new Physics.Common.Position(obj.PhysicsObj.Position)
+CTOR-ARG-SHARED(field) -> new Position | Entity/SpellProjectileInfo.cs:32 | new Physics.Common.Position(spellProjectile.PhysicsObj.Position)
+CTOR-ARG-SHARED(field) -> new Position | Physics/Combat/TargetInfo.cs:50 | new Position(info.TargetPosition)
+CTOR-ARG-SHARED(field) -> new Position | Physics/Combat/TargetInfo.cs:51 | new Position(info.InterpolatedPosition)
+CTOR-ARG-SHARED(field) -> new Position | Physics/Common/LandCell.cs:139 | new Position(curPart.Pos)
+CTOR-ARG-SHARED(field) -> new Position | Physics/Managers/MoveToManager.cs:122 | new Position(PhysicsObj.Position)
+CTOR-ARG-SHARED(field) -> new Position | Physics/Managers/MoveToManager.cs:218 | new Position(PhysicsObj.Position)
+CTOR-ARG-SHARED(field) -> new Position | Physics/Managers/MoveToManager.cs:414 | new Position(PhysicsObj.Position)
+CTOR-ARG-SHARED(field) -> new Position | Physics/Managers/MoveToManager.cs:640 | new Position(targetInfo.InterpolatedPosition)
+CTOR-ARG-SHARED(field) -> new Position | Physics/Managers/MoveToManager.cs:641 | new Position(targetInfo.TargetPosition)
+CTOR-ARG-SHARED(field) -> new Position | Physics/Managers/MoveToManager.cs:653 | new Position(PhysicsObj.Position)
+CTOR-ARG-SHARED(field) -> new Position | Physics/Managers/MoveToManager.cs:654 | new Position(PhysicsObj.Position)
+CTOR-ARG-SHARED(field) -> new Position | Physics/Managers/TargetManager.cs:95 | new Position(PhysicsObj.Position)
+CTOR-ARG-SHARED(field) -> new Position | Physics/PhysicsObj.cs:1402 | new Position(setPos.Pos)
+CTOR-ARG-SHARED(field) -> new Position | Physics/SpherePath.cs:259 | new Position(BackupCheckPos)
+CTOR-ARG-SHARED(field) -> new Position | Physics/SpherePath.cs:268 | new Position(CheckPos)
+CTOR-ARG-SHARED(field) -> new Position | Physics/SpherePath.cs:283 | new Position(CheckPos)
+CTOR-ARG-SHARED(field) -> new Position | Physics/Transition.cs:1084 | new Position(SpherePath.CheckPos)
+CTOR-ARG-SHARED(field) -> new Position | Physics/Transition.cs:190 | new Position(SpherePath.CheckPos)
+CTOR-ARG-SHARED(field) -> new Position | Physics/Transition.cs:211 | new Position(SpherePath.CheckPos)
+CTOR-ARG-SHARED(field) -> new Position | Physics/Transition.cs:764 | new Position(SpherePath.CheckPos)
+CTOR-ARG-SHARED(field) -> new Position | WorldObjects/Healer.cs:137 | new Physics.Common.Position(healer.PhysicsObj.Position)
+CTOR-ARG-SHARED(field) -> new Position | WorldObjects/Healer.cs:150 | new Physics.Common.Position(healer.PhysicsObj.Position)
+CTOR-ARG-SHARED(field) -> new Position | WorldObjects/Player_Magic.cs:148 | new Physics.Common.Position(PhysicsObj.Position)
+CTOR-ARG-SHARED(field) -> new Position | WorldObjects/Player_Magic.cs:330 | new Physics.Common.Position(PhysicsObj.Position)
+CTOR-ARG-SHARED(field) -> new Position | WorldObjects/WorldObject_Magic.cs:1539 | new Physics.Common.Position(PhysicsObj.Position)
+CTOR-ARG-SHARED(field) -> new Position | WorldObjects/WorldObject_Magic.cs:1544 | new Physics.Common.Position(target.PhysicsObj.Position)
+CTOR-ARG-SHARED(field) -> new Position | WorldObjects/WorldObject.cs:314 | new Physics.Common.Position(PhysicsObj.Position)
+CTOR-ARG-SHARED(field) -> new Position | WorldObjects/WorldObject.cs:315 | new Physics.Common.Position(wo.PhysicsObj.Position)
+CTOR-ARG-SHARED(field) -> new Position | WorldObjects/WorldObject.cs:352 | new Physics.Common.Position(PhysicsObj.Position)
+CTOR-ARG-SHARED(field) -> new Position | WorldObjects/WorldObject.cs:386 | new Physics.Common.Position(PhysicsObj.Position)
+CTOR-ARG-SHARED(field) -> new Position | WorldObjects/WorldObject.cs:387 | new Physics.Common.Position(wo.PhysicsObj.Position)
+CTOR-ARG-SHARED(field) -> new Position | WorldObjects/WorldObject.cs:411 | new Physics.Common.Position(proj.PhysicsObj.Position)
+CTOR-ARG-SHARED(field) -> new Position | WorldObjects/WorldObject.cs:412 | new Physics.Common.Position(PhysicsObj.Position)
+CTOR-ARG-SHARED(field) -> new SetPosition | Physics/PhysicsObj.cs:3227 | new SetPosition(Position, SetPositionFlags.Placement | SetPositionFlags.SendPositionEvent)
+CTOR-ARG-SHARED(param) -> new InterpolationNode | Physics/Managers/InterpolationManager.cs:61 | new InterpolationNode(InterpolationNodeType.PositionType, position)
+CTOR-ARG-SHARED(param) -> new InterpolationNode | Physics/Managers/InterpolationManager.cs:77 | new InterpolationNode(InterpolationNodeType.PositionType, position)
+CTOR-ARG-SHARED(param) -> new Position | Physics/Managers/ConstraintManager.cs:31 | new Position(position)
+CTOR-ARG-SHARED(param) -> new Position | Physics/Managers/MoveToManager.cs:151 | new Position(interpolatedPosition)
+CTOR-ARG-SHARED(param) -> new Position | Physics/Managers/MoveToManager.cs:152 | new Position(targetPosition)
+CTOR-ARG-SHARED(param) -> new Position | Physics/Managers/MoveToManager.cs:192 | new Position(position)
+CTOR-ARG-SHARED(param) -> new Position | Physics/Managers/MoveToManager.cs:217 | new Position(position)
+CTOR-ARG-SHARED(param) -> new Position | Physics/Managers/MoveToManager.cs:271 | new Position(targetPosition)
+CTOR-ARG-SHARED(param) -> new Position | Physics/Managers/TargetManager.cs:161 | new Position(pos)
+CTOR-ARG-SHARED(param) -> new Position | Physics/Managers/TargetManager.cs:165 | new Position(pos)
+CTOR-ARG-SHARED(param) -> new Position | Physics/PhysicsObj.cs:987 | new Position(pos)
+CTOR-ARG-SHARED(param) -> new Position | Physics/SpherePath.cs:204 | new Position(pos)
+CTOR-ARG-SHARED(param) -> new Position | Physics/SpherePath.cs:273 | new Position(position)
+CTOR-ARG-SHARED(param) -> new Position | Physics/SpherePath.cs:300 | new Position(localPos)
+CTOR-ARG-SHARED(param) -> new Position | Physics/SpherePath.cs:94 | new Position(beginPos)
+CTOR-ARG-SHARED(param) -> new Position | Physics/SpherePath.cs:99 | new Position(endPos)
+CTOR-ARG-SHARED(param) -> new SetPosition | Physics/PhysicsObj.cs:919 | new SetPosition(pos, SetPositionFlags.Teleport | SetPositionFlags.DontCreateCells)
+MUTATE-CALL via field | Physics/Managers/InterpolationManager.cs:240 | first.Position.Subtract(PhysicsObj.Position)
+MUTATE-CALL via LOCAL | Command/Handlers/DeveloperContentCommands.cs:1753 | newPos.adjust_to_outside()
+MUTATE-CALL via LOCAL | Command/Handlers/DeveloperContentCommands.cs:2908 | newPos.add_offset(nudge.Value)
+MUTATE-CALL via LOCAL | Entity/Landblock.cs:289 | pos.adjust_to_outside()
+MUTATE-CALL via PARAM(by-value) | Physics/PhysicsObj.cs:260 | position.adjust_to_outside()
+MUTATE-FIELD via field | Command/Handlers/DeveloperContentCommands.cs:3077 | obj.PhysicsObj.Position.Frame.Orientation = newRotation
+MUTATE-FIELD via field | Command/Handlers/DeveloperContentCommands.cs:3182 | obj.PhysicsObj.Position.Frame.Orientation = newRotation
+MUTATE-FIELD via field | Physics/BSP/BSPTree.cs:341 | path.CheckPos.Frame.Origin += offset
+MUTATE-FIELD via field | Physics/Common/LandblockStruct.cs:254 | landCell.Pos.ObjCellID = cellID
+MUTATE-FIELD via field | Physics/Common/LandblockStruct.cs:255 | landCell.Pos.Frame.Origin.X = originX * LandDefs.HalfSquareLength
+MUTATE-FIELD via field | Physics/Common/LandblockStruct.cs:256 | landCell.Pos.Frame.Origin.Y = originY * LandDefs.HalfSquareLength
+MUTATE-FIELD via field | Physics/PartArray.cs:390 | part.Pos.ObjCellID = cellID
+MUTATE-FIELD via field | Physics/Particles/Particle.cs:141 | part.Pos.Frame.Origin = parent.Origin + Offset
+MUTATE-FIELD via field | Physics/Particles/Particle.cs:145 | part.Pos.Frame.Origin = (lifetime * A) + parent.Origin + Offset
+MUTATE-FIELD via field | Physics/Particles/Particle.cs:150 | part.Pos.Frame.Origin += (lifetime * lifetime * B / 2.0f) + (lifetime * A) + Offset
+MUTATE-FIELD via field | Physics/Particles/Particle.cs:155 | part.Pos.Frame = new AFrame(parent)
+MUTATE-FIELD via field | Physics/Particles/Particle.cs:156 | part.Pos.Frame.Origin += (lifetime * lifetime * B / 2.0f) + (lifetime * A) + Offset
+MUTATE-FIELD via field | Physics/Particles/Particle.cs:161 | part.Pos.Frame.Origin.X = (float)Math.Cos(lifetime * B.X) + swarm.X
+MUTATE-FIELD via field | Physics/Particles/Particle.cs:162 | part.Pos.Frame.Origin.Y = (float)Math.Sin(lifetime * B.Y) + swarm.Y
+MUTATE-FIELD via field | Physics/Particles/Particle.cs:163 | part.Pos.Frame.Origin.Z = (float)Math.Cos(lifetime * B.Z) + swarm.Z
+MUTATE-FIELD via field | Physics/Particles/Particle.cs:166 | part.Pos.Frame.Origin = (lifetime * B + C * A.X) * lifetime + Offset + parent.Origin
+MUTATE-FIELD via field | Physics/Particles/Particle.cs:169 | part.Pos.Frame.Origin = ((float)Math.Cos(A.X * lifetime) * C) + (lifetime * lifetime * B) + parent.Origin + Offset
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:1002 | Position.ObjCellID = 0
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:1019 | part.Pos.ObjCellID = CurCell.ID
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:1195 | Position.ObjCellID = curPos.ObjCellID
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:1203 | child.Position.ObjCellID = curPos.ObjCellID
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:1951 | Position.Frame = newFrame
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:2161 | Position.ObjCellID = 0
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:2176 | Position.ObjCellID = 0
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:221 | part.Pos.ObjCellID = CurCell.ID
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:2363 | Position.ObjCellID = newCell.ID
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:2380 | RequestPos.ObjCellID = newCell.ID
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:2912 | Position.ObjCellID = 0
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:3476 | Position.ObjCellID = newPos.ObjCellID
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:3477 | Position.Frame = new AFrame(newPos.Frame)
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:3503 | Position.ObjCellID = newCellID
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:3646 | Position.Frame = new AFrame(frame)
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:3751 | Position.Frame = frame
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:3899 | RequestPos.Frame.Origin = pos
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:3900 | RequestPos.Frame.Orientation = rotation
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:3910 | RequestPos.ObjCellID = RequestPos.GetCell(CurCell.ID)
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:3912 | RequestPos.ObjCellID = cell.ID
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:4354 | RequestPos.ObjCellID = requestCell
+MUTATE-FIELD via field | Physics/SpherePath.cs:125 | CheckPos.Frame.Origin += offset
+MUTATE-FIELD via field | Physics/SpherePath.cs:140 | CheckPos.Frame.Origin += offset
+MUTATE-FIELD via field | Physics/SpherePath.cs:142 | CheckPos.ObjCellID = cellID
+MUTATE-FIELD via field | Physics/Transition.cs:722 | SpherePath.CheckPos.Frame.Origin.Z -= stepDownHeight
+MUTATE-FIELD via field | WorldObjects/Creature_Missile.cs:367 | obj.PhysicsObj.Position.Frame.Origin = pos
+MUTATE-FIELD via field | WorldObjects/Creature_Missile.cs:368 | obj.PhysicsObj.Position.Frame.Orientation = rotation
+MUTATE-FIELD via field | WorldObjects/Creature_Navigation.cs:238 | PhysicsObj.Position.Frame.Orientation = Location.Rotation
+MUTATE-FIELD via field | WorldObjects/Player_Tick.cs:500 | PhysicsObj.Position.Frame.Orientation = newPosition.Rotation
+MUTATE-FIELD via field | WorldObjects/SpellProjectile.cs:882 | PhysicsObj.Position.Frame.Origin = pos
+MUTATE-FIELD via field | WorldObjects/SpellProjectile.cs:883 | PhysicsObj.Position.Frame.Orientation = rotation
+MUTATE-FIELD via field | WorldObjects/WorldObject.cs:203 | PhysicsObj.Position.ObjCellID = cell.ID
+MUTATE-FIELD via LOCAL | Command/Handlers/DeveloperContentCommands.cs:1751 | newPos.ObjCellID = pos.Cell
+MUTATE-FIELD via LOCAL | Command/Handlers/DeveloperContentCommands.cs:1752 | newPos.Frame = new Physics.Animation.AFrame(new Vector3(xPos, yPos, 0), Quaternion.Identity)
+MUTATE-FIELD via LOCAL | Command/Handlers/DeveloperContentCommands.cs:1755 | newPos.Frame.Origin.Z = session.Player.CurrentLandblock.PhysicsLandblock.GetZ(newPos.Frame.Origin)
+MUTATE-FIELD via LOCAL | Entity/Landblock.cs:287 | pos.ObjCellID = (uint)(Id.Landblock << 16) | 1
+MUTATE-FIELD via LOCAL | Entity/Landblock.cs:288 | pos.Frame = new Physics.Animation.AFrame(new Vector3(xPos, yPos, 0), Quaternion.Identity)
+MUTATE-FIELD via LOCAL | Entity/Landblock.cs:291 | pos.Frame.Origin.Z = PhysicsLandblock.GetZ(pos.Frame.Origin)
+MUTATE-FIELD via LOCAL | Physics/Common/Landblock.cs:242 | pos.Frame.Origin = loc
+MUTATE-FIELD via LOCAL | Physics/Common/Landblock.cs:262 | pos.Frame = ObjectDesc.ObjAlign(obj, walkable.Plane, pos.Frame.Origin)
+MUTATE-FIELD via LOCAL | Physics/Common/Landblock.cs:264 | pos.Frame = ObjectDesc.RotateObj(obj, globalCellX, globalCellY, j, pos.Frame.Origin)
+MUTATE-FIELD via LOCAL | Physics/Managers/TargetManager.cs:96 | pos.Frame.Origin += PhysicsObj.get_velocity() * (float)quantum
+MUTATE-FIELD via LOCAL | Physics/PhysicsObj.cs:1404 | newPos.Frame.Origin.X += (float)ThreadSafeRandom.Next(-1.0f, 1.0f) * setPos.RadX
+MUTATE-FIELD via LOCAL | Physics/PhysicsObj.cs:1405 | newPos.Frame.Origin.Y += (float)ThreadSafeRandom.Next(-1.0f, 1.0f) * setPos.RadY
+MUTATE-FIELD via LOCAL | Physics/PhysicsObj.cs:1410 | newPos.Frame.Origin.X = Math.Clamp(newPos.Frame.Origin.X, 0.5f, 191.5f)
+MUTATE-FIELD via LOCAL | Physics/PhysicsObj.cs:1411 | newPos.Frame.Origin.Y = Math.Clamp(newPos.Frame.Origin.Y, 0.5f, 191.5f)
+MUTATE-FIELD via LOCAL | Physics/PhysicsObj.cs:1442 | newPos.Frame.Origin.Z = groundZ
+MUTATE-FIELD via LOCAL | Physics/PhysicsObj.cs:1469 | newPos.ObjCellID = envCell.ID
+MUTATE-FIELD via LOCAL | Physics/PhysicsObj.cs:1709 | newPos.Frame.Origin = Position.Frame.Origin
+MUTATE-FIELD via LOCAL | Physics/PhysicsObj.cs:1720 | newPos.Frame.Origin = Position.Frame.Origin
+MUTATE-FIELD via LOCAL | WorldObjects/WorldObject_Magic.cs:1540 | startPos.Frame.Origin.Z += Height * startFactor
+MUTATE-FIELD via LOCAL | WorldObjects/WorldObject_Magic.cs:1545 | endPos.Frame.Origin.Z += target.Height * endFactor
+MUTATE-FIELD via LOCAL | WorldObjects/WorldObject.cs:206 | location.ObjCellID = cell.ID
+MUTATE-FIELD via LOCAL | WorldObjects/WorldObject.cs:207 | location.Frame.Origin = Location.Pos
+MUTATE-FIELD via LOCAL | WorldObjects/WorldObject.cs:208 | location.Frame.Orientation = Location.Rotation
+MUTATE-FIELD via LOCAL | WorldObjects/WorldObject.cs:321 | startPos.Frame.Origin.Z += PhysicsObj.GetHeight() - SightObj.GetHeight()
+MUTATE-FIELD via LOCAL | WorldObjects/WorldObject.cs:322 | targetPos.Frame.Origin.Z += wo.PhysicsObj.GetHeight() - SightObj.GetHeight()
+MUTATE-FIELD via LOCAL | WorldObjects/WorldObject.cs:326 | startPos.Frame.Origin += dir * radsum
+MUTATE-FIELD via LOCAL | WorldObjects/WorldObject.cs:359 | startPos.Frame.Origin.Z += PhysicsObj.GetHeight() - SightObj.GetHeight()
+MUTATE-FIELD via LOCAL | WorldObjects/WorldObject.cs:360 | targetPos.Frame.Origin.Z += SightObj.GetHeight()
+MUTATE-FIELD via LOCAL | WorldObjects/WorldObject.cs:364 | startPos.Frame.Origin += dir * radsum
+MUTATE-FIELD via LOCAL | WorldObjects/WorldObject.cs:415 | targetPos.Frame.Origin.Z += PhysicsObj.GetHeight() - proj.PhysicsObj.GetHeight()
+MUTATE-FIELD via PARAM(by-value) | Physics/PhysicsObj.cs:253 | position.ObjCellID = child.ID
+MUTATE-FIELD via PARAM(by-value) | Physics/PhysicsObj.cs:320 | newPos.Frame.Origin = transition.SpherePath.CurPos.Frame.Origin
+NULL-CHECK | Entity/SpellProjectileInfo.cs:31 | spellProjectile.PhysicsObj.Position != null
+NULL-CHECK | Physics/Common/Position.cs:42 | p == null
+NULL-CHECK | Physics/Managers/TargetManager.cs:62 | TargetInfo.TargetPosition == null
+NULL-CHECK | Physics/Managers/TargetManager.cs:84 | newPos != null
+NULL-CHECK | Physics/ObjectInfo.cs:109 | path.BeginPos != null
+NULL-CHECK | Physics/ObjectInfo.cs:114 | path.BeginPos != null
+NULL-CHECK | Physics/PhysicsObj.cs:1744 | a == null
+NULL-CHECK | Physics/PhysicsObj.cs:1744 | b == null
+NULL-CHECK | Physics/SpherePath.cs:91 | beginPos != null
+NULL-CHECK | Physics/Transition.cs:99 | SpherePath.BeginPos == null
+NULL-CHECK | WorldObjects/Creature_Death.cs:624 | corpse.PhysicsObj.Position == null
+RETURN-SHARED(field) | Physics/SpherePath.cs:224 | return WalkablePos;

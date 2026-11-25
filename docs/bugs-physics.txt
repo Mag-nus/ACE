@@ -505,8 +505,14 @@ G.6  Three independent defects in InterpolationManager (latent)
          NRE on first use at line 41.
      (c) `for (var i = PositionQueue.Count; i >= 0; --i) ElementAt(i)` throws on
          the first iteration; Count - 1 was intended.
+     (d) adjust_offset's `var offset = first.Position.Subtract(PhysicsObj.Position);`
+         - Position.Subtract mutates first.Position.Frame in place and returns
+           that same AFrame, so every call corrupts the queued interpolation
+           target.
+         - It is also the alias that turns (a) live if AFrame ever becomes a
+           struct and the parameter becomes `ref` (perf-physics.txt PC.4).
      All dormant only because PhysicsObj.InterpolateTo has no callers. Wiring
-     it up would fail immediately in three different ways.
+     it up would fail immediately in four different ways.
 
 G.7  Target-timeout transition is unreachable, producing a stuck MoveTo
      Managers/TargetManager.cs:62-72
@@ -601,6 +607,14 @@ G.14 Position aliased rather than copied in part morphing
      so UpdateParts' `Parts[i].Pos.Frame.Combine(...)` MUTATES THE SOURCE
      OBJECT's per-part frames - morphing one object visibly deforms another.
      FIX: new Position(...).
+     [2026-11-25: the stated failure is UNREACHABLE today. The only
+      cross-object path is PartArray.MorphToExistingObject, which is dead
+      (G.4). The live alias (InitParts -> PhysicsPart.MorphToExistingObject,
+      `Pos = template.Pos`) is per object and invisible, but it is what blocks
+      sharing Setup across objects (perf-physics.txt PG.8). After
+      `Parts[0].Pos = Owner.Position` (PartArray.cs:600), a later UpdateParts
+      Combine would write into Owner.Position.Frame; reachability of that not
+      verified.]
 
 --- G LOW SEVERITY ---
 
@@ -838,6 +852,79 @@ HOW TO VERIFY
 
   This is core physics - work on a branch and run
   Source/ACE.Server.Tests/Physics after each change.
+
+================================================================================
+SECTION Q - FOUND WHILE MEASURING (perf-physics.txt Section Q, 2026-11-25)
+================================================================================
+
+Q.1  BBox.LocalToGlobal / LocalToLocal return a box that does not contain the
+     transformed box   [VERIFIED on real code]
+     Collision/BBox.cs:103-127
+
+         Min = toPos.LocalToGlobal(fromPos, fromBox.Min);
+         Max = toPos.LocalToGlobal(fromPos, fromBox.Max);
+         AdjustBBox(...6 other corners...);
+
+     Min is seeded from the transformed fromMin, and Max from the transformed
+     fromMax; the other 6 corners can only widen the box. When an output
+     axis's extreme is reached only at the fromMin corner (on the max side),
+     or only at the fromMax corner (on the min side), it is lost.
+
+     Measured: 20k cases per row; a fail is any transformed corner more than
+     1 mm outside the result.
+         rotation                         cases failing   worst miss
+         yaw only                         0%              -
+         yaw + tilt up to 15 degrees      24.7%           1.06 m
+         yaw + tilt up to 45 degrees      24.7%           1.72 m
+         uniform random rotation          37.1%           1.71 m
+
+     AFFECTED: anything with pitch or roll - terrain-aligned scenery
+     (ObjectDesc.ObjAlign), animated part frames, tilted static objects.
+     CONSUMERS: EnvCell.check_building_transit and find_transit_cells(parts),
+     which decide the cell membership of BSP objects at static load, and
+     LandCell.add_all_outside_cells(parts).
+     FIX: compose the rotation once (conj(to.q) * from.q, plus a translation)
+     and take the min/max over all 8 corners. This is also faster: 39.4 ns and
+     0 B, against 67.5 ns and 40 B.
+     CAVEAT: behaviour change. Boxes get larger, so objects register in more
+     cells. Validate, and check retail-client parity (not done).
+
+Q.2  Landblock.adjust_scene_obj_height does nothing   [VERIFIED by reading]
+     Common/Landblock.cs:105-122; live, called from init_static_objs (:484)
+
+         var objPos = obj.Position.Frame.Origin;    // Vector3: a COPY
+         ...
+         objPos.Z = adjZ;                           // changes the copy
+         obj.set_initial_frame(obj.Position.Frame); // re-sets the unchanged frame
+
+     Static objects are never snapped to the terrain height this method
+     computes. This is the silent-copy class of bug that an AFrame struct
+     conversion must avoid (perf-physics.txt PC.4).
+     FIX: assign obj.Position.Frame.Origin = new Vector3(objPos.X, objPos.Y, adjZ).
+     CAVEAT: this moves static objects that have been placed unchanged for
+     years. Compare positions on a sample of landblocks before shipping.
+
+Q.3  Line-of-sight checks probably ignore every scenery and static dat object
+     [VERIFIED by reading; NOT verified at runtime]
+     WorldObject.cs:310 (IsDirectVisible: makeObject(0x02000124, 0, ...));
+     Landblock.cs:266 (scenery: makeObject(obj.ObjId, 0, false));
+     ObjCell.cs:171; PhysicsObj.cs:4418
+
+     PhysicsObj.Equals compares IDs. The line-of-sight object has ID 0, and so
+     does every scenery and static dat object. ObjCell.FindObjCollisions
+     skips `obj.Equals(transition.ObjectInfo.Object)` as "self", so during a
+     line-of-sight transition every dat object in the cell is skipped. Trees,
+     rocks and static objects would then never block line of sight for caster
+     monsters (Monster_Combat.cs:180). Confirm in game before relying on it.
+
+Q.4  The line-of-sight object's teardown decrements a cell count it never
+     incremented   [VERIFIED by reading]
+     ObjCell.cs:254-258 (RemoveObject: `ObjectList.Remove(obj); NumObjects--;`)
+     The sight object built by IsDirectVisible is never added to the cell,
+     but DestroyObject -> leave_cell -> RemoveObject decrements NumObjects
+     anyway, on every check. Any consumer of NumObjects drifts down over
+     uptime. Its consumers were not audited. The same teardown takes the
+     static ObjectMaint write lock (perf-physics.txt PC.13).
 
 ================================================================================
 END OF REPORT

@@ -1,0 +1,58 @@
+Runtime 10.0.15, ServerGC=False
+new AFrame()                                                                  20.2 ns      48.0 B/op
+new Position()  [Position + inner AFrame]                                      8.1 ns      80.0 B/op
+new Position(Position) copy-ctor                                               8.7 ns      80.0 B/op
+new Sphere()                                                                   4.8 ns      32.0 B/op
+new Transition()  [ctor -> Init(), single]                                    87.2 ns    1176.0 B/op
+new MovementParameters()                                                       5.5 ns      72.0 B/op
+new ObjectInfo()                                                               5.1 ns      48.0 B/op
+new CollisionRecord(t,false)                                                   4.7 ns      32.0 B/op
+new List<Sphere>{ s }  (Transition.InitSphere(Sphere) wrapper)                12.0 ns      88.0 B/op
+SpherePath.SetCheckPos (new Position + CacheGlobalSphere(null))               13.8 ns      80.0 B/op
+SpherePath.SaveCheckPos                                                        8.6 ns      80.0 B/op
+SpherePath.RestoreCheckPos                                                    14.1 ns      80.0 B/op
+SpherePath.AddOffsetToCheckPos (Vector3? path)                                11.7 ns       0.0 B/op
+SpherePath.CacheGlobalSphere(null)                                             8.2 ns       0.0 B/op
+SpherePath.CacheGlobalCurrCenter                                               6.5 ns       0.0 B/op
+SpherePath.CacheLocalSpaceSphere(cellPos,1)                                   51.3 ns      80.0 B/op
+Transition.SetCurrentCheckPos (2 Positions + 2 recaches)                      29.3 ns     160.0 B/op
+SpherePath.InitPath (CurPos copy + recache)                                   14.1 ns      80.0 B/op
+Transition.InitSphere(1, Sphere, 1) on fresh Transition (incl. ctor)          99.0 ns    1352.0 B/op
+Transition ctor + InitSphere(2) + InitPath  [fixed per-transition setup]     127.6 ns    1496.0 B/op
+PROTO SetCheckPos in-place copy (alias-guarded)                               10.0 ns       0.0 B/op
+PhysicsObj.UpdateObjectInternal(1/30) bare obj, no PartArray                  45.0 ns     224.0 B/op
+PhysicsObj.set_frame(Position.Frame)                                           7.7 ns      48.0 B/op
+PhysicsObj.UpdatePositionInternal(1/30, ref f)                                30.1 ns      96.0 B/op
+PhysicsObj.get_object_info(trans,false) bare                                   5.3 ns      48.0 B/op
+PhysicsObj.UpdatePhysicsInternal moving, Omega=0                              22.4 ns      48.0 B/op
+AFrame.Combine(a,b) static (allocates result)                                  6.6 ns      48.0 B/op
+AFrame.GRotate(Vector3.Zero)  [current: YPR + mul + normalize]                17.6 ns       0.0 B/op
+PROTO GRotate fast path: Normalize only when omega==0                          9.1 ns       0.0 B/op
+   GRotate fast-path bit mismatches over 100k random unnormalised quats: 0
+AFrame.set_heading(45)  [current, ends with dead get_heading()]               81.0 ns       0.0 B/op
+PROTO set_heading without trailing dead get_heading()                         81.1 ns       0.0 B/op
+AFrame.get_heading() (Matrix4x4 build)                                        16.8 ns       0.0 B/op
+AFrame.Equals(AFrame)                                                          1.6 ns       0.0 B/op
+CellArray: for i<Count  Cells.Values.ElementAt(i)  (4 cells)                  35.1 ns     160.0 B/op
+CellArray: foreach Cells.Values (4 cells)                                      4.0 ns       0.0 B/op
+CellArray: ElementAt loop (9 cells)                                           97.1 ns     360.0 B/op
+CellArray: foreach (9 cells)                                                   7.1 ns       0.0 B/op
+CollideObject.FirstOrDefault(c => c.ID == x) (closure)                         3.2 ns       0.0 B/op
+log.LogDebug(5 args incl uint,double) when Debug disabled                     28.0 ns     112.0 B/op
+guarded: if (log.IsEnabled(Debug)) log.LogDebug(...)                           2.0 ns       0.0 B/op
+Biota.GetProperty(PropertyInt, rwLock)  [RW read-lock + dict]                 15.7 ns       0.0 B/op
+WeakReference.TryGetTarget + GetProperty  (~ WeenieObj.IsImpenetrable)        15.4 ns       0.0 B/op
+plain cached int field read                                                    1.4 ns       0.0 B/op
+PROTO class: new Pos + new AFrame offset + Combine + set_frame copy            9.9 ns      96.0 B/op
+PROTO struct: same flow with readonly-free struct AFrame inlined               5.8 ns       0.0 B/op
+   field counts: Transition=4 SpherePath=44 CollisionInfo=19 ObjectInfo=8 CellArray=4
+   reflection diff vs fresh: before reset 39 differences, after reset 0
+PROTO pooled Transition: Reset() + InitSphere(2) + InitPath                   65.7 ns     480.0 B/op
+baseline: new Transition() + InitSphere(2) + InitPath                        126.2 ns    1496.0 B/op
+PhysicsObj.report_collision_end(false), empty CollisionTable                   3.5 ns      32.0 B/op
+PROTO report_collision_end with Count==0 early-out                             1.5 ns       0.0 B/op
+PhysicsObj.handle_all_collisions (no collisions)                               4.2 ns      32.0 B/op
+new PhysicsObj() (bare, no PartArray)                                         96.1 ns    1648.0 B/op
+new ObjectMaint(obj)                                                          32.4 ns     552.0 B/op
+new ChildList()                                                               20.2 ns     184.0 B/op
+done

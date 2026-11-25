@@ -37,6 +37,18 @@ pass 3's findings are Section G and the full CellArray fix is Section H. In
 `perf-physics.txt`, pass 2 (the coverage gap) is Section F and pass 3 (memory
 layout and GC behaviour) is Section M.
 
+**Measured deep dive (2026-11-25).** Physics and networking also have a pass in which
+every cost was *measured* on the real Release build instead of reasoned:
+- `perf-physics.txt` Section Q: PC.* for the per-frame update and collision driver,
+  PG.* for geometry, cells, BSP and animation.
+- `perf-network.txt` Section G: NT.* for the transport and session layer, NM.* for
+  message construction and fan-out.
+
+Each section has its own priority list and a corrections list. Earlier findings it
+contradicts carry a `[Measured ...]` or `[Pass 6 ...]` pointer. Bugs found along the
+way are in `bugs-physics.txt` Section Q and `bugs-network.txt` Section F. The
+benchmark code is in [benchmarks/](benchmarks/README.md).
+
 ---
 
 ## Highest-value fixes
@@ -135,7 +147,12 @@ intermittent.
 
 ## If your goal is CPU / allocation / GC reduction
 
-Start with **[cpu-gc-plan.txt](cpu-gc-plan.txt)** — a cross-cutting execution plan
+For physics and networking, start with the *measured* priority lists:
+- `perf-physics.txt` Q.E
+- `perf-network.txt` G.E
+
+They supersede the reasoned rankings where the two disagree. Otherwise, start with
+**[cpu-gc-plan.txt](cpu-gc-plan.txt)** — a cross-cutting execution plan
 that pulls the CPU and allocation items out of all 12 performance reports and orders
 them by *(expected win × confidence) / risk* rather than by subsystem. It is tiered:
 

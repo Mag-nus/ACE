@@ -12,6 +12,7 @@ SOURCE OF THIS DOCUMENT
       Pass 3  memory layout / GC behaviour    12 findings -> SECTION M
       Pass 4  ObjectMaint algorithms + BSP     13 findings -> SECTION N
       Pass 5  the collision math core          12 findings -> SECTION O
+      Pass 6  MEASURED deep dive (2026-11-25)  26 findings -> SECTION Q
   Pass 2 covers a disjoint region - Animation/, Common/ in depth, Managers/,
   Trajectory.cs, PartArray.cs - so its findings are kept in their own section.
 
@@ -21,8 +22,9 @@ SOURCE OF THIS DOCUMENT
       P.1  LandblockManager.GetLandblock's global upgradeable lock (Section A)
       F.1  ObjectMaint.rwLock is `static` - one lock for the entire server's
            visibility system (Section F, VERIFIED DIRECTLY)
-  F.12 further shows the P.1 lock is entered 9x more often than necessary, so
-  fixing that multiplies the payoff.
+  PG.1 (Section Q, measured) shows the P.1 lock is entered 1.7-4.6x more often
+  than necessary because of a one-line missing flag; fixing it multiplies the
+  payoff. (F.12's "9x" is superseded.)
 
   MEMORY - Section M establishes that there is NOT ONE `struct` in the entire
   subsystem (VERIFIED). Every value type - Sphere, AFrame, Position, BBox -
@@ -36,8 +38,9 @@ SOURCE OF THIS DOCUMENT
   NOTE: F.1 was previously listed here. Its contention analysis stands, but the
   fix originally proposed for it would deadlock - read F.1 before acting on it.
 
-UNPROFILED. A static read of the code weighted by call frequency, not measured
-hot spots. Validate before optimising.
+Sections A-O are UNPROFILED: a static read of the code weighted by call
+frequency, not measured hot spots. Section Q (2026-11-25) is MEASURED, and its
+Q.C corrects several earlier findings. Validate before optimising.
 
 CALL-FREQUENCY MODEL
   LandblockManager.TickPhysics runs from WorldManager.UpdateGameWorld at
@@ -45,6 +48,7 @@ CALL-FREQUENCY MODEL
   PhysicsObj.UpdateObjectPhysics runs PER ACTIVE OBJECT PER FRAME. On a
   populated server that is thousands of executions per second, so anything on
   that path is multiplied enormously.
+  [Measured: these rates are wrong - see Q.0 for the verified call chains.]
 
 ALSO FILED AS CORRECTNESS DEFECTS (full fix in bugs-physics.txt Section H)
   CellArray.Cells is never cleared -> unbounded growth, so per-crossing cost
@@ -110,6 +114,7 @@ P.3  new Position per transition step
 
      FIX: copy into the existing CheckPos/BackupCheckPos instances
      (CopyFrom(position)) rather than reallocating.
+     [Pass 6: unsafe as written because of the CurPos = CheckPos alias; see PC.2.]
 
 P.4  Shadow-object teardown and rebuild every frame
      PhysicsObj.cs:1970-1997 and 3229-3239, driven from :1266-1272
@@ -156,6 +161,7 @@ P.6  AFrame is a class, not a struct
      FIX (high value, invasive): convert AFrame to a struct. Blast radius is
      large - it is used across physics and ACE.Entity - so treat this as its
      own project.
+     [Pass 6: blast radius measured by compiling; see PC.4 and Q.C.]
 
 
 SECTION C - LOCKING AND COLLECTIONS IN THE INNER LOOP
@@ -252,18 +258,16 @@ SECTION E - SUGGESTED PRIORITY
   2. Fix the CellArray bug (bugs-physics.txt H.2 and Section H).
      It is a prerequisite for P.4 and removes the uptime-proportional
      degradation.
-  3. P.2  Delete the duplicate Init() in MakeTransition - a one-line change
-          that halves the largest per-frame allocation source.
-  4. P.4  Skip shadow teardown/rebuild when the cell set is unchanged.
-  5. P.3, P.5, P.9 - remove per-frame Position/ObjectInfo/MovementParameters
+  3. P.4  Skip shadow teardown/rebuild when the cell set is unchanged.
+  4. P.3, P.5, P.9 - remove per-frame Position/ObjectInfo/MovementParameters
           allocations.
-  6. P.7  Lighter locking in FindObjCollisions.
-  7. P.8  Incremental visible-set maintenance.
-  8. P.6  AFrame - the in-place Combine overload first; treat the
+  5. P.7  Lighter locking in FindObjCollisions.
+  6. P.8  Incremental visible-set maintenance.
+  7. P.6  AFrame - the in-place Combine overload first; treat the
           struct conversion as a separate project.
-  9. P.10 as cleanup, folded into the CellArray rewrite.
+  8. P.10 as cleanup, folded into the CellArray rewrite.
 
-Sequence note: items 1-4 are all about the same thing - the physics tick is
+Sequence note: items 1-3 are all about the same thing - the physics tick is
 supposed to be parallel and allocation-light, and currently is neither. Doing
 them together will show far more than doing them individually.
 
@@ -423,6 +427,7 @@ F.3  Every appended animation deep-copies the dat animation
 
      FIX: a ConcurrentDictionary<uint, Animation> cache keyed by animID. The
      dat layer is already cached; this wrapper simply is not.
+     [Pass 6: Animation immutability verified; see Q.C.]
 
 F.4  Two AFrames allocated per frame boundary for every animation that has no
      position frames
@@ -441,6 +446,7 @@ F.4  Two AFrames allocated per frame boundary for every animation that has no
      FIX: test `PosFrames.Count > 0` - which advance_to_next_animation already
      does correctly at lines 153 and 169, so the correct idiom is in the same
      file - and return a shared static identity AFrame.
+     [Pass 6: the shared-identity fix is a hazard - skip the Combine instead; see Q.C.]
 
 F.5  Roughly 5 heap objects per active object per frame in the core update
      chain   [VERIFIED DIRECTLY]
@@ -466,6 +472,7 @@ F.5  Roughly 5 heap objects per active object per frame in the core update
 
      Compounds with the already-reported "AFrame should be a struct"
      (perf-physics.txt P.6).
+     [Pass 6: one allocation is dead code, two escape, not dominant; see Q.C.]
 
 
 SECTION C - REPEATED EXPENSIVE COMPUTATION
@@ -529,6 +536,7 @@ F.9  GlobalToLocalVec builds and transposes a Matrix4x4 from a quaternion on
      matrix at all. Same pattern in get_heading (line 147) and
      get_vector_heading (line 154), both called per frame from MoveToManager
      and StickyManager.
+     [Pass 6: measured ~1 ns and not bit-identical - downgrade to LOW; see Q.C.]
 
 F.10 add_all_outside_cells is O(parts^2) with fully redundant inner work
      Common/LandCell.cs:135-180
@@ -562,6 +570,7 @@ F.12 Neighbour-cell lookups re-enter the global landblock lock 9x per sphere
      FIX: resolve the landblock once per find_cell_list and index LandCells
      directly. This MULTIPLIES the payoff of the known lock fix - the lock is
      not merely contended, it is entered 9x more often than necessary.
+     [Pass 6: the real multiplier is PG.1 (one-line fix); see Q.C.]
 
 F.13 InterpolationManager: O(n^2) walk, out-of-range start, and a discarded
      result
@@ -578,6 +587,7 @@ F.13 InterpolationManager: O(n^2) walk, out-of-range start, and a discarded
      (sqrt) where a squared compare works (line 86).
      Sequence.remove_cyclic_anims uses AnimList.Remove(node.Value) - an O(n)
      value search instead of Remove(node) (Sequence.cs:317).
+     [Pass 6: InterpolationManager is never instantiated - zero runtime cost; see Q.C.]
 
 
 SECTION D - LOOKS EXPENSIVE BUT IS COLD
@@ -801,6 +811,7 @@ M.2  The Transition object graph: ~650 B and ~20 objects per transition
 
      Pooling is the remaining lever here - see M.3 for why a naive free-list
      will not work.
+     [Pass 6: understated - ~1.75 KB fixed per transition; see PC.1 and Q.C.]
 
 M.3  Pooling Transition is viable - but NOT with a naive free-list
      Transition.cs:237 (the CleanupTransition stub where the C++ pool lived)
@@ -859,6 +870,7 @@ M.4  AFrame + Position: the highest-leverage conversion, and NOT safe as written
 
      Note ACE.Entity.Frame uses auto-properties, so it cannot be converted
      without also changing those to fields.
+     [Pass 6: the real hazards are 7 by-value mutators, 11 compile sites; see PC.4.]
 
 M.5  Struct candidates, triaged by safety
 
@@ -896,6 +908,7 @@ M.6  Matrix4x4 (64 B) built and copied in the hottest conversion routine
      No heap cost, but real stack-copy and register pressure in the innermost
      loop. (Overlaps F.9 above, which reached the same conclusion from the
      call-frequency side.)
+     [Pass 6: measured ~1 ns and not bit-identical - downgrade to LOW; see Q.C.]
 
 M.7  stackalloc / Span - only where the size is STATICALLY BOUNDED
      SAFE:
@@ -995,17 +1008,15 @@ This section cannot rank its findings by actual bytes per second. Needed:
 
 
 --- M: SUGGESTED ORDER ---
-  1. M.2  Delete the duplicate Init(). One line, zero risk, halves the largest
-          allocation site in the subsystem.
-  2. M.1  Reusable visibility lists. The only confirmed promotion path, and
+  1. M.1  Reusable visibility lists. The only confirmed promotion path, and
           per-observer state so there is no threading hazard.
-  3. M.7  stackalloc the 8-element BBox corner arrays on the BSP descent path.
-  4. M.8, M.6  List capacities and the matrix-free vector transform.
-  5. M.9  LinkedList node churn on MotionState.
-  6. M.5  Struct-convert the SAFE set only (Ray, BBox, Vertex, ObjectInfo).
-  7. M.4  AFrame/Position - the biggest win, but audit every mutation site
+  2. M.7  stackalloc the 8-element BBox corner arrays on the BSP descent path.
+  3. M.8, M.6  List capacities and the matrix-free vector transform.
+  4. M.9  LinkedList node churn on MotionState.
+  5. M.5  Struct-convert the SAFE set only (Ray, BBox, Vertex, ObjectInfo).
+  6. M.4  AFrame/Position - the biggest win, but audit every mutation site
           first for copy semantics.
-  8. M.3  Transition pooling LAST. It requires M.2, the H.2 CellArray fix, the
+  7. M.3  Transition pooling LAST. It requires the H.2 CellArray fix, the
           SpherePath.InitSphere fix, AND resolving the escape hazard at the
           five external call sites. Attempting it before those is how you turn
           an allocation problem into an aliasing bug.
@@ -1103,6 +1114,7 @@ N.3  Box-corner allocation happens twice per part per portal, and
      FIX: Span<Vector3>/stackalloc (the count is statically 8 - see M.7), or a
      GetCorner(int i) accessor; and hoist the allocation in
      box_intersects_cell_bsp to first use.
+     [Pass 6: measured 39.1 ns + 224 B -> 13.5 ns, 0 B; see Q.C.]
 
 N.4  Defensive `new Sphere(...)` copies in BSPTree, one provably dead
      BSPTree.cs:99, 116, 166, 246, 251, 331
@@ -1381,6 +1393,7 @@ O.2  Per-vertex edge geometry recomputed on EVERY sphere test
      FIX: precompute Edge[], EdgeCross[], EdgeLenSq[], CrossLenSq[] once after
      make_plane(). Removes one cross product and two length-squares per vertex
      per test - probably the largest raw-FLOP win available in the subsystem.
+     [Pass 6: overstated - do PG.6 first; see Q.C.]
 
 O.3  polygon_hits_sphere_precise restarts the entire vertex loop
      Polygon.cs:342-382
@@ -1404,6 +1417,7 @@ O.4  CacheLocalSpaceSphere allocates a Position and does five
      FIX: reuse a preallocated LocalSpacePos (copy fields, do not allocate),
      cache the transposed matrix per cell, and skip the call entirely when
      (pos, CheckPos, CurPos) are unchanged since the last attempt.
+     [Pass 6: LocalSpacePos reuse verified safe; see PG.2.]
 
 O.5  CheckOtherCells rebuilds the entire cell list on every attempt
      Transition.cs:154-159
@@ -1559,6 +1573,884 @@ are STRUCTURAL UPPER BOUNDS, not measurements.
   6. O.6  Covered by the H.1 fix - verify the sqrt path is no longer entered.
   7. O.9  Fold into the M.1 correctness fix.
   8. O.7, O.8, O.10, O.11, O.12 as cleanup.
+
+================================================================================
+================================================================================
+SECTION Q - SIXTH PASS: MEASURED DEEP DIVE (2026-11-25)
+================================================================================
+================================================================================
+
+Run against Claude1 @ 867315772 (upstream master through #4553). Unlike
+Sections A-O, every cost here was MEASURED. The measurements used the real
+ACE.Server.dll (Release, .NET 10.0.15, Linux, 4-vCPU VM, optimised build
+checked via DebuggableAttribute), driven with synthetic inputs. No dat files
+were available, so:
+  - geometry was fed to the REAL dat parsers and constructors as generated
+    byte streams in the exact CellStruct / BSP / Polygon / Vertex layout;
+  - full transitions could not run, so per-transition totals are COMPOSED
+    from measured primitives along the traced code path (each says so).
+Allocation figures are exact (GC.GetAllocatedBytesForCurrentThread); retained
+sizes come from GC.GetTotalMemory(true) deltas. Timings were taken on a VM
+shared with other benchmarks, so use them only as ratios within one run.
+
+Benchmark code: docs/benchmarks/physics-core (PC.*) and
+docs/benchmarks/physics-geom (PG.*); see docs/benchmarks/README.md.
+PC.* covers the per-frame update and collision driver: PhysicsObj,
+Transition, SpherePath, Managers. PG.* covers geometry, cells, BSP and
+animation. Q.C corrects earlier sections.
+
+METHODOLOGY TRAP (record it so nobody repeats it): a micro-benchmark that
+finishes before the 100 ms tiering delay measures Tier-0 code, where
+Enum.HasFlag boxes. That produced phantom allocations (get_object_info 240 B
+instead of 48 B, UpdateObjectInternal 416 B instead of 224 B) that vanished at
+Tier-1. Warm up past tiering, e.g. 3 rounds with a 300 ms sleep. In steady
+state M.10 / D.7 ("HasFlag is intrinsified") holds.
+
+
+--- Q.0 WHO DRIVES THE TICK (verified call chains; replaces the header's model)
+
+  - The world loop runs WorldManager.UpdateGameWorld at most 60 times a second
+    (RateLimiter(60, 1 s), WorldManager.cs:314, 404). The chain is
+    LandblockManager.Tick -> TickPhysics -> Parallel.ForEach(landblockGroups)
+    -> Landblock.TickPhysics (Entity/Landblock.cs:398) -> virtual
+    wo.UpdateObjectPhysics() for each world object.
+  - PhysicsObj.update_object returns early when deltaTime < TickRate (1/30)
+    (PhysicsObj.cs:4149, 4172). No object runs UpdateObjectInternal more than
+    about 30 times a second.
+  - Non-creatures (WorldObject_Tick.cs:230):
+      - Missiles run every tick, so up to 30 Hz, with one transition per
+        UpdateObjectInternal.
+      - Other objects run only while IsAnimating, or for their first updates.
+  - Creatures (NPCs, and monsters that are not awake) are throttled to 5 Hz
+    (UpdateRate_Creature 0.2), and only run when animating, dying, or on their
+    first update. Because 0.2 > MaxQuantum 0.1, each update runs
+    UpdateObjectInternal TWICE; a transition happens only if the frame
+    changed.
+  - Awake monsters: Monster_Tick every 0.2 s -> Movement -> UpdatePosition ->
+    update_object (Monster_Navigation.cs:258). With the 2 sub-steps that is 10
+    transitions/s per chasing monster.
+  - Players (Player_Tick.cs:294):
+      - FastTick is IsPKType (Player_Tick.cs:156), so per-tick physics runs
+        only for PK / PKLite players, and for anyone with non-zero Velocity
+        (jumping, falling).
+      - Normal players are driven by client AutonomousPosition / MoveToState:
+        SetRequestedLocation -> UpdatePlayerPosition -> update_object_server
+        -> UpdateObjectInternalServer, one transition per processed message
+        (at most one per world tick).
+      - FastTick players use update_object_server_new: N sub-step
+        UpdateObjectInternal calls, plus one transition to RequestPos.
+  - PhysicsEngine.UseTime (PhysicsEngine.cs:108-131) has ZERO server callers.
+    It is the client's loop, so M's "(c) inferred per-tick from
+    PhysicsEngine.cs:122" rests on a path the server never runs.
+  - Rough budget: transitions/s = 10 x awake monsters + (client message rate)
+    x moving players + 30 x missiles in flight + PK extras.
+
+
+--- Q.1 PER-FRAME UPDATE AND COLLISION DRIVER ---------------------------------
+
+PC.1 [HIGH] The fixed per-transition setup is ~1.75 KB / ~30 objects; a safe
+     pool cuts it by 68%
+     Transition.cs:29-32 (ctor), 604-611 (Init), 657 (InitSphere wrapper);
+     SpherePath.cs:61-80, 83-98, 112-123; PhysicsObj.cs:4075 (transition),
+     2595 (get_object_info)
+
+     Measured, real code:
+         new Transition()                                       1,176 B (21 objects)
+         + InitSphere(2) + InitPath                             1,496 B total
+         + get_object_info (P.5's throwaway ObjectInfo)            48 B
+         + first SetCheckPos (Position + 2 Spheres + list array)  200 B
+         = about 1,744 B fixed per transition, before any collision work.
+     Added per step on a clean move:
+         SetCurrentCheckPos                                       160 B
+         CellArray ElementAt boxing (PC.8)                         40 B per cell per loop
+         LandCell `new Sphere` (F.11)                              32 B per pass
+     After the transition:
+         set_frame                                                 48 B
+         report_collision_end (PC.7)                               32 B
+         ShadowObj (P.4)                                           32 B per cell
+     COMPOSED estimate (not run end to end): about 2.3-2.9 KB per moving-object
+     update. At an assumed 22.5k updates/s (2,000 chasing monsters plus 500
+     moving players at 5 messages/s) that is roughly 55 MB/s of gen0.
+
+     FIX: pool Transitions, with a verified Reset.
+       - The prototype Reset explicitly resets all 75 fields of Transition,
+         ObjectInfo, CollisionInfo, CellArray and SpherePath.
+           - It clears CellArray.Cells, LocalSphere and CollideObject, which
+             start empty today only because the objects are new (ties in with
+             bugs-physics H.2 and M.3(c)).
+           - It sets PlacementAllowsSliding = true.
+           - It allocates fresh CurPos / CheckPos / BackupCheckPos, because of
+             the PC.2 alias.
+           - It nulls BeginPos, EndPos and CollideObject, so a pooled instance
+             does not keep PhysicsObjs alive.
+         A reflection diff of a dirtied-then-reset instance against
+         `new Transition()` (depth 3, collections compared by count) shows 39
+         differences before Reset and 0 after.
+       - Pooled reset + InitSphere(2) + InitPath: 480 B / 63 ns, against
+         1,496 B / 129 ns fresh.
+       - Use a [ThreadStatic] Stack<Transition>, not a single instance. Nested
+         transition() calls on one thread are possible:
+         SetPositionInternal -> handle_all_collisions ->
+         report_object_collision -> WorldObject.OnCollideObject runs arbitrary
+         game code.
+       - Release only at the internal owner scopes, in a finally:
+         UpdateObjectInternal, UpdateObjectInternalServer,
+         update_object_server_new, and the SetPositionInternal(SetPosition)
+         paths.
+       - The 7 external callers keep their instance and never return it, so it
+         is ordinary garbage. They are WorldObject.cs:332, 370, 392, 421;
+         Player_Inventory.cs:1492; AdminCommands.cs:2850;
+         DeveloperContentCommands.cs:2910.
+     SAFETY: verified that every caller of transition() stores the result only
+     in a local. NOT verified: that no OnCollideObject handler stashes the
+     Transition or its CollisionInfo list (none found by grep; not every
+     handler audited), and the real rate of nested transitions.
+     Confidence: bytes and Reset completeness VERIFIED; server-wide rate
+     PLAUSIBLE. This supersedes the sizing in M.2 and implements M.3.
+
+PC.2 [MEDIUM-HIGH] P.3's fix ("copy into the existing CheckPos") is unsafe as
+     written; an alias-guarded version is safe
+     SpherePath.cs:257-277 (SetCheckPos / RestoreCheckPos / SaveCheckPos all
+     `new Position`); Transition.cs:1084 (SetCurrentCheckPos), 209 and 716
+     (BackupCheckPos); SpherePath.cs:204 (CacheLocalSpaceSphere's LocalSpacePos)
+
+     THE ALIAS: Transition.cs:941 (ValidatePlacement) and 964
+     (ValidatePlacementTransition) do `SpherePath.CurPos = SpherePath.CheckPos;`.
+     From then on CurPos and CheckPos are the same object. Today the alias is
+     broken by the next `CheckPos = new Position(...)`.
+     With a naive in-place copy the alias would persist. In FindPlacementPos
+     (Transition.cs:400-405), SetCheckPos(CurPos) would become a self-copy and
+     AddOffsetToCheckPos would move CurPos too, so each ring candidate would
+     start from the previous candidate's offset. That changes the placement
+     search on every spawn and teleport.
+     The alias already has one live in-place effect today: StepDown
+     (Transition.cs:719 `CheckPos.Frame.Origin.Z -= ...`) moves CurPos during
+     the placement step-down.
+     Measured:
+         SetCheckPos          80 B / 15 ns  ->  0 B / 9 ns (guarded in-place copy)
+         Save + Restore       160 B
+         SetCurrentCheckPos   160 B
+         CacheLocalSpaceSphere 80 B
+     A clean step makes about 3-6 of these calls (more on StepDown and
+     EdgeSlide), so roughly 0.3-0.8 KB per transition.
+     FIX: copy in place unless
+     `ReferenceEquals(CheckPos, CurPos) || ReferenceEquals(CheckPos, position)`;
+     in that case allocate as today. This keeps the current semantics exactly.
+     Apply the same guard to SetCurrentCheckPos. BackupCheckPos and
+     LocalSpacePos are only ever assigned from `new`, so they can always be
+     copied in place.
+     SAFETY: verified alias sites with a Roslyn semantic scan of all of
+     ACE.Server (no other assignment aliases CheckPos); verified that the
+     post-transition readers (PhysicsObj.SetPositionInternal:1177, the
+     WorldObject line-of-sight callers, DeveloperContentCommands:2921) only
+     read CurPos after the transition. Confidence: VERIFIED.
+
+PC.3 [MEDIUM] Per-frame scaffold: 176-224 B per update removable with no public
+     API change (corrects F.5)
+     PhysicsObj.cs:1665 `var newPos = new Position(...)` (80 B), 1865
+     `new AFrame()` offsetFrame (48 B), 1879 AFrame.Combine result (48 B),
+     3646 set_frame `Position.Frame = new AFrame(frame)` (48 B), 3477
+     set_current_pos (48 B per client position update)
+
+     Measured: UpdateObjectInternal on a bare object 224 B per call,
+     UpdatePositionInternal 96 B, set_frame 48 B, UpdatePhysicsInternal 48 B.
+     FIX (Stage 0):
+       - Make set_initial_frame (3751) and add_obj_to_cell (1951) copy their
+         argument. Both are cold load-time paths. The semantic scan shows they
+         and the Position(uint, AFrame) constructor are the only places that
+         store an AFrame as a live Position.Frame. A concrete live alias today
+         is EnvCell.cs:391 add_obj_to_cell(this, StaticObjectFrames[i]).
+       - Then set_frame and set_current_pos copy Origin / Orientation in place.
+         get_frame(), the only accessor returning the live frame, has no
+         callers.
+       - UpdatePositionInternal: use a per-object scratch offset frame and
+         Combine in place into newFrame. offsetFrame only goes to
+         PartArray.Update(ref), which may replace it, and to
+         PositionManager.AdjustOffset, which mutates it in place; it does not
+         escape.
+       - A per-object scratch newPos needs a copy at 1710, and EndPos must be
+         cleared if Transitions are pooled (see Q.C on F.5).
+     SAFETY: mods could still hold a PhysicsObj.Position.Frame reference
+     (unverifiable). The difference is only visible to code that keeps an old
+     Frame reference and expects it never to change.
+     Confidence: VERIFIED (scan plus measurement).
+
+PC.4 [HIGH value, HIGH public-API cost] AFrame -> struct: the exact blast
+     radius, measured by compiling, and an A/B of the real code
+     Animation/AFrame.cs:8
+
+     AFrame is used on 111 lines across 25 files, all in ACE.Server; it does
+     NOT appear in ACE.Entity or any test project.
+     EXPERIMENT: a copy of the source with AFrame as a struct and every
+     mutating method turned into a `ref this` extension, so that mutation
+     through a property, indexer or call result becomes a compile error.
+     Result: 11 compile errors.
+       - 8 x `frame != null` in Sequence.cs (139, 151, 167, 177, 193, 380, 409,
+         424): null used as "no frame".
+       - 2 x `AFrame x = null`: PhysicsObj.cs:2034, ParticleEmitter.cs:220.
+       - 1 missing using (WorldObject_Magic.cs:1808), not a real hazard.
+       - Zero rvalue-mutation sites.
+     SILENT-SEMANTICS SITES (they compile but change meaning), found by the
+     semantic scan; M.4 did not list them. Seven methods mutate a by-value
+     AFrame parameter and their callers rely on it, so each needs `ref`:
+       - Sequence.apply_physics (Sequence.cs:221; 8 callers)
+       - StickyManager.adjust_offset (:91)
+       - ConstraintManager.adjust_offset (:62)
+       - PositionManager.AdjustOffset (:20; caller PhysicsObj.cs:1877)
+       - InterpolationManager.adjust_offset (:199). Dead code, but adding `ref`
+         would activate bugs-physics G.6(a) `frame = offset` if it is ever
+         revived.
+       - ChessMatch.CalculateWeeniePosition (ChessMatch.cs:559; 3 callers)
+       - PhysicsObj.set_frame (3644), which mutates the caller's frame when
+         invalid; dropping that side effect is benign.
+     Remaining alias reads: InterpolationManager.cs:240 (Position.Subtract
+     returns the live frame; dead) and ParticleEmitter.cs:227-232 (read-only).
+     Stored aliases: see PC.3. ShadowPart is dead (PartCell.AddPart returns
+     immediately).
+     With the 11 fixes and 7 `ref` changes the copy builds with 0 errors; the
+     patch is docs/benchmarks/physics-core/aframe-struct/aframe-struct.patch
+     (applies cleanly to Claude1 @ 867315772).
+     A/B, the same harness compiled against the class build and the struct
+     build:
+         new Position()                            80 -> 48 B (2 objects -> 1)
+         Transition ctor + InitSphere + InitPath   1,496 -> 1,336 B
+         SetCheckPos                                80 -> 48 B
+         Save + Restore                            160 -> 96 B
+         SetCurrentCheckPos                        160 -> 96 B
+         CacheLocalSpaceSphere                      80 -> 48 B
+         UpdateObjectInternal                      224 -> 48 B
+         set_frame                                  48 -> 0 B
+         UpdatePositionInternal                     96 -> 0 B
+     The struct also removes the F.3 / F.4 AFrame churn on the animation path
+     and the per-part `new AFrame` at PartArray.cs:605.
+     IMPLEMENTATION NOTES:
+       - Mark the non-mutating members `readonly` (LocalToGlobal,
+         GlobalToLocal*, get_heading, IsValid, Equals). Otherwise `in AFrame`
+         parameters, readonly fields and foreach variables get defensive
+         copies.
+       - Pass `in AFrame` to Combine and similar methods.
+       - Keeping the `ref this` extension mutators permanently is a
+         compile-time guard against future silent-copy bugs. Calling a
+         mutating member on a readonly field, `in` parameter, property or
+         foreach variable is otherwise a SILENT no-op on a copy; the live
+         Landblock.adjust_scene_obj_height bug (bugs-physics.txt) is exactly
+         this shape.
+       - Do NOT use `record struct`. Its generated ==/Equals is exact
+         component equality, while AFrame.Equals is epsilon-based (and has the
+         G.13 bug), so == and Equals would disagree. It adds nothing on the hot
+         path. `record class` is strictly worse: it still allocates, every
+         `with` allocates, and it adds EqualityContract and a virtual Equals.
+     COMPATIBILITY: class -> struct is binary-breaking for Harmony mods and for
+     projects that reuse ACE.Server/Physics (about 30 public signatures, null
+     semantics, reference sharing), and silently semantic-changing for
+     anything recompiled against it. Do PC.1-PC.3 first (no public change,
+     most of the bytes), then this as a versioned API change.
+     Confidence: VERIFIED (compiled and measured).
+
+PC.5 [design] Position -> struct: do NOT. The blockers, counted
+     From the semantic scan:
+       - 11 null-semantic sites. BeginPos == null means placement
+         (Transition.cs:99, SpherePath.cs:91, ObjectInfo.cs:109/114). Also
+         TargetPosition == null (TargetManager.cs:62), Position.cs:42,
+         PhysicsObj.cs:1744 x2, TargetManager.cs:84, SpellProjectileInfo.cs:31,
+         Creature_Death.cs:624.
+       - About 25 reference-alias sites, several of them deliberate live views:
+           - TargetManager.cs:164 `info.TargetPosition = PhysicsObj.Position`,
+             which StickyManager.cs:62 keeps as the TARGET's live position
+             (fallback at :97)
+           - PartArray.cs:600 `Parts[0].Pos = Owner.Position`
+           - Landblock.cs:448-449 (a building and its part share one Position)
+           - Transition.cs:941/964 (PC.2)
+           - PhysicsObj.cs:2436, 4282, 4379
+           - SpherePath.cs:87/89
+       - 2 methods mutate a caller's Position through a by-value parameter.
+       - 121 places pass a Position field by reference into callees.
+     Once AFrame is a struct, Position is one 48 B object, and the PC.2 / PC.3
+     reuse removes it from the hot paths anyway. The rest does not justify the
+     coupling risk. Confidence: VERIFIED (scan).
+
+PC.6 [LOW] CollisionRecord allocated per collided object per transition
+     PhysicsObj.cs:4070 `CollisionTable[obj.ID] = new CollisionRecord(...)` (32 B);
+     readers only read its two fields (3295-3303).
+     FIX: update the existing record in place when TryGetValue finds one (no
+     API change). Alternatively, make it
+     `readonly record struct CollisionRecord(double TouchedTime, bool Ethereal)`
+     with CollectionsMarshal.GetValueRefOrAddDefault for the upsert. That is a
+     good record-struct fit (tiny, immutable, no custom equality), but it
+     changes a public type. Confidence: allocation VERIFIED; the rate depends
+     on contact frequency.
+
+PC.7 [LOW-MEDIUM, trivial] report_collision_end allocates a List on every
+     successful move
+     PhysicsObj.cs:3293 `var ends = new List<uint>();`, unconditional. Reached
+     from handle_all_collisions (2675), which SetPositionInternal(Transition)
+     calls on every successful move. Measured 32 B and 3.5-13 ns per call on an
+     empty table. FIX: `if (CollisionTable.Count == 0) return;` and allocate
+     the list lazily (0 B). Purely local. Confidence: VERIFIED.
+
+PC.8 [LOW-MEDIUM] Cells.Values.ElementAt(i) also boxes an enumerator per call
+     Transition.cs:163 (CheckOtherCells), ObjCell.cs:357 (find_cell_list),
+     PhysicsObj.cs ~2490
+     Dictionary.ValueCollection is not an IList, so every ElementAt boxes the
+     enumerator (40 B), on top of the O(n^2) walk already recorded.
+     Measured: 4 cells 160 B / 34 ns against 0 B / 3.9 ns for foreach; 9 cells
+     360 B / 98 ns against 0 B / 7 ns.
+     The bugs-physics Section H rewrite must keep the "append during iteration"
+     semantics (bug D.1): iterate a snapshot index over a List<ObjCell>, not
+     foreach over the Dictionary. Confidence: VERIFIED.
+
+PC.9 [LOW-MEDIUM] PK status is re-read from the locked Biota store in the
+     object-collision loop
+     PhysicsObj.FindObjCollisions:405-407; ObjectInfo.Init:47-52;
+     Player_Tick.cs:312
+       - For player-vs-player pairs, FindObjCollisions calls
+         WeenieObj.IsImpenetrable(), and possibly IsPK() and IsPKLite(). Each
+         is a WeakReference dereference plus WorldObject.PlayerKillerStatus ->
+         GetProperty under a ReaderWriterLockSlim read lock
+         (WorldObject_Properties.cs:2706). PlayerKillerStatus is not
+         [Ephemeral]. This runs for every shadow in every cell, per insertion
+         pass. Non-player pairs short-circuit before it.
+       - ObjectInfo.Init reads the same property up to 3 times per player
+         transition.
+       - Player_Tick.cs:312 `FastTick && ...` reads it once per player per
+         world tick, even when the player is idle.
+     Measured: 15.4 ns per uncontended locked read, against 1.4 ns for a
+     cached field.
+     FIX: read the status once per call site and derive
+     Impenetrable / PK / PKLite from it (3 reads -> 1 in ObjectInfo.Init, 2 -> 1
+     for PK-vs-PK). A per-WeenieObject cache needs invalidation on every
+     PK-status writer: 14 property-setter writes were counted, and direct
+     SetProperty(PropertyInt.PlayerKillerStatus) writers were not checked, so
+     prefer a version stamp.
+     The Player_Tick reorder `IsMovingOrAnimating && FastTick` is NOT verified
+     safe: it would dereference MovementManager / PartArray for non-PK players,
+     which today short-circuits.
+     Confidence: per-read cost VERIFIED; rate PLAUSIBLE (scales with player
+     density in hubs).
+
+PC.10 [LOW] Debug logging on failed-transition paths boxes its arguments when
+     Debug is off
+     PhysicsObj.cs:1703 (player branch of UpdateObjectInternal) and 1793
+     (UpdateObjectInternalServer, once per failed client position update, e.g.
+     walking into a wall). The arguments include `Name`, which costs 2
+     WeakReference dereferences plus a locked string property read.
+     Measured with a logger at Warning: LogDebug with 5 arguments 112 B /
+     28 ns; guarded with IsEnabled 0 B / 2 ns, not counting `Name`.
+     FIX: [LoggerMessage] source-generated methods (they check IsEnabled before
+     boxing), or an explicit `if (log.IsEnabled(LogLevel.Debug))`.
+     The 21 + 14 interpolations M.10 listed are now Console.WriteLine calls on
+     error paths or commented out; only PhysicsObj.ToString remains, and it is
+     lazy. Confidence: cost VERIFIED; rate depends on the failure rate.
+
+PC.11 [LOW] GRotate evaluates CreateFromYawPitchRoll even when Omega is zero
+     PhysicsObj.cs:1860; AFrame.cs:107-111. Runs once per UpdatePhysicsInternal
+     (every object update), and via Rotate on the animation physics path.
+     FIX: `if (rotation != Vector3.Zero) Orientation *= ...; Orientation = Normalize(Orientation);`
+     16.2 -> 9.0 ns, bit-identical over 100k random unnormalised quaternions
+     (multiplying by the exact identity is exact). Confidence: VERIFIED.
+
+PC.12 [MEDIUM memory] Every PhysicsObj eagerly allocates 1.65 KB, including
+     scenery and static dat objects
+     PhysicsObj constructor (PhysicsObj.cs:122-157)
+     Measured: new PhysicsObj() is 1,648 B before any PartArray. ObjectMaint is
+     552 B of it (6 empty Dictionaries, ObjectMaint.cs:46-80) and ChildList
+     184 B (4 Lists). Scenery and static objects (Landblock.cs:266, 500;
+     EnvCell.cs:390) never use ObjectMaint, CollisionTable or Children, but
+     they are long-lived, so all of it sits in gen2.
+     FIX: create ObjectMaint's private dictionaries lazily. They are private
+     auto-properties, so this is a one-file change. Reads that find null
+     return 0 / empty without allocating. The only lazy-init race is
+     reader-vs-reader under the static read lock creating an empty dictionary,
+     which is benign; writes hold the write lock. Saves about 480 B per
+     never-tracked object.
+     Not verified: object counts per landblock. At about 200 dat objects x
+     1,000 loaded landblocks it would be about 100 MB of gen2.
+     Confidence: VERIFIED per object; aggregate PLAUSIBLE.
+
+PC.13 [LOW] IsDirectVisible builds and destroys a full dat-backed PhysicsObj per
+     check, and takes the global ObjectMaint write lock
+     WorldObject.cs:310 makeObject(0x02000124) -> DestroyObject (PhysicsObj.cs:190)
+     Teardown does leave_cell (a write lock on the caster's cell, plus an
+     unconditional NumObjects-- even though the sight object was never added,
+     ObjCell.cs:254-258), then ObjMaint.DestroyObject (ObjectMaint.cs:1171).
+     That is the STATIC write lock from F.1, which stalls every visibility
+     reader on the server. Caller: Monster_Combat.cs:180, once per
+     caster-monster projectile decision.
+     FIX: one cached sight object per thread, or skip ObjMaint.DestroyObject /
+     RemoveServerObject for objects that were never registered.
+     Confidence: VERIFIED by reading; frequency LOW.
+     See also the line-of-sight note filed in bugs-physics.txt.
+
+PC.14 [LOW] Small confirmations
+     - set_heading's trailing `var newHeading = get_heading();` (AFrame.cs:187)
+       is dead: ~15 ns per call. Drop it with any edit.
+     - MovementParameters is 72 B (confirms P.9). get_object_info is 48 B per
+       transition (confirms P.5).
+
+
+--- Q.2 GEOMETRY, CELLS, BSP AND ANIMATION -------------------------------------
+
+Geometry counts below are synthetic: "small corridor" = 24 vertices, 20 render
+polygons, 12 physics polygons; "medium room" = 60 vertices, 60 render
+polygons, 30 physics polygons. Real dat distributions were not available, so
+every per-cell figure scales with them.
+
+PG.1 [HIGH] find_cell_list repeats add_all_outside_cells once for every land
+     cell already in the array, so get_landcell - and the P.1 global lock behind
+     it - is hit 1.7-4.6x more than needed (corrects F.12)
+     Common/LandCell.cs:82-118 (sphere overload); LandCell.cs:277-281;
+     ObjCell.cs:355-361
+
+     The sphere overload of add_all_outside_cells starts with
+     `if (cellArray.AddedOutside) return;` but never SETS AddedOutside. The
+     parts overload (LandCell.cs:120-125) does. LandCell.find_transit_cells
+     calls it again, and ObjCell.cs:355-361 runs that per cell in the array. So
+     each LandCell already in the array re-runs the full outside-cell
+     computation (AdjustToOutside, gid_to_lcoord, add_outside_cell ->
+     LandCell.Get -> LScape.get_landcell -> LandblockManager.GetLandblock, the
+     P.1 lock) for every sphere. add_cell de-duplicates, so the repeats add
+     nothing.
+     Frequency: every find_cell_list - Transition.BuildCellArray (Transition.cs:94),
+     every CheckOtherCells (Transition.cs:159, once per insertion attempt), the
+     end of each transition (:528), and PhysicsObj.calc_cross_cells (:2101)
+     for each moving object.
+     Measured on the real find_cell_list (2-sphere player; client-mode lookup,
+     so no lock taken - production also pays the P.1 lock on every call):
+                                  get_landcell calls    time per call
+         1 cell                     5 -> 3              248 -> 122 ns (2.0x)
+         near a cell edge          13 -> 5              443 -> 184 ns (2.4x)
+         near a cell corner        41 -> 9             1137 -> 336 ns (3.4x)
+         near a landblock corner   41 -> 9             1182 -> 375 ns (3.2x)
+         5 calls, one transition, 1 cell    25 -> 15
+         5 calls, one transition, 4 cells  205 -> 45
+     The resulting cell set and currCell were identical in every case.
+     FIX: set `cellArray.AddedOutside = true;` right after the early-return
+     check in the sphere overload, mirroring the parts overload. One line.
+     SAFETY:
+       - The function reads only (position, spheres) and writes only through
+         the de-duplicating add_cell.
+       - Every caller within one find_cell_list session passes the same
+         position and spheres (ObjCell.cs:351, LandCell.cs:279, EnvCell.cs:370).
+       - Sessions reset the flag (ObjCell.cs:339, PhysicsObj.cs:2491,
+         CellArray.SetStatic / SetDynamic).
+       - Sphere and parts sessions never mix.
+     Not verified: parity with the retail client, and mods calling
+     add_all_outside_cells directly. Confidence: VERIFIED (real code, identical
+     results). Do it together with P.1.
+
+PG.2 [HIGH in crowds, MEDIUM otherwise] CylSphere.IntersectsSphere builds the
+     full local-space cache for every cylsphere object it tests, but only one
+     branch reads one field of it
+     CylSphere.cs:344-352 (`path.CacheLocalSpaceSphere(pos, 1.0f); var global_cylsphere = new CylSphere(...)`);
+     the only consumer is CylSphere.cs:443 in StepSphereUp
+     (`path.LocalSpacePos.LocalToGlobalVec(collisionNormal)`)
+
+     SpherePath.CacheLocalSpaceSphere (SpherePath.cs:181-207) does 4
+     LocalToLocal, 1 GlobalToLocalVec and `new Position(pos)`. It runs before
+     any distance test, for every cylsphere object in every overlapping cell:
+     ObjCell.FindObjCollisions (ObjCell.cs:167) -> PhysicsObj.FindObjCollisions
+     (PhysicsObj.cs:434-437). That is per neighbour x per cell x per insertion
+     attempt (O.1 nesting) x per step, so linear in occupants in a crowded cell.
+     Measured: real CacheLocalSpaceSphere 39.6 ns + 80 B per call; copying pos
+     into a reused Position 0.86 ns, 0 B (46x). O.7's `new CylSphere` adds 40 B.
+     FIX: replace the call with a copy of pos into a preallocated
+     path.LocalSpacePos (ObjCellID + Frame).
+     SAFETY: every reader of LocalSpacePos / LocalSpaceSphere /
+     LocalSpaceCurrCenter / LocalSpaceZ / LocalSpaceLowPoint was grepped.
+     BSPTree.cs (24 reads) and GfxObj.cs:655 read only after a fresh cache
+     (EnvCell.cs:94, PhysicsPart.cs:197); Transition.cs:306-307 re-caches
+     first; LocalSpaceLowPoint is never read; CylSphere.cs:443 is the only
+     reader of the cylsphere's own cache. Nothing keeps a reference to
+     LocalSpacePos (SetWalkable copies it, SpherePath.cs:300).
+     Not verified: mods reading SpherePath.LocalSpace* after a cylsphere test.
+     Confidence: VERIFIED. This also makes O.4's "reuse a preallocated
+     LocalSpacePos" step verified-safe.
+
+PG.3 [MEDIUM] PhysicsPart.FindObjCollisions builds the local-space cache before
+     the cheap bounding-sphere reject
+     PhysicsPart.cs:193-201 (CacheLocalSpaceSphere, then GfxObj.FindObjCollisions);
+     the reject is GfxObj.cs:651-668
+
+     The full 40 ns + 80 B cache runs for every part of every BSP object
+     (static scenery, fences, building part 0 via
+     BuildingObj.find_building_collisions) in each overlapping cell, on each
+     attempt, even when the part is far away.
+     Measured: the same test in global space (one quaternion transform of the
+     part's sphere centre against GlobalSphere[0..1]) costs 5.6 ns against
+     39.6 ns (7.1x) and allocates nothing. 0 false rejects in 1024 random
+     placements against the exact local-space test.
+     EXACTNESS: rigid transforms preserve distance, so the local test
+     |PS.c - L/s|^2 - (PS.r + L.r/s)^2 < EPS is equivalent to
+     |c_g - G|^2 < (s*PS.r + G.r)^2 + EPS*s^2. Use that exact form with a small
+     rounding margin, and skip only when it fails for all spheres.
+     FIX: in PhysicsPart.FindObjCollisions, return OK when the global test
+     rejects; otherwise run the existing code unchanged. Scale must use
+     GfxObjScale.Z exactly as CacheLocalSpaceSphere does. An object-level
+     reject in PhysicsObj.FindObjCollisions would cover PG.2 and PG.3 both.
+     Confidence: VERIFIED (measured, maths checked).
+
+PG.4 [HIGH memory / GC mark] The server builds and keeps geometry it never
+     reads: 68-74% of each EnvCell's physics geometry, plus a full drawing BSP
+     per cached GfxObj
+     Common/CellStruct.cs:25-47 (Polygons, PhysicsPolygons, CellBSP,
+     DrawingBSP, PhysicsBSP); Common/GfxObj.cs:67-68 (DrawingBSP)
+
+     Verified readers (solution-wide grep):
+       - CellStruct.DrawingBSP: none.
+       - CellStruct.PhysicsPolygons: none.
+       - CellStruct.Polygons: only `Polygons[portal.PolygonId]`
+         (EnvCell.cs:251, 317), i.e. portal polygons.
+       - GfxObj.DrawingBSP: only for DrawingSphere (Setup.cs:122,
+         EnvCell.cs:162/258).
+       - GfxObj already gates Polygons / PhysicsPolygons behind
+         `!PhysicsEngine.Instance.Server`.
+     Measured, real CellStruct constructor on synthetic geometry, retained
+     bytes per EnvCell:
+                                          small corridor   medium room
+         total CellStruct                     32,031         103,750
+         DrawingBSP (dead)                     9,157          40,951
+         Polygons (portals only used)          8,520          24,696
+         PhysicsPolygons (dead)                5,016          12,200
+         PhysicsBSP                            8,463          25,134
+         CellBSP                                 813             813
+         dead on the server                    ~68%            ~74%
+     Each dat-built Polygon is 358 B in 7 objects (Polygon, List<Vertex>, its
+     array, 4 Vertex). A drawing tree costs about 358 B per polygon reference,
+     184 B per interior node and 96 B per leaf, per unique GfxObj; GfxObjCache
+     never evicts. The live count is visible through the "Physics Cache Counts"
+     admin stat (AdminStatCommands.cs:119).
+     FIX, following the existing GfxObj pattern:
+       - When Server, skip DrawingBSP and PhysicsPolygons.
+       - Keep only the portal polygons, or build them lazily from the dat on
+         first miss. Lazy is safer, since no dat check confirms that every
+         CellPortal.PolygonId is in cellStruct.Portals.
+       - In GfxObj, set DrawingSphere = dat.DrawingBSP.RootNode.Sphere (the
+         value BSPTree.GetSphere returns; null stays null).
+     SAFETY: these are public fields that become null on the server. That
+     breaks any mod or other project reading them with Server = true;
+     client-emulation projects (Server = false) are unaffected. Load-time
+     behaviour is otherwise unchanged.
+     ORDER: do this BEFORE perf-datloader.txt P.4 (CellStruct sharing); after
+     it, sharing only has to amortise the remaining ~26%.
+     Confidence: VERIFIED (grep, and measured on synthetic geometry; real-dat
+     ratios not measured).
+
+PG.5 [MEDIUM memory] Polygon and Vertex instances are duplicated within one
+     structure
+     BSP/BSPNode.cs:60-62 (a new Polygon per leaf reference); CellStruct.cs:29/37;
+     Polygon.cs:61 (VertexCache.Get(SWVertex) allocates a new Vertex per
+     polygon corner). PolygonCache, VertexCache and BSPCache are all
+     `Enabled = false`.
+
+     A physics polygon appearing in k leaves becomes k Polygon objects, plus
+     another in PhysicsPolygons. Adjacent polygons do not share Vertex objects
+     (about 4 Vertex per quad instead of about 1). In the medium room, 56 BSP
+     leaf polygon references produced 56 distinct Polygon objects.
+     FIX: a build-local Dictionary<ushort, Polygon> and Dictionary<ushort,
+     Vertex> per CellStruct / GfxObj build, used by both the BSP leaves and the
+     dictionaries. No global HashSet cache (the old caches hashed whole trees
+     and were disabled).
+     SAFETY: polygons are immutable after make_plane() (see Q.C); identity is
+     never compared (hitPoly and Walkable are only read; Polygon.Equals is
+     value-based). Not verified: mods mutating a Polygon.
+     Confidence: sharing is safe in-tree (VERIFIED); the size of the saving
+     depends on real leaf duplication (PLAUSIBLE).
+
+PG.6 [MEDIUM] Polygon layout: List<Vertex> of class Vertex costs 3 dependent
+     loads per vertex and 7 objects per polygon
+     Polygon.cs:13; the loops in polygon_hits_sphere_precise, check_walkable,
+     find_crossed_edge and point_in_polygon, reached from every BSP leaf test
+
+     Measured with the algorithm verbatim, only the data access changed (0
+     result or contact-point mismatches over 4,096 queries):
+                                       hot (cached)    cold (262k polys)   per 4-vertex poly
+         current List<Vertex>          5.33 ns         15.6 ns             358 B
+         Vector3[] inline              4.27 ns (1.25x) 10.2 ns (1.53x)     103 B
+         + O.2 edges, single pass      3.73 ns (1.43x)  9.15 ns (1.70x)    231 B
+     FIX: give Polygon an internal Vector3[] of vertex origins, filled in
+     make_plane(), and use it in the loops.
+     COMPATIBILITY: Polygon.Vertices is a public List<Vertex>. Removing it or
+     turning it into a property is binary-breaking for mods; keeping both costs
+     memory. Staged: add the array, switch the loops, then mark Vertices
+     [Obsolete]. Confidence: VERIFIED.
+
+PG.7 [LOW-MEDIUM] LandblockStruct.Init() builds 64 LandCells and a
+     ConcurrentDictionary that Generate() throws away
+     Common/LandblockStruct.cs (Init: `LandCells = new ConcurrentDictionary...;`
+     then 64 x TryAdd(new LandCell(i)))
+
+     The LandblockStruct(CellLandblock) constructor calls Init(), then
+     Generate(). Generate -> InitPVArrays always replaces LandCells
+     (SideCellCount starts at 0, so cellRegen is always true).
+     Measured, real constructor with a synthetic 9x9 CellLandblock: 113,216 B
+     allocated and 73,248 B retained; 40,080 B of the allocation (35%, about 700
+     objects including 64 ReaderWriterLockSlim) is the discarded Init set.
+     FIX: skip building LandCells in Init when called from the CellLandblock
+     constructor, e.g. a private Init(bool buildCells). LandCells is always
+     reassigned before any read (verified); the default constructor path is
+     unchanged. Confidence: VERIFIED.
+
+PG.8 [MEDIUM memory] Every PhysicsObj gets its own Setup, and the PartArray's
+     parts alias the Setup's part Positions
+     Setup.cs:91-94 (Setup.Get builds a new Setup per call: a PhysicsPart +
+     Position + AFrame per part, copies of the spheres and cylspheres);
+     PartArray.cs:327-334 (InitParts -> PhysicsPart.MakePhysicsPart(template)
+     -> MorphToExistingObject: `Pos = template.Pos`, an alias)
+
+     The new part's own InitEmpty Position + AFrame (80 B) becomes garbage
+     immediately. Measured, real classes, GfxObjCache pre-seeded:
+         parts   Setup retained   PartArray + Setup retained   garbage at creation
+           1         566 B                928 B                       88 B
+           3         869 B              1,392 B                      248 B
+          17       3,224 B              4,864 B                    1,664 B
+     ReferenceEquals(PartArray.Parts[0].Pos, Setup.Parts[0].Pos) == true.
+     FIX, staged:
+       (1) InitParts gives each part its own Position copied from the template,
+           instead of aliasing.
+       (2) Then cache Setup per setupID in a ConcurrentDictionary, as
+           GfxObjCache does.
+     That saves about 0.5 KB per 1-part object and about 1.9 KB per 17-part
+     object, plus 5-37 fewer objects each, for every scenery, static and
+     creature PhysicsObj.
+     SAFETY: Setup is never written after construction (only factory methods
+     write it, on fresh instances; Setup.Owner is never assigned). Its sphere
+     lists are only read (InitSphere copies). Setup.Parts is only read by
+     InitParts. Step (2) WITHOUT step (1) would make every object share part
+     Positions, which is catastrophic. Not verified: mods mutating Setup.
+     Confidence: sizes and aliasing VERIFIED; per-object saving PLAUSIBLE.
+
+PG.9 BBox.LocalToGlobal / LocalToLocal: a correctness bug, filed in
+     bugs-physics.txt Section Q, with a perf fix attached. The corrected version
+     (compose the rotation once, min/max over all 8 corners) measured 39.4 ns
+     and 0 B against 67.5 ns and 40 B today (1.71x).
+
+PG.10 [LOW-MEDIUM] Redundant work per portal in EnvCell transit, and building
+     portals re-resolving their cells through the global lock
+     - EnvCell.cs:324 and 356 compute `Pos.Frame.GlobalToLocal(sphere.Center)`
+       inside the portal loop; the value is the same for every portal, so
+       (P-1) x S transforms are wasted per cell per find_cell_list.
+     - BuildingObj.find_building_transit_cells -> BldPortal.GetOtherCell ->
+       LScape.get_landcell (the P.1 lock), per portal per find_cell_list, for
+       every town land cell with a building. Cache the EnvCell lazily on
+       BldPortal: it lives in the same physics Landblock as the building, and
+       LandCells entries are never removed (only TryAdd). Cache only non-null
+       results.
+     Confidence: VERIFIED by reading; cost not measured (a few ~3 ns transforms
+     plus lock entries).
+
+PG.11 [LOW] Lists never used, kept on every cell
+     ObjCell.VoyeurTable is never added to; it is only iterated, and readers
+     already null-check it. PartCell.ShadowPartList: AddPart and RemovePart
+     both return immediately. 64 B and 2 objects per cell. Measured per-cell
+     shells: ObjCell 440 B, LandCell 536 B, EnvCell 776 B, each including a
+     96 B ReaderWriterLockSlim. VoyeurTable can start null (safe given the null
+     checks). ShadowPartList is a public property (a mod-compatibility
+     concern). Confidence: VERIFIED.
+
+PG.12 [design] AFrame -> struct: the geometry side. PC.4 carries the compiled
+     experiment and the full site list; this adds:
+       - Position should stay a class with an inline AFrame field: 48 B in 1
+         object instead of 80 B in 2 (measured).
+       - Stored references that silently become copies, each to be checked
+         for consumers that expect later updates: PhysicsObj.add_obj_to_cell
+         and set_initial_frame (PC.3), ShadowPart, ChildList.AddChild,
+         ParticleEmitter, Particle, and Position.Subtract returning its own
+         Frame by reference.
+       - The 11 mutating instance methods (Combine(a, b, scale),
+         InterpolateOrigin / InterpolateRotation, GRotate, Rotate x2, Subtract,
+         set_heading, set_position, set_rotate, set_vector_heading) become
+         SILENT no-ops when called on a readonly field, `in` parameter,
+         property or foreach variable. Grep found no list-indexer mutation
+         sites today.
+       - Stage 0, no type change, first: allocation-free Combine-into
+         overloads, LocalSpacePos reuse (PG.2), the F.4 skip-combine, and a
+         PartArray.UpdateParts Combine overload taking the dat Frame directly.
+     Confidence: VERIFIED counts.
+
+
+--- Q.C CORRECTIONS TO EARLIER SECTIONS ----------------------------------------
+
+Each corrected finding carries a one-line pointer here. The original text is
+kept, so the reasoning is not re-derived.
+
+Header CALL-FREQUENCY MODEL ("per active object per frame, 30-60 Hz"): WRONG.
+     No object updates more than ~30 Hz, creatures run at 5 Hz with 2 sub-steps,
+     and normal players are driven by client messages. See Q.0.
+
+M "what a profiler must confirm (c)": PhysicsEngine.cs:122 is the client loop
+     and has no server callers (Q.0).
+
+M.2  UNDERSTATED. new Transition() alone is 1,176 B; the fixed per-transition
+     setup is about 1.75 KB (PC.1).
+
+P.3  UNSAFE AS WRITTEN because of the CurPos = CheckPos alias; use the guarded
+     version in PC.2.
+
+F.5  - One of its five allocations (PhysicsObj.cs:1814) is in
+       UpdateAnimationInternal, whose only caller, update_animation(), has no
+       callers.
+     - "They never escape the call" is false: newPos.Frame escapes through
+       set_initial_frame(newPos.Frame) on the failed-transition branch (1710,
+       stored as the live Position.Frame at 3751), and newPos is stored as
+       SpherePath.EndPos (SpherePath.cs:89).
+     - It is not "the dominant steady-state garbage source": 224 B against
+       ~1.75 KB of transition setup (PC.1, PC.3).
+
+P.6 / M.4  AFrame is not used in ACE.Entity. M.4's example mutation sites are
+     field receivers, which stay correct with a struct inside a class. The real
+     silent hazards are the 7 by-value-parameter mutators, and the compile
+     breakage is only 11 sites (PC.4).
+
+F.13, and F.6's InterpolationManager caller: ZERO runtime cost.
+     InterpolationManager is never instantiated: PositionQueue is never
+     allocated, and InterpolateTo is only reachable from MoveOrTeleport, which
+     has no callers. ConstraintManager is also never created (ConstrainTo has
+     no callers). StickyManager IS live (Player_Melee.cs:429,
+     Monster_Melee.cs:73), so F.6's StickyManager caller stands.
+
+F.9 / M.6 (Matrix4x4 in GlobalToLocalVec) OVERSTATED; downgrade to LOW.
+     - Real AFrame.GlobalToLocalVec takes 3.34 ns, against 2.29 ns for
+       Vector3.Transform(v, Quaternion.Conjugate(q)): about 1 ns.
+     - Real Position.LocalToLocal: 6.14 ns against 6.62 ns for the quaternion
+       version, i.e. no gain.
+     - get_heading: 19.2 vs 11.3 ns.
+     - .NET 10's Matrix4x4 is SIMD; "register pressure in the innermost loop"
+       is not measurable.
+     - The change is NOT bit-identical: up to 5.5e-5 m on 10 m vectors, against
+       collision thresholds of EPSILON = 2e-4, so rare borderline flips are
+       possible.
+
+O.2  OVERSTATED as the "largest raw-FLOP win". On top of the flattened layout
+     (PG.6) it adds only 1.15x (4.27 -> 3.73 ns hot), is within noise inside a
+     real BSP query (0.9-1.2x), and costs +128 B per 4-vertex polygon. Most of
+     the gain is removing the List<Vertex> indirection: do PG.6 first and treat
+     O.2 as optional. O.3's single pass was proven equivalent
+     (`return !anyNeg` after one inner-loop pass): 0 mismatches including
+     contact points.
+
+O.4  Its "reuse a preallocated LocalSpacePos" step is now VERIFIED safe (PG.2).
+
+F.12 The dominant multiplier is NOT "9 neighbours x spheres". It is PG.1:
+     add_all_outside_cells re-runs for every land cell in the array. Measured
+     5 / 13 / 41 get_landcell calls per find_cell_list, falling to 3 / 5 / 9.
+
+N.3 / M.7 (box corners): now measured. The real intersect_box costs 39.1 ns +
+     224 B; an inline-corner version costs 13.5 ns and 0 B (2.9x, 0 result
+     mismatches).
+
+F.3  Immutability of the Animation wrapper VERIFIED: every get_pos_frame result
+     is only the read-side argument of Combine / Subtract, and PosFrames /
+     PartFrames have no other readers. A cache must handle DBObj.GetAnimation
+     returning null (today `new Animation(null)` throws NullReferenceException).
+
+F.4  VERIFIED, but its suggested fix ("return a shared static identity AFrame")
+     is a hazard: AFrame is a mutable public class, so any caller mutating the
+     result would corrupt every user. Skip the Combine when
+     PosFrames.Count == 0 instead; Combine with identity is bit-identical apart
+     from -0.0.
+
+D.7  CONFIRMED: animate_static_object, the only ungated UpdatePartsInternal
+     caller, is dead (PhysicsEngine.cs:127 is commented out).
+
+cpu-gc-plan.txt items 12 and 26, perf-datloader.txt P.4 (geometry
+     immutability): the in-tree audit they asked for is DONE.
+     - No writes to Polygon fields, Vertex.Origin or BSPNode fields after
+       construction. The only writes are terrain construction in
+       LandblockStruct, and AdjustPlanes is unreachable on the server.
+     - The BSP structural mutators (RemoveNonPortalNodes, PurgePortals,
+       LinkPortals) have no callers.
+     - Sphere objects in GfxObj, BSP and Setup are never written.
+     Sharing CellStruct is safe in-tree. Not verified: mods, which can reach
+     these public fields. Use GetOrAdd for construction (duplicate builds are
+     benign).
+
+
+--- Q.D LOOKS EXPENSIVE BUT IS COLD, OR NOT WORTH IT (measured where stated) ---
+
+  - PhysicsEngine.UseTime: client only.
+  - InterpolationManager, ConstraintManager, DetectionManager, AttackManager:
+    never instantiated, or empty.
+  - update_animation / UpdateAnimationInternal: no callers.
+  - PartCell.AddPart / ShadowPart: stubbed out.
+  - TargetManager.HandleTargetting: 0.5 s throttle.
+  - FindPlacementPos ring search: spawn and teleport only.
+  - Creature MaxQuantum sub-stepping (2 transitions per 5 Hz update):
+    deliberate. The source notes that MaxQuantum 0.2 "is buggy with
+    MoveToManager turning"; do not raise it.
+  - The Landblock.TickPhysics outer loop: one virtual call and a flag test per
+    object per tick.
+  - CollideObject.FirstOrDefault(closure) in the line-of-sight methods: 0 B
+    measured in steady state.
+  - Exceptions as control flow: none in Physics/.
+  - Flattening BSP nodes into one struct array (inline sphere, index
+    children): 1.36x hot but 0.87-0.91x cold over two runs, because freshly
+    built trees are already allocation-order contiguous. Not worth the risk.
+  - LandCells ConcurrentDictionary -> ObjCell[64]: 1.20 vs 0.39 ns per lookup,
+    negligible next to the P.1 lock.
+  - Matrix -> quaternion in GlobalToLocal / LocalToLocal / get_heading: 1-8 ns,
+    and not bit-identical (Q.C).
+  - Hand-written Vector128 SIMD for the polygon edge loops: not prototyped.
+    Polygons have 3-4 vertices with branchy early exits, and Vector3 is already
+    SIMD.
+  - FrozenDictionary / FrozenSet: EnvCell.VisibleCells is a small public
+    Dictionary with ns lookups; Sequence.PlayerIdleAnims' is_idle_anim has no
+    callers.
+  - Racy Requests++ / Hits++ static counters in GfxObjCache.Get: per part
+    creation, not per frame.
+  - Particles/: ParticleManager is never instantiated on the server.
+  - Hooks/ (per script event), Util/AdjustCell (spawn and teleport), MotionTable
+    per object (shares the dat dictionaries), MovementParameters per motion
+    command.
+  - RECORDS:
+      - `record class` adds allocation and equality cost with no benefit
+        anywhere in Physics.
+      - `readonly record struct` gives value equality and ToString, not speed.
+        It fits only tiny immutable data with no custom equality, such as
+        CollisionRecord (PC.6).
+      - Do not use it for AFrame (epsilon Equals; see PC.4).
+      - For new immutable data, use `readonly struct` with `in` / `ref readonly`
+        parameters.
+
+
+--- Q.E SUGGESTED PRIORITY FOR SECTION Q ---------------------------------------
+
+By expected impact per unit of risk:
+  1. PG.1  Set AddedOutside in the sphere overload. One line; identical results
+           verified; 40-78% fewer get_landcell / P.1 lock entries per
+           find_cell_list. Do it with P.1.
+  2. PC.7 + PC.8 + PC.11  Lazy `ends` list, foreach/snapshot iteration instead
+           of ElementAt (fold into the Section H CellArray rewrite), and the
+           zero-Omega GRotate skip. Trivial and local.
+  3. PG.2  CylSphere copies pos into LocalSpacePos instead of building the full
+           cache. A few lines; every reader verified.
+  4. PC.3 Stage 0  In-place set_frame / set_current_pos, scratch offset frame,
+           copies at the two cold store sites. 176-224 B per update; internal
+           only.
+  5. PC.2  Alias-guarded in-place SetCheckPos / Save / Restore /
+           SetCurrentCheckPos. 0.3-0.8 KB per transition with semantics kept
+           exactly.
+  6. PG.7  Stop building the throwaway LandCells. 40 KB / ~700 objects per
+           landblock load.
+  7. PG.4  Server geometry diet (DrawingBSP, PhysicsPolygons, non-portal
+           Polygons, the GfxObj drawing tree). The risk is public fields
+           becoming null on the server; gate on PhysicsEngine.Instance.Server.
+  8. PC.1  Transition pool with the verified Reset. ~1 KB per transition;
+           medium risk because it is about lifetime.
+  9. PG.3  Global-space reject in PhysicsPart before the cache. 7x on rejected
+           parts, exactness proven; mind the scale handling.
+ 10. PC.12, PC.9, PG.6, PG.5, PG.8 (only after de-aliasing), PC.10, PG.10, PG.11.
+ 11. PC.4  AFrame -> struct as its own versioned API change, after 1-10, using
+           the patch and site list.
+
+NOT VERIFIED anywhere in Section Q:
+  - End-to-end transition allocation (no dats); totals are composed.
+  - Real dat polygon, node and part counts; every per-cell figure scales with
+    them.
+  - Live-server counts: loaded landblocks, EnvCells, GfxObjCache.Count, client
+    position-message rates, scenery objects per landblock.
+  - Whether any OnCollideObject handler retains a Transition.
+  - Parity with the retail client for PG.1 and PG.9.
+  - Mods and other projects consuming the public fields and types named above.
 
 ================================================================================
 END OF REPORT

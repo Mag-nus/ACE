@@ -5,7 +5,8 @@ Scope   : Source/ACE.Server/Network  (426 files, ~18,650 lines)
 Date    : 2026-07-25
 Companion document: bugs-network.txt
 
-UNPROFILED. Static reading of call paths; costs are reasoned, not measured.
+Sections 0-F are UNPROFILED: static reading of call paths, costs reasoned.
+Section G (2026-11-25) is MEASURED; G.C corrects several earlier findings.
 
 CALL-FREQUENCY MODEL
   NetworkManager.DoSessionWork   ~1000Hz (WorldManager outer loop)
@@ -38,6 +39,7 @@ P.0a  Parallel.ForEach over a mostly-empty 1000-slot array, ~1000 times/second
       scheduling overhead for a handful of sessions.
 
       This is plausibly the single largest CPU win in the server.
+      [Measured: overstated - see G.C.]
 
 P.0b  Per-tick LINQ allocation and a slow null comparison
       NetworkManager.cs:367
@@ -63,6 +65,7 @@ P.0d  AcknowledgeSequence materialises the whole dictionary on every ACK
       in a per-packet path.
       FIX: iterate cachedPackets directly and TryRemove inside the loop,
       avoiding both the snapshot and the full lock acquisition.
+      [Measured: this fix is slower than today - see G.C and NT.7.]
 
 P.0e  Serialisation allocations
       Extensions.cs:17 (WriteString16L) - a GetEncoding(1252) lookup AND a
@@ -157,6 +160,7 @@ P.2  Broadcast amplification lives at the FRAGMENT layer, not the message layer
      CreateReadyToSendPacket already only BlockCopys out of it. The buffer is
      only read once the message is built, so sharing it across the parallel
      SendBundle calls (NetworkManager.cs:362) is safe.
+     [Measured: rate overstated, and NT.3 is the safer fix - see G.C.]
 
 P.3  Payload Hash32 recomputed per recipient
      ServerPacketFragment.cs:26
@@ -167,6 +171,7 @@ P.3  Payload Hash32 recomputed per recipient
 
      FIX: compute the payload hash once per fragment slice on the GameMessage
      and reuse it.
+     [Measured: 5.4 ns per recipient; drop it - see G.C.]
 
 
 SECTION C - PER-TICK OVERHEAD
@@ -186,6 +191,8 @@ P.4  12 locks and ~16 DateTime.UtcNow per session per 1kHz tick
      FIX: snapshot `var now = DateTime.UtcNow` once, and early-return the whole
      group loop when `now < nextSend && now < nextAck && now < nextResync`
      (still calling FlushPackets()).
+     [Measured: the early return does not fire for idle sessions - see G.C
+     and NT.1.]
 
 P.5  ArrayPool rent is 8x oversized
      NetworkSession.cs:781
@@ -196,6 +203,7 @@ P.5  ArrayPool rent is 8x oversized
      pool's larger bucket.
 
      FIX: rent a fixed 484.
+     [Measured: not a cost - see G.C.]
 
 P.6  Every property-update message allocates a byte[] under a global lock
      Sequence/SequenceManager.cs:152-188; UIntSequence.cs, UShortSequence.cs,
@@ -211,6 +219,7 @@ P.6  Every property-update message allocates a byte[] under a global lock
 
      FIX: add WriteCurrentSequence(BinaryWriter, ...) overloads that write the
      scalar directly; retain the byte[] API only for legacy callers.
+     [Measured: see NM.4 and G.C.]
 
 
 P.8  cachedPackets retains every sent packet for 120 seconds
@@ -224,6 +233,7 @@ P.8  cachedPackets retains every sent packet for 120 seconds
 
      FIX: cap the cache by COUNT as well as age. Retail NAK windows are small -
      MaxNumNakSeqIds is 115 - so retaining 2,400 packets serves no purpose.
+     [Measured: see G.C and NT.7.]
 
 P.9  EnqueueBroadcast allocates a LINQ pipeline plus a List per broadcast
      Physics/Common/ObjectMaint.cs:717, called from
@@ -268,6 +278,8 @@ P.11 Inbound datagram processing is fully serialized per port
 
      FIX: multiple in-flight receive buffers (a SocketAsyncEventArgs pool) so
      unpacking overlaps receiving; pool ClientPacket and fragment objects.
+     [Measured: overstated as a throughput problem, and concurrent receives
+     would race CryptoSystem - see G.C and NT.2.]
 
 P.12 CryptoSystem.Search can walk 256 ISAAC iterations per inbound packet
      ACE.Common/Cryptography/CryptoSystem.cs:30-49
@@ -308,6 +320,7 @@ E.8  PacketHeader.CalculateHash32 / PacketFragmentHeader.Pack - already
 
 SECTION F - SUGGESTED PRIORITY
 ================================================================================
+  Superseded by the measured priority in G.E; kept for the original reasoning.
   1. P.2  Offset-based fragments. Fixes a genuine THREAD-SAFETY BUG and removes
           the largest per-recipient allocation at the same time. Highest value
           in this document for that reason.
@@ -326,6 +339,728 @@ CROSS-CUTTING NOTE: P.1, P.2 and P.3 are all the same underlying problem -
 work that should happen once per message is happening once per recipient. In a
 crowded landblock that is the difference between O(N) and O(N^2). Fixing them
 together is substantially more valuable than any one alone.
+
+================================================================================
+================================================================================
+SECTION G - MEASURED DEEP DIVE (2026-11-25)
+================================================================================
+================================================================================
+
+Pass 2, against Claude1 @ 867315772 (upstream master through #4553). Unlike
+Sections 0-F, every cost here was MEASURED, either on the real ACE.Server.dll
+(Release, .NET 10.0.15, Linux, 4-vCPU VM) or on a verbatim copy of the code
+where the real type needed a database or dat files. Each finding says which.
+
+  - Allocation figures are exact (GC.GetAllocatedBytesForCurrentThread).
+  - Timings were taken while other benchmarks shared the VM, so use them only as
+    ratios within one run.
+  - Socket costs are Linux only; Windows (IOCP) was not measured.
+  - Rates "at 1000 clients" are ASSUMPTIONS (about 10 inbound datagrams/s and
+    about 30 outbound flushes/s per client), not production measurements.
+
+Benchmark code: docs/benchmarks/net-transport (NT.*) and
+docs/benchmarks/net-messages (NM.*); see docs/benchmarks/README.md.
+NT.* is the transport and session layer; NM.* is message construction,
+serialisation and broadcast fan-out. G.C corrects findings in Sections 0-F.
+
+CONTEXT ESTABLISHED WHILE MEASURING (several findings depend on it)
+  - DoSessionWork's Parallel.ForEach uses NetworkManagerParallelOptions, whose
+    MaxDegreeOfParallelism = max(vCPU * WorldThreadCountMultiplier, 1)
+    (ACE.Common/ThreadConfiguration.cs:32-44). With the Config.js.example
+    multiplier 0.34 on 5 vCPUs or fewer that is 1, so every session is ticked
+    inline ON THE WORLD THREAD. Either way the world loop waits for
+    DoSessionWork, so its cost is on the world thread's critical path.
+  - NetworkSession.Update is not single-threaded per session, despite the
+    comment at NetworkSession.cs:246. AuthenticationHandler.cs:41 (account name
+    over 50 characters) -> NetworkManager.SendLoginRequestReject ->
+    session.Network.Update() (NetworkManager.cs:195) runs on the RECEIVE thread
+    for a session already in sessionMap. Rare, but every buffer-reuse design
+    below has to survive it.
+  - CryptoSystem (ACE.Common/Cryptography/CryptoSystem.cs) mutates ISAAC state
+    and a plain HashSet<uint> on every inbound packet with no synchronisation,
+    so one session's inbound packets must never be processed concurrently.
+  - GameMessages die young: only bundle queues reference them until the next
+    flush, and cachedPackets holds copies, not messages. Their GC cost is the
+    gen0 allocation rate.
+
+
+--- G.1 TRANSPORT AND SESSION LAYER --------------------------------------------
+
+NT.1 [HIGH] Idle session tick: 182 ns per session per tick; a dirty-group mask
+     cuts it to 12 ns
+     NetworkSession.cs:185-256 (Update); Session.cs:121-178 (TickOutbound)
+
+     Every ~1 ms, every session takes 12 lock/unlock pairs and reads
+     DateTime.UtcNow 4 times, even with nothing queued.
+     Measured per idle session (on this VM DateTime.UtcNow costs 17 ns and an
+     uncontended lock 8.5 ns); re-run independently with the same result:
+         current                                           182 ns
+         P.4 exactly as written (see G.C)                  111 ns
+         clock read once + dirty mask (prototype)           12 ns
+     At 1000 sessions that is ~180 us per DoSessionWork call - roughly 15% of
+     the world thread at ~1000 calls/s when DOP=1 - against ~12 us.
+
+     FIX:
+       (a) Read the clock once per DoSessionWork and pass it down; keep the
+           public Update()/TickOutbound() as wrappers.
+       (b) Add an int dirtyMask to NetworkSession. EnqueueSend and FlagEcho set
+           the group's bit INSIDE the group lock (Interlocked.Or). Update reads
+           the mask with Volatile.Read and locks only groups whose bit is set.
+           A bit is cleared (Interlocked.And) only under that group's lock,
+           when its bundle is swapped. Ack and time-sync timers are compared
+           lock-free, taking group 0's lock only when due.
+     SAFETY: no lost wakeup, because bits are set and cleared under the same
+     group lock; an enqueue that races the mask read goes out next tick, as
+     today. Re-check now >= nextSend inside the lock to keep the
+     one-bundle-per-5-ms behaviour. Not verified: Harmony mods patching
+     Update/TickOutbound.
+     Confidence: VERIFIED (prototype measured; concurrency argument reasoned).
+
+NT.2 [HIGH] The receive loop allocates 527 B per datagram; a dedicated blocking
+     receive thread allocates 0 B and used the least CPU
+     ConnectionListener.cs:74-145 (new IPEndPoint at 78 and 98, EndReceiveFrom,
+     Task.Run at 142)
+
+     Loopback, 64 client sockets, 200k datagrams, two repetitions. Process CPU
+     per datagram includes a ~2.5 us sender:
+         R1 current APM BeginReceiveFrom                      527 B   7.4-11.3 us
+         R2 await ReceiveFromAsync(Memory, SocketAddress)       0 B    7.5-9.2 us
+         R3 dedicated thread, blocking
+            ReceiveFrom(Span, SocketFlags, SocketAddress)       0 B    4.4-4.8 us
+         R4 = R2 plus materialising an IPEndPoint              72 B
+     SocketAddress.Equals costs 2.0 ns and 0 B (IPEndPoint.Equals 0.6 ns).
+
+     FIX: one background thread per listener running
+         while (!stop) { n = socket.ReceiveFrom(buffer, SocketFlags.None, addr);
+                         try { process } catch (Exception) { log and drop } }
+     Cache each client's SocketAddress on Session (EndPointC2S.Serialize()
+     once), validate with SocketAddress.Equals, and build an IPEndPoint only on
+     the LoginRequest / ConnectResponse paths. This also removes the recursion
+     and the Task.Run hop, and gives the N.0a containment point
+     (bugs-network.txt). Shutdown: Close() makes the blocking call throw
+     ObjectDisposedException or SocketException; exit the loop on those.
+     COMPATIBILITY: NetworkManager.ProcessPacket(ConnectionListener,
+     ClientPacket, IPEndPoint) is public; add a SocketAddress overload and keep
+     the old one.
+     Confidence: allocation VERIFIED; the CPU ordering VERIFIED on Linux only.
+
+NT.3 [HIGH for allocation and retention, MEDIUM for CPU] Serialise each
+     outbound packet once into an exact-size wire byte[], and cache that
+     instead of the ServerPacket object graph
+     NetworkSession.cs:734-760 (FlushPackets), 779-826 (SendPacketRaw),
+     834-951 (SendBundle); MessageFragment.cs:91-92; ServerPacket.cs:37-72
+
+     Per flush today:
+       - a NetworkBundle with its Queue;
+       - a List<MessageFragment>, plus a MessageFragment per message;
+       - per packet: a ServerPacket, a PacketHeader, a List<PacketFragment>, a
+         removeList with a RemoveAll closure, and a params ServerPacket[1]
+         (line 949);
+       - per fragment: a ServerPacketFragment, a PacketFragmentHeader and a
+         byte[] copy of the payload;
+       - for optional headers: a MemoryStream, a BinaryWriter and a byte[32];
+       - a ConcurrentDictionary node.
+
+     Prototype:
+       - Fragment cursors are a List<struct>, mutated by ref through
+         CollectionsMarshal.AsSpan.
+       - Each packet is assembled in a [ThreadStatic] scratch buffer: headers
+         written with BinaryPrimitives, the payload copied straight from
+         Message.Data.GetBuffer(), hashes accumulated while writing. It is then
+         copied to an exact-size byte[] in a small OutPacket.
+       - At flush, the sequence, time, flags and checksum are written into the
+         header bytes. The header hash is plain arithmetic, because Hash32 is a
+         sum of little-endian words.
+       - A retransmit copies the wire bytes to a stackalloc span, sets the
+         Retransmission flag and re-checksums. The cached copy is never
+         mutated.
+     Datagrams AND retransmits were byte-identical to a verbatim copy of the
+     current path over 6 scenarios x 50 flushes, including the N.0c 896-byte
+     boundary case.
+
+     Measured per flush (current -> prototype):
+         1 x 60 B message             858 B / 245 ns  ->   210 B / 199 ns
+         6 small messages            2146 B / 490 ns  ->   578 B / 188 ns
+         ack + echo only              482 B / 123 ns  ->   146 B /  57 ns
+         ack + echo + 3 small        1386 B / 302 ns  ->   370 B / 124 ns
+         1500 B + 3 small            3938 B / 809 ns  ->  2346 B / 491 ns
+     Retained per cached packet: 358-1174 B in ~10 objects -> 166-598 B in 2.
+     At ~30k flushes/s that is roughly 40 MB/s -> 11 MB/s of gen0 allocation.
+
+     Design points:
+       - Convert the public EnqueueSend(params ServerPacket[]) packets
+         (ConnectRequest, Referral, RejectRetransmit, NAK) to OutPacket at
+         enqueue, so there is one queue type.
+       - Add a packet to the retransmit cache AFTER its first send.
+       - Reuse bundles through a double buffer whose spare is handed over UNDER
+         the group lock, which survives the concurrent-Update path above
+         (measured 136 B / 23 ns -> 0 B / 13 ns per swap).
+       - Do NOT ArrayPool the wire arrays. Their lifetime spans the tick-thread
+         send, receive-thread retransmit, ack/prune removal and
+         ReleaseResources.
+     Subsumes P.2, P.5 and P.10.
+     COMPATIBILITY: SendBundle/FlushPackets/SendPacketRaw are private but
+     Harmony-patchable by name; ServerPacket and Packet.Fragments stay public.
+     Not verified: mods reflecting on cachedPackets.
+     Confidence: VERIFIED (byte parity and measurement).
+
+NT.4 [MEDIUM, trivial] SendTo with an EndPoint allocates 40 B per packet
+     NetworkSession.cs:805
+     SendTo(byte[], int, SocketFlags, EndPoint) allocates 40 B per call.
+     SendTo(ReadOnlySpan<byte>, SocketFlags, SocketAddress) with a cached
+     SocketAddress allocates 0 B. Cache the SocketAddress for EndPointC2S /
+     EndPointS2C on Session and refresh it in SetS2CEndpoint. ~1.4 MB/s at
+     ~35k packets/s. Confidence: VERIFIED.
+
+NT.5 [MEDIUM, trivial] EnqueueSend(params GameMessage[]) allocates a
+     GameMessage[1] on every call, and per RECIPIENT in ranged broadcasts
+     NetworkSession.cs:118
+     There are 1,704 `Network.EnqueueSend(` call sites, nearly all
+     single-message. Per-recipient callers include WorldObject_Networking.cs:1408
+     (EnqueueBroadcast(msg, range): local chat, spell words, emotes, ranged
+     motion) and PlayerManager.cs:644.
+     Measured 32 B per call (40 B for two messages). A single-message overload,
+     or `params ReadOnlySpan<GameMessage>` (C# 13+), is 0 B. Recompiling ACE is
+     enough; no call sites change.
+     COMPATIBILITY: keep the array overload so compiled mods still bind. A
+     Harmony patch on EnqueueSend(GameMessage[]) - a plausible "intercept all
+     outgoing messages" mod - would silently stop seeing most traffic. Route
+     every overload through one private method and document it as the patch
+     point. Found independently by both passes (also NM.5).
+     Confidence: VERIFIED.
+
+NT.6 [MEDIUM] Inbound parse allocates 736-1104 B per datagram
+     ClientPacket.cs:23-53 (MemoryStream + BinaryReader at 35-36);
+     PacketHeaderOptional.cs:22 (a field-initialiser MemoryStream for EVERY
+     packet), 28 (new BinaryWriter), 32/85/93/100 (ReadBytes copies);
+     ClientPacketFragment.cs:20
+
+     PacketHeaderOptional re-serialises the bytes it has just read into a
+     MemoryStream, whose first write allocates 256 B, purely to Hash32 them.
+     For steady-state flags those bytes are exactly
+     buffer[20 .. 20+optionalSize].
+
+     Measured including CRC verification and a ClientMessage per fragment,
+     parity checked over 2000 packets of each kind:
+                               current           V2              V3
+         ack-only, encrypted   736 B /  76 ns    144 B / 22 ns   104 B / 14 ns
+         one action fragment   824 B / 125 ns    512 B / 81 ns   352 B / 62 ns
+         ack + action         1104 B / 144 ns    512 B / 74 ns   352 B / 58 ns
+     V2 keeps the current public classes but parses from a span with
+     BinaryPrimitives and hashes the optional block from the raw span during
+     Unpack. V3 also uses readonly-struct headers.
+     At ~10k datagrams/s: roughly 9 MB/s -> 4 MB/s.
+
+     FIX (V2): fall back to the BinaryReader path when LoginRequest,
+     WorldLoginRequest or ConnectResponse is set - the Packets/*.cs consumers
+     of DataReader rely on its exact position semantics - and make DataReader
+     lazy. V3 is only worth it as NEW internal types: PacketHeader,
+     PacketFragmentHeader and ClientPacket.Fragments are public, and making
+     Header a struct turns `packet.Header.Sequence = x` into a compile error
+     (CS1612).
+     BEHAVIOUR NOTE: ReadBytes silently returns a short array for a truncated
+     final fragment, whereas V2 rejects it. The CRC fails either way.
+     Confidence: VERIFIED.
+
+NT.7 [MEDIUM when the cache is large] Acknowledge by walking the sequence
+     range, not by scanning the dictionary
+     NetworkSession.cs:686-696 (AcknowledgeSequence)
+
+     Measured per ACK that removes 4 packets (with 4 added between ACKs):
+         cached (K)   Keys.Where (today)   P.0d's fix       sequence walk
+            40        476 ns,  472 B       470 ns, 224 B    247 ns, 160 B
+           400        1.7 us, 1.9 KB       2.0 us, 224 B     95 ns
+          2400        6.8 us, 9.9 KB       8.6 us, 224 B     98 ns
+     Sequence walk = `for (s = lowestCached; s < ack; s++) cachedPackets.TryRemove(s, out _)`.
+     A lock-protected ring indexed by `sequence & mask` costs ~48 ns and 0 B for
+     every K. It also bounds the count (which is P.8) and turns
+     PruneCachedPackets into a walk from the low end.
+     SAFETY:
+       - Sequences are contiguous, because FlushPackets assigns them
+         monotonically.
+       - The ack is CLIENT-SUPPLIED (bugs-network.txt I.9), so clamp it to
+         lastSentSequence + 1. Otherwise ack = 0xFFFFFFFF is a
+         4-billion-step loop.
+       - Wrap at uint.MaxValue is ignored, as today.
+     Not verified: how large K is in production; that depends on the retail
+     client's ack interval.
+     Confidence: VERIFIED.
+
+NT.8 [LOW-MEDIUM] Inbound dispatch allocates a closure, an Action and an
+     ActionEventDelegate per message
+     InboundMessageManager.cs:89-120 (lambda at 97)
+     161 B and 120 ns per message, including the enqueue. Because the lambda
+     captures the method's PARAMETERS, the closure is allocated at method
+     entry, even for unknown opcodes and wrong-state messages. A sealed
+     InboundMessageAction : ActionEventBase holding (info, message, session),
+     with the same Act() body, costs 65 B / 31 ns. Confidence: VERIFIED.
+
+NT.9 [MEDIUM, world-thread time] The sendto syscall dominates outbound CPU and
+     runs on the world loop's critical path
+     Socket.SendTo measured ~2.5 us per packet, more than 10x all the managed
+     work per flush. At ~35k packets/s that is roughly 90 ms of every second,
+     inside DoSessionWork (on the world thread itself when DOP=1).
+     Proposal, enabled by NT.3 (wire arrays are immutable after flush): one
+     sender thread per socket draining a queue of (OutPacket, SocketAddress),
+     preserving per-session order. Retransmits use the same queue.
+     This moves time off the world thread; it does not reduce total CPU, and
+     the handoff cost was not measured. On a send error, Terminate would run on
+     the sender thread, and Terminate's cross-thread safety was not audited.
+     Confidence: cost VERIFIED; benefit PLAUSIBLE.
+
+NT.10 [LOW] Hash32 is scalar
+     ACE.Common/Cryptography/Hash32.cs
+     32 ns for 448 B. A MemoryMarshal.Cast<byte, uint> + Vector128 version takes
+     7.5 ns (68 B: 5.4 -> 1.9 ns), parity checked. It would have to live in
+     ACE.Server (net10.0), because ACE.Common targets netstandard2.0. Only worth
+     doing as part of NT.3 / NT.6. Confidence: VERIFIED.
+
+NT.11 [LOW] ProcessDDDQueue polls a Stopwatch every tick for any session that
+     has ever used DDD
+     Session.cs:376-381
+     The guard is `dddDataQueue == null`, not an empty check. The rate limiter
+     it consults next is static and shared across sessions, which is a data
+     race when DOP > 1. FIX: put
+     `if (dddDataQueue == null || dddDataQueue.Count == 0) return;` first.
+     Confidence: VERIFIED by reading.
+
+NT.12 [LOW] Logging checks and log-flood vectors
+     - packetLog.IsEnabled(LogLevel.Debug) costs 4.8 ns through the current
+       logging bridge, and runs ~10-15 times per outbound packet. Caching it in
+       a local per flush is optional.
+     - With a config that logs everything (root ALL), every non-Packets
+       LogDebug is really formatted and written: 346 ns and 431 B measured.
+     - The spoofable per-datagram branches at NetworkManager.cs:158/162/167
+       ("Unsolicited Packet", IP mismatch) are a cheap log-flood vector, not a
+       steady-state cost.
+     Measured against the log4net bridge on Claude1; re-measure after the
+     Serilog switch (PR #4558). Confidence: VERIFIED.
+
+
+--- G.2 MESSAGE CONSTRUCTION AND FAN-OUT --------------------------------------
+
+Method: the real ACE message constructors, driven with a stub WorldObject
+(Biota and Guid set by reflection, real Location) and an uninitialised
+Session. Every prototype was checked BYTE-IDENTICAL to current output,
+including the ushort sequence wrap (70,000 messages), adminMove, rotations,
+non-ASCII cp1252 and 300-character strings.
+
+NM.1 [HIGH] Fellowship vital fan-out recomputes the sender's three MaxValues
+     PER RECIPIENT
+     Entity/Fellowship.cs:715-726 (OnVitalUpdate);
+     GameEvent/Events/GameEventFellowshipUpdateFellow.cs:18-24
+
+         foreach (var fellow in fellowshipMembers.Values)
+             if (fellow.FellowshipPanelOpen)
+                 fellow.Session.Network.EnqueueSend(new GameEventFellowshipUpdateFellow(fellow.Session, player, ShareLoot, FellowUpdateType.Vitals));
+
+     Triggered from Player_Tick.cs:86-89 whenever FellowVitalUpdate is set,
+     which is ANY vital change (Player_Vitals.cs:141-144, SetMaxVitals, and
+     VitalHeartBeat every ~5 s).
+     Each message reads Health/Stamina/Mana.MaxValue
+     (CreatureVital.GetMaxValue): attribute Current, the vital multiplier and
+     additives, and vitae. That is about 12 top-layer enchantment queries
+     (GroupBy + OrderBy LINQ) per message. The values describe the SENDER and
+     are identical for every recipient.
+     Measured per query (real GetEnchantmentsTopLayerByStatModType, 48-entry
+     registry): 1,208 B / ~1.5 us with a match, 584 B / ~0.6 us without. By
+     composition that is ~9 KB and ~10 us per message.
+     A 9-member fellowship sends 9 messages per vital change. At an ASSUMED 2
+     vital changes/s per member in combat, that is ~1.5 MB/s and ~1.6 ms/s per
+     fellowship.
+     FIX: compute the snapshot once before the loop, as
+         readonly record struct FellowVitals(uint Level, uint MaxHealth, uint MaxStamina, uint MaxMana, uint Health, uint Stamina, uint Mana)
+     and add a constructor overload that takes it (additive; mods unaffected).
+     This is a genuine record-struct fit: immutable, built once, consumed by
+     value. Its value equality could later suppress unchanged sends.
+     SAFETY: all reads are of `player` on the sender's tick, and the loop does
+     not mutate its vitals.
+     Not verified: production rates, how often FellowshipPanelOpen is true,
+     and the full GetMaxValue path end to end (it needs dats).
+     Confidence: trace and per-query cost VERIFIED.
+
+NM.2 [MEDIUM, zero risk] 46 GameEvent types declare a capacity that excludes
+     the 16-byte GameEvent header
+     GameEvent/GameEventMessage.cs:34
+
+     The header (opcode, guid, event sequence, event type: 16 B) is written
+     before the payload, but dataInitialCapacity is passed straight through.
+     MemoryStream grows to max(needed, 256, 2 x capacity). So an undersized
+     hint allocates the small array AND a 256-byte one, and copies between
+     them. That is worse than no hint at all.
+     Measured: 472-488 B per message now, against 208-216 B with the header
+     included (2.3x). Independently re-measured: a 12-byte hint receiving 24
+     bytes costs 432 B; a 28-byte hint costs 168 B.
+     A reflection scan of every message type with a declared capacity found 46
+     overflowing, 51 fitting and 25 not constructible without game state. All
+     46 are GameEvents, including the combat-hot ones:
+       - AttackDone 8->20, CombatCommenceAttack 4->16, UpdateHealth 12->24
+       - WeenieError 8->20 (239 call sites)
+       - UseDone, ItemServerSaysContainId 20->32, WieldItem
+       - MagicUpdateEnchantment 68->80 (every buff), MagicRemove/Dispel
+       - ConfirmationDone, PingResponse
+     FellowshipUpdateFellow (84) overflows for names of 19+ characters.
+     FIX, either:
+       - add 16 to the 46 constants (the retail-pcap-sized ones - 76, 80, 48,
+         156, 120, 172 - already include the header); or
+       - have GameEventMessage pass dataInitialCapacity + 16. This wastes 16 B
+         on the pcap-sized ones but is future-proof.
+     Add the scan as a unit test asserting Data.Length <= declared capacity
+     for minimal arguments. The capacity is only a hint, so output is
+     unchanged (verified). Confidence: VERIFIED.
+
+NM.3 [MEDIUM] GameMessageUpdatePosition: 512 B and 4 locked sequence lookups
+     per message; a lean version is 240 B and ~2.4x faster
+     GameMessages/Messages/GameMessageUpdatePosition.cs:17;
+     Structure/PositionPack.cs:36-54
+
+     PositionPack allocates itself, an Origin and four sequence byte[2]s, and
+     reads wo.Location three times. UpdatePosition is the most frequently built
+     broadcast: moving monsters send it at 5 Hz (Monster_Navigation.cs:263),
+     and players send one per client position report.
+     Measured, same run:
+         current                                          512 B   511-656 ns
+         sequence fix only (NM.4 writers)                 320 B
+         lean: no PositionPack/Origin, scalar sequences   240 B   ~395 ns
+         lean + array-slot sequence lookup (NM.4)         240 B   147-221 ns
+     FIX: write the fields directly in the constructor. No struct or record is
+     needed, because the intermediate disappears.
+     COMPATIBILITY: `public PositionPack PositionPack;` is a public field that
+     nothing in the server reads but mods may. Either keep the field and fill
+     it lazily, or apply only the sequence fix (320 B, no API change).
+     Confidence: VERIFIED.
+
+NM.4 [MEDIUM] The sequence lookup (lock + Dictionary) costs more than the
+     byte[] it returns
+     Sequence/SequenceManager.cs:156; UShortSequence.cs:43/45,
+     ByteSequence.cs:43/45
+
+     GetSequence takes `lock (sequenceList)` plus a Dictionary<uint, ISequence>
+     lookup on every call: 48.7 ns. There are 92 call sites: 4 per
+     UpdatePosition, 3 per UpdateMotion, 9 per CreateObject, 1 per property
+     update. The *Bytes accessors add 32 B each.
+     An array slot for the nine Object* sequence types, lazily created with
+     Volatile.Read + Interlocked.CompareExchange, takes 2.1 ns.
+     FIX:
+       - Use ISequence[9] slots for the Object* types (enum values 0-8). Keep the
+         dictionary for property sequences. SetSequence writes the slot.
+       - Add WriteCurrentSequence / WriteNextSequence(BinaryWriter, type,
+         property). They switch on UShortSequence / ByteSequence / UIntSequence
+         and FALL BACK to .CurrentBytes for unknown ISequence implementations:
+         SetSequence is public, and Player_Networking.cs:39 already installs
+         its own.
+       - Keep the byte[] API; the change is additive.
+     SAFETY: the increment race is pre-existing and unchanged (NextValue
+     already runs outside the lock). Confidence: VERIFIED.
+
+NM.5 = NT.5 (EnqueueSend params array). Found independently by both passes.
+
+NM.6 [MEDIUM] Strings: a process-wide encoding lock, an intermediate byte[]
+     per string, and 256-byte default capacities
+     Extensions.cs:17 (WriteString16L) and 51 (Pad); GameMessageSystemChat.cs:8
+     (724 call sites); GameMessageHearSpeech.cs:8; EmoteText,
+     HearRangedSpeech, Tell, ChannelBroadcast, PopupString and
+     PrivateUpdatePropertyString, none of which pass a capacity
+
+     NEW: Encoding.GetEncoding(1252) goes through CodePagesEncodingProvider,
+     whose cache is guarded by a ReaderWriterLockSlim. Every string written on
+     every landblock thread passes through that lock. Independently
+     re-measured:
+         1M lookups on 1 thread                        29 ms
+         4M lookups on 4 threads (contention)         254 ms
+         cached static instance                       ~1 ms
+     Measured per message:
+         SystemChat (40 characters)           520 B  ->  224 B
+         HearSpeech (40 + 14 characters)      584 B  ->  240 B
+         WriteString16L (40 characters)        96 B  ->    0 B, ~2x faster
+     Prototype:
+       - the cp1252 Encoding is cached in a lazy holder class;
+       - GetBytes(ReadOnlySpan<char>, Span<byte>) writes into a bounded
+         stackalloc (256), with ArrayPool above that;
+       - Pad uses a static zero array;
+       - each message's capacity is computed exactly.
+     SAFETY:
+       - The stackalloc is bounded with a pool fallback, so client-originated
+         text is safe.
+       - Keep the static zero array for Pad (the [SkipLocalsInit] warning in
+         P.0e still applies).
+       - Resolve the Encoding lazily, NOT in an Extensions static initialiser.
+         The provider is registered at Program.cs:61, and a type-initialiser
+         failure would be permanent.
+       - Truncation above 65535 characters is unchanged.
+     Confidence: VERIFIED.
+
+NM.7 [LOW] Pad and Align allocate even when the pad is 0
+     `new byte[0]` allocates 24 B. Measured: Pad(0) 24 B; Align at a 4-byte
+     boundary 24 B. Every WriteString16L (101 sites) and Align (13 sites)
+     allocates; UpdateMotion does 2 Aligns, CreateObject 2-3. NM.6's static
+     zero array fixes it. Confidence: VERIFIED.
+
+NM.8 [LOW-MEDIUM] Creature.OnHealthUpdate recomputes Health.MaxValue per
+     selecting player
+     WorldObjects/Creature.cs:370-382 calls QueryHealth for each player that
+     has the creature selected; WorldObject.cs:616 computes
+     `creature.Health.MaxValue` per recipient. It is called from
+     DamageHistory.cs:93/131 on every damage or heal.
+     MaxValue is 4 top-layer queries: ~584 B / ~0.3 us each for a lightly
+     buffed monster, ~1.2 KB / 1.5 us each for a buffed player (PvP, or healers
+     selecting fellows).
+     FIX: compute the percentage once before the loop and add
+     QueryHealth(Session, float percent). The GameEvent itself must stay per
+     recipient, because it carries the recipient's guid and event sequence.
+     Confidence: VERIFIED by trace and per-query cost.
+
+NM.9 [MEDIUM] Zone-entry CreateObject sharing: the implementable site and its
+     constraints (sharpens P.1)
+     Physics/PhysicsObj.cs:2398-2411 (enter_cell_server)
+
+         foreach (var player in ObjMaint.GetKnownPlayersValues()) { ... if (player.handle_visible_obj(this)) player.enqueue_obj(this); }
+
+     This leads, per observer, to Player_Tracking.cs:63
+     `new GameMessageCreateObject(worldObject, Adminvision, Adminvision)`.
+     This loop is where N observers each build their own copy.
+     DESIGN: build a `GameMessageCreateObject shared` lazily as a local in that
+     loop and pass it through a new TrackObject overload. Use it ONLY in the
+     immediate branch:
+       - not in the TeleportCreateObjectDelay or wo.Teleporting action-chain
+         branches of enqueue_obj (PhysicsObj.cs ~2321-2352), because those
+         capture state later;
+       - not when Adminvision is set (build that one separately).
+     Leave BroadcastMoveTo per recipient. Each recipient currently advances the
+     ObjectMovement sequence there. A shared CreateObject would therefore carry
+     the pre-loop movement sequence while later UpdateMotions carry higher
+     ones. That should be acceptable, because newer sequences are accepted,
+     but it is NOT verified against the client.
+     Measured lower bound: a bare object (no ObjDesc, no PhysicsObj) costs
+     1,080 B and ~3.7 us, mostly ~60 locked property reads and 9 sequence
+     byte[]s. Creatures and players add CalculateObjDesc and dat lookups,
+     which could not be measured without dats.
+     SIDE IDEA: player and creature CreateObjects probably grow
+     256 -> 512 -> 1024 (PLAUSIBLE, not measured). Remembering the last
+     serialised length in an int on WorldObject and passing it as the capacity
+     hint is safe.
+     Confidence: trace VERIFIED; client acceptance of the shared sequence not.
+
+NM.10 [LOW] TurbineChat global fan-out does loop-invariant config lookups per
+     recipient on the world thread
+     Network/Handlers/TurbineChatHandler.cs ~285-320
+     Per online player it does a GetCharacterOption, a PropertyManager.GetBool
+     (ConcurrentDictionary<string> ContainsKey plus two indexer lookups), a
+     Squelches.Contains and the NT.5 params array. That is ~1000 x ~100 ns
+     plus 32 KB per General/Trade line, in the InboundMessageQueue on the
+     WorldManager thread.
+     FIX: hoist the channel-disable GetBool calls above the loop, and apply
+     NT.5. Confidence: trace VERIFIED; per-lookup cost reasoned.
+
+NM.11 [LOW] UpdateMotion: 592 B per message, plus 176 B for the caller's Motion
+     That is 3 sequence byte[]s (96 B; the scalar fix gives 592 -> 496,
+     byte-identical), 2 Align pads (48-64 B, NM.7), and MovementData +
+     MovementInvalid + InterpretedMotionState (184 B). Motion eagerly
+     allocates InterpretedMotionState and MoveToParameters in field
+     initialisers.
+     Leave that object graph alone. These are public mutable classes, retained
+     as CurrentMovementData / CurrentMotionState, and Motion.MoveToParameters
+     is a public field that callers mutate. Confidence: VERIFIED.
+
+NM.12 [LOW] Inbound message handling: only ReadString16L is worth touching
+     - ClientMessage(byte[]) costs 160 B (a MemoryStream plus a BinaryReader
+       with its UTF-8 decoder).
+     - The dispatch closure costs 144 B (NT.8).
+     - The MoveToState parse costs 384 B in total, but its MoveToState and
+       Position are retained (LastMoveToState, Location = RequestedLocation),
+       so that is not waste.
+     - ReadString16L (ACE.Common/Extensions/BinaryReaderExtensions.cs:44)
+       builds a char[] and a string through a UTF-8 decoder: 264 B for 40
+       characters. A cp1252 GetString over the buffer saves ~200 B and also
+       fixes the decoding bug in bugs-common.txt. It needs ClientMessage's
+       MemoryStream created with publiclyVisible: true. ACE.Common is
+       netstandard2.0, so use the byte[] overload.
+     Confidence: VERIFIED.
+
+PER-BROADCAST vs PER-RECIPIENT, message layer only (the transport copy is NT.3)
+  - UpdatePosition via EnqueueBroadcast(params):
+      per broadcast: the 512 B message, the 32 B params array, and the
+      known-player List and LINQ (P.9: 208 / 280 / 600 / 1,400 B for
+      1 / 10 / 50 / 150 known players);
+      per recipient: 0 B.
+  - UpdateMotion: Motion 176 + message 592 + 32 + the list per broadcast;
+    0 B per recipient.
+  - Chat, spell words and emotes via EnqueueBroadcast(msg, range):
+      per broadcast: the 520-584 B message plus the list;
+      per recipient: 32 B, 2-4 Location lookups and a squelch check.
+  - Fellowship vitals (NM.1) and health to selectors (NM.8) are per recipient
+    by necessity (they are GameEvents), but their expensive inputs need not be.
+
+
+--- G.C CORRECTIONS TO SECTIONS 0-F --------------------------------------------
+
+Each corrected finding above carries a one-line pointer here. The original
+text is kept, so the reasoning is not re-derived.
+
+P.0a OVERSTATED. Parallel.ForEach over the sparse 1000-slot array costs about
+     1.7 us + 1.5-2.3 KB per call more than a compact loop: roughly 0.2% of a
+     core and 1.5-2 MB/s at 1 kHz. It is not "the single largest CPU win"; the
+     real per-tick cost is the per-session idle body (NT.1). With DOP=1 (the
+     shipped multiplier on small machines), Parallel.ForEach runs inline anyway.
+
+P.0b CORRECT but small: ~2 us + 48 B per call, against 0.19 us for a plain
+     loop. About 2 ms per second.
+
+P.0d THE PROPOSED FIX IS SLOWER THAN TODAY. Enumerating the ConcurrentDictionary
+     directly saves allocation but costs more CPU at every cache size measured.
+     Use the sequence walk or ring in NT.7, and clamp the client-supplied ack.
+
+P.0e Two understatements:
+     - Pad allocates 24 B even when the pad is 0 (NM.7).
+     - GetEncoding(1252) is not just a lookup: it is lock-guarded, with
+       measurable contention (NM.6).
+
+P.2  The allocation is real, but the per-recipient rate was ~12-60x too high
+     for players:
+       - Players broadcast UpdatePosition about once per AutonomousPosition
+         (~1/s).
+       - MoveToState-driven updates are throttled to 1 s
+         (Player_Tick.cs:405/515) and are otherwise self-only (line 518).
+       - Monsters are 5 Hz.
+     The proposed fix (fragments referencing the GameMessage buffer) has two
+     problems: it would keep message buffers alive inside cachedPackets for up
+     to 120 s, and it assumes nothing writes to a GameMessage after
+     EnqueueSend (not verified). NT.3 avoids both with one copy into the wire
+     buffer, a copy that is needed anyway.
+
+P.3  DROP. Hash32 over a 68-byte fragment costs 5.4 ns per recipient. Caching it
+     on the shared GameMessage would add cross-thread mutable state for no
+     measurable gain.
+
+P.4  The count is wrong, and the fix does not work for idle sessions.
+     - An idle tick reads UtcNow 4 times, not ~16 (the rest short-circuit on
+       NeedsSending). The 12 locks are right.
+     - The proposed early return never fires for an idle session, because
+       nextSend is in the past: measured 182 -> 111 ns, against 12 ns for
+       NT.1.
+     cpu-gc-plan.txt inherits this.
+
+P.5  NOT A COST. ArrayPool Rent(3732)/Return and Rent(484)/Return both measure
+     3.1 ns and 0 B. NT.3 removes the rent entirely.
+
+P.6  UpdateMotion allocates 3 sequence arrays plus 2 pad arrays, not 1-2, and
+     the lock + Dictionary lookup (~49 ns) costs more than the allocation. The
+     WriteCurrentSequence writers must fall back for mod-supplied ISequence
+     implementations (NM.4).
+
+P.8  "2,400 packets per session" assumes the client never acks; the real size
+     depends on the client's ack interval (not verified). Measured retention
+     per cached packet: 358-1174 B today, 166-598 B with NT.3. The NT.7 ring
+     gives the count cap for free.
+
+P.11 OVERSTATED as a throughput problem. A single receive thread spends about
+     2-7 us per datagram all-in; the socket dominates, and parsing is ~0.1 us.
+     That is over 100k datagrams/s of capacity, against roughly 10-30k needed
+     at 1000 clients. It matters for latency only if something blocks inline.
+     Multiple concurrent receives per port would also race CryptoSystem (see
+     the correction in design-socket-listener-modernisation.txt).
+
+perf-worldobjects.txt P.2 ("cache the serialised CreateObject buffer and reuse
+     it for all non-adminvision recipients") is INVALID ACROSS TIME. The buffer
+     embeds:
+       - Location, and all 9 current sequences (ObjectPosition advances on
+         every UpdatePosition, 5x/s for a moving monster);
+       - PhysicsState, motion state and velocity;
+       - weenie-header values: StackSize, Value, Structure, Burden,
+         container/wielder, UiEffects, Workmanship;
+       - Children.
+     That finding's invalidation list covers only ObjDesc inputs. Valid
+     options are sharing within one loop (NM.9), or caching ObjDesc output with
+     a version stamp (cpu-gc-plan item 25).
+
+perf-worldobjects.txt Section E ("ongoing broadcasts are fine") holds only for
+     the shared message object. EnqueueBroadcast(msg, range) allocates per
+     recipient (NT.5), and the fellowship and health fan-outs recompute their
+     inputs per recipient (NM.1, NM.8).
+
+POOLING GameMessage BUFFERS (ArrayPool / RecyclableMemoryStream) IS UNSAFE as
+     the code stands, because there is no release point:
+       - Player_Death.cs:91 enqueues the SAME GameMessage later, on another
+         landblock's thread, after it was already sent locally.
+       - The TurbineChat message goes to the sender and to the whole server.
+       - Mods hold and construct messages.
+     A reference count would reach zero early whenever a fast session flushes
+     before the broadcast loop reaches the next one.
+
+
+--- G.D LOOKS EXPENSIVE BUT IS COLD, OR NOT WORTH IT (measured) ----------------
+
+  - NetworkStatistics Interlocked increments: 3.9 / 4.6 / 5.0 ns with 1 / 2 / 4
+    threads. No meaningful false sharing.
+  - DateTime.UtcNow per inbound packet (NetworkSession.cs:337): 17 ns.
+  - Enum.HasFlag in the flush path: a JIT intrinsic, no boxing.
+  - MessageBuffer reassembly (LINQ All, Sort, MemoryStream): only for client
+    messages over 448 B.
+  - DoRequestForRetransmission, PruneCachedPackets, the optional header's
+    retransmit List: loss path or every 5 s.
+  - Receive and tick threads writing nearby NetworkSession fields: a few cache
+    misses per packet. Not worth restructuring.
+  - A Span / IBufferWriter / ref-struct rewrite of GameMessage. The fixed
+    overhead is MemoryStream 64 B + BinaryWriter 40 B per MESSAGE, not per
+    recipient. The rewrite would break the public Data / protected Writer API
+    of ~160 subclasses and of mods. The real costs are property and sequence
+    reads, not writes.
+  - FrozenDictionary for the inbound handler maps: ~10k lookups/s, and mods may
+    insert handlers reflectively.
+  - A ref-struct inbound reader instead of ClientMessage: ~300 B per message at
+    a few thousand messages/s, across 152 handlers plus mods.
+  - MovementData.Serialize() / ToArray (MovementData.cs:177): dead code.
+  - AppraiseInfo, PlayerDescription (presized to 16 KB, login only),
+    ViewContents, FellowshipFullUpdate, AllegianceUpdate, house payment LINQ:
+    per click or per login.
+  - An interpolated-string handler for SystemChat: possible, but back-patching
+    the length prefix is not justified at its rate.
+  - GameEvents cannot be shared across recipients: they carry the recipient's
+    guid and a per-session event sequence.
+  - Converting PacketHeader / PacketFragmentHeader (public classes) to structs
+    in place: a high mod-compatibility cost for a few ns. Use new internal
+    readonly structs only (NT.6 V3).
+  - RECORDS:
+      - `record class` adds allocation and equality cost with no benefit
+        anywhere in this layer.
+      - GameMessage must stay a shared, mutable class.
+      - `readonly record struct` only adds value equality and ToString. The
+        one good fit found is the NM.1 snapshot.
+      - PositionPack and Origin are better eliminated (NM.3) than converted.
+
+
+--- G.E SUGGESTED PRIORITY FOR SECTION G ---------------------------------------
+
+By expected impact per unit of risk:
+  1. NM.2  GameEvent capacity +16. One line, or 46 constants; output
+           unchanged; combat-hot.
+  2. NT.5  Single-message / params-span EnqueueSend overload. Zero call-site
+           edits; mind the Harmony patch point.
+  3. NM.1  Hoist the fellowship vitals snapshot (a readonly record struct plus
+           an additive constructor).
+  4. NM.6 + NM.7  Extensions.cs: cached Encoding, span encode, static zero
+           pad, exact string-message capacities. Byte-identical; no public
+           signature changes.
+  5. NT.4  SendTo(span, SocketAddress). About 10 lines.
+  6. NT.1  Dirty mask and a single clock read in the session tick. One class,
+           about 60 lines; the largest world-thread CPU win in this section.
+  7. NM.4 + NM.3  Sequence slots and scalar writers, then the lean
+           UpdatePosition.
+  8. NT.2  A dedicated receive thread with SocketAddress validation.
+  9. NT.3 (+ the NT.7 ring and bundle reuse)  Serialise-once outbound. The
+           largest allocation and retention win, and the biggest change; do it
+           after 1-8.
+ 10. NT.6, NM.8, NT.8 and NT.11, then NM.9 (which needs in-game verification
+           of the delayed and teleport branches).
+
+NOT VERIFIED anywhere in Section G:
+  - production message and packet rates;
+  - Windows/IOCP socket costs;
+  - the retail client's ack interval, and whether it accepts mixed-queue
+    packets or a shared CreateObject's movement sequence;
+  - real creature and player CreateObject sizes;
+  - whether any code writes to a GameMessage after EnqueueSend;
+  - Harmony mods patching the methods named above.
 
 ================================================================================
 END OF REPORT

@@ -352,5 +352,45 @@ operator-supplied, which raises the severity considerably. A sweep for
 GameAction/ and Structure/ directories would likely find more.
 
 ================================================================================
+SECTION F - FOUND WHILE MEASURING (perf-network.txt Section G, 2026-11-25)
+================================================================================
+
+F.1  NetworkSession.Update can run on two threads for one session
+     [VERIFIED by reading]
+     NetworkSession.cs:246 says "Sending is single threaded", but:
+         AuthenticationHandler.cs:41 (account name over 50 characters)
+         -> NetworkManager.SendLoginRequestReject
+         -> session.Network.Update()             (NetworkManager.cs:195)
+     runs on the RECEIVE thread for a session that is already in sessionMap,
+     so it can race the world tick's Update for the same session. The window
+     is small (a session being rejected at login), but it breaks the stated
+     invariant that bundle swaps and packet sequencing rely on.
+     FIX: enqueue the reject and let the tick send it, or Terminate without
+     calling Update. Any buffer-reuse change (perf-network.txt NT.3) must
+     survive this path until it is fixed.
+
+F.2  Only one group's bundle is sent per 5 ms window per session
+     [PLAUSIBLE - read, not observed]
+     NetworkSession.cs:223/234/251
+     nextSend is per session, but the loop runs over 12 groups. After the
+     lowest-index group with data sends, nextSend moves 5 ms ahead, and every
+     later group waits. Under sustained traffic, UIQueue (9) can delay
+     SmartboxQueue (10, movement). perf-network.txt NT.1 deliberately keeps
+     this behaviour; changing it is a separate decision.
+
+F.3  ProcessDDDQueue's rate limiter is static and shared by every session
+     [VERIFIED by reading]
+     Session.cs:376-381
+     With DOP > 1, sessions on different threads call the same RateLimiter
+     concurrently (a data race), and one session's DDD traffic throttles
+     every other session's. See perf-network.txt NT.11 for the cheap guard.
+
+F.4  The NT.7 acknowledgement walk depends on I.9's client-supplied ack
+     I.9 is harmless today, because the ack only filters a scan. If
+     AcknowledgeSequence becomes a sequence walk (perf-network.txt NT.7), an
+     unclamped ack of 0xFFFFFFFF becomes a 4-billion-step loop. The clamp to
+     lastSentSequence + 1 is part of that change, not optional.
+
+================================================================================
 END OF REPORT
 ================================================================================

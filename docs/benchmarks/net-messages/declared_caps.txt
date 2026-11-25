@@ -1,0 +1,159 @@
+GameMessageAccountBanned|-|DateTime BanExpiration, string Reason = null
+GameMessageAdminEnvirons|8|Session session, EnvironChangeType environChange = EnvironChangeType.Clear
+GameMessageAutonomousPosition|-|WorldObject worldObject
+GameMessageBootAccount|36|string Reason = null
+GameMessageCharacterCreateResponse|-|CharacterGenerationVerificationResponse response, ObjectGuid guid, string charName
+GameMessageCharacterDelete|4|
+GameMessageCharacterEnterWorldServerReady|4|
+GameMessageCharacterError|8|CharacterError error
+GameMessageCharacterList|-|List<Character> characters, Session session
+GameMessageCharacterLogOff|4|
+GameMessageCharacterRestore|44|uint objectGuid, string name, uint secondsDisabled
+GameMessageCreateObject|-|WorldObject worldObject, bool adminvision = false, bool adminnodraw = false
+GameMessageDDDBeginDDD|-|uint totalMissingIterations, uint totalFileSize, Dictionary<DatDatabaseType, Dictionary<uint, List<uint>>> missingIterations
+GameMessageDDDDataMessage|-|uint datFileId, DatDatabaseType datDatabaseType
+GameMessageDDDEndDDD|4|
+GameMessageDDDErrorMessage|16|uint resourceType, uint dataId, uint errorType
+GameMessageDDDInterrogation|28|
+GameMessageDeleteObject|12|WorldObject worldObject
+GameMessageEmoteText|-|uint senderId, string senderName, string emoteText
+GameMessageHearRangedSpeech|-|string messageText, string senderName, uint senderID, float range, ChatMessageType chatMessageType
+GameMessageHearSpeech|-|string messageText, string senderName, uint senderID, ChatMessageType chatMessageType
+GameMessageInventoryRemoveObject|8|WorldObject worldObject
+GameMessageObjDescEvent|-|WorldObject worldObject
+GameMessageParentEvent|24|WorldObject creature, WorldObject wieldedSelectableItem, ParentLocation? overriddenParentLocation = null, Placement? overriddenPlacement = null
+GameMessagePickupEvent|12|WorldObject targetItem
+GameMessagePlayerCreate|8|ObjectGuid guid
+GameMessagePlayerKilled|144|string deathMessage, ObjectGuid victimId, ObjectGuid killerId
+GameMessagePlayerTeleport|21|Player player
+GameMessagePrivateUpdateAttribute|21|WorldObject worldObject, CreatureAttribute creatureAttribute
+GameMessagePrivateUpdateAttribute2ndLevel|13|WorldObject worldObject, Vital vital, uint current
+GameMessagePrivateUpdateDataID|13|WorldObject worldObject, PropertyDataId property, uint value
+GameMessagePrivateUpdateInstanceID|13|WorldObject worldObject, PropertyInstanceId property, uint value
+GameMessagePrivateUpdatePosition|41|WorldObject worldObject, PositionType positionType, Position pos
+GameMessagePrivateUpdatePropertyBool|13|WorldObject worldObject, PropertyBool property, bool value
+GameMessagePrivateUpdatePropertyFloat|17|WorldObject worldObject, PropertyFloat property, double value
+GameMessagePrivateUpdatePropertyInt|13|WorldObject worldObject, PropertyInt property, int value
+GameMessagePrivateUpdatePropertyInt64|17|WorldObject worldObject, PropertyInt64 property, long value
+GameMessagePrivateUpdatePropertyString|-|WorldObject worldObject, PropertyString property, string value
+GameMessagePrivateUpdateSkill|37|WorldObject worldObject, CreatureSkill creatureSkill
+GameMessagePrivateUpdateVital|25|WorldObject worldObject, CreatureVital creatureVital
+GameMessagePublicUpdatePropertyDataID|17|WorldObject worldObject, PropertyDataId property, uint value
+GameMessagePublicUpdateInstanceID|17|WorldObject worldObject, PropertyInstanceId property, ObjectGuid instanceGuid
+GameMessagePublicUpdatePosition|45|WorldObject worldObject, PositionType positionType, Position pos
+GameMessagePublicUpdatePropertyBool|17|WorldObject worldObject, PropertyBool property, bool value
+GameMessagePublicUpdatePropertyFloat|21|WorldObject worldObject, PropertyFloat property, double value
+GameMessagePublicUpdatePropertyInt|17|WorldObject worldObject, PropertyInt property, int value
+GameMessagePublicUpdatePropertyInt64|21|WorldObject worldObject, PropertyInt64 property, long value
+GameMessagePublicUpdatePropertyString|64|WorldObject worldObject, PropertyString property, string value
+GameMessagePublicUpdateVital|29|WorldObject worldObject, PropertyAttribute2nd attribute, uint ranks, uint baseValue, uint totalInvestment, uint currentValue
+GameMessageScript|16|ObjectGuid guid, PlayScript scriptId, float speed = 1.0f
+GameMessageServerName|32|string serverName, int currentConnections = 0, int maxConnections = -1
+GameMessageSetStackSize|17|WorldObject worldObject
+GameMessageSetState|16|WorldObject worldObject, PhysicsState state
+GameMessageSoulEmote|88|uint senderId, string senderName, string emoteText
+GameMessageSound|16|ObjectGuid guid, Sound soundId, float volume = 1.0f
+GameMessageSystemChat|-|string message, ChatMessageType chatMessageType
+GameMessageTurbineChat|-|ChatNetworkBlobType chatNetworkBlobType, ChatNetworkBlobDispatchType chatNetworkBlobDispatchType, uint channel, string senderName, string message, uint senderID, ChatType chatType
+GameMessageUpdateMotion|88|WorldObject wo, MovementData movementData
+GameMessageUpdateMotion|88|WorldObject wo, Motion motion
+GameMessageUpdateObject|-|WorldObject worldObject, bool adminvision = false, bool changenodraw = false
+GameMessageUpdatePosition|68|WorldObject worldObject, bool adminMove = false
+GameMessageVectorUpdate|36|WorldObject worldObject
+GameEventAcceptTrade|8|Session session, ObjectGuid whoAccepted
+GameEventAddToTrade|16|Session session, uint objectGuid, TradeSide tradeSide
+GameEventAllegianceAllegianceUpdateDone|8|Session session, WeenieError errorType = WeenieError.None
+GameEventAllegianceInfoResponse|-|Session session, uint playerGuid, AllegianceProfile profile
+GameEventAllegianceUpdate|512|Session session, Allegiance allegiance, AllegianceNode node
+GameEventApproachVendor|8192|Session session, Vendor vendor, uint altCurrencySpent
+GameEventAttackDone|8|Session session, WeenieError errorType = WeenieError.None
+GameEventAttackerNotification|76|Session session, string defenderName, DamageType damageType, float percent, uint damage, bool criticalHit, AttackConditions attackConditions
+GameEventBookAddPageResponse|16|Session session, uint bookGuid, int page, bool success
+GameEventBookDataResponse|-|Session session, uint bookID, int maxChars, int maxPages, List<PropertiesBookPageData> pageData, string inscription, uint authorId, string authorName, bool ignoreAuthor
+GameEventBookDeletePageResponse|16|Session session, uint bookGuid, int page, bool success
+GameEventBookModifyPageResponse|16|Session session, uint bookGuid, int page, bool success
+GameEventBookPageDataResponse|512|Session session, uint bookID, int pageIndex, PropertiesBookPageData pageData
+GameEventChannelBroadcast|-|Session session, Channel chatChannel, string senderName, string messageText
+GameEventChannelIndex|-|Session session
+GameEventChannelList|-|Session session, Channel chatChannel
+GameEventCharacterTitle|-|Session session
+GameEventClearTradeAcceptance|4|Session session
+GameEventCloseGroundContainer|8|Session session, Container container
+GameEventCloseTrade|8|Session session, EndTradeReason endTradeReason
+GameEventCombatCommenceAttack|4|Session session
+GameEventSetSquelchDB|-|Session session, SquelchDB db
+GameEventCommunicationTransientString|156|Session session, string message
+GameEventConfirmationDone|12|Session session, ConfirmationType confirmationType, uint contextId
+GameEventConfirmationRequest|172|Session session, ConfirmationType confirmationType, uint context, string text
+GameEventDeclineTrade|8|Session session, ObjectGuid whoDeclined
+GameEventDefenderNotification|80|Session session, string attackerName, DamageType damageType, float percent, uint damage, DamageLocation damageLocation, bool criticalHit, AttackConditions attackConditions
+GameEventEvasionAttackerNotification|48|Session session, string defenderName
+GameEventEvasionDefenderNotification|48|Session session, string attackerName
+GameEventFellowshipDisband|4|Session session
+GameEventFellowshipDismiss|8|Session session, Player dismissedPlayer
+GameEventFellowshipFellowUpdateDone|-|Session session, WeenieError errorType = WeenieError.None
+GameEventFellowshipFullUpdate|512|Session session
+GameEventFellowshipQuit|8|Session session, uint playerId
+GameEventFellowshipUpdateFellow|84|Session session, Player player, bool shareLoot, FellowUpdateType fellowUpdateType = FellowUpdateType.Full
+GameEventFriendsListUpdate|4096|Session session
+GameEventFriendsListUpdate|-|Session session, FriendsUpdateTypeFlag updateType, CharacterPropertiesFriendList friend, bool overrideOnlineStatus = false, bool onlineStatusVal = false
+GameEventGameOver|8|Session session, ObjectGuid boardGuid, int teamWinner
+GameEventHouseAvailableHouses|-|Session session, HouseType type, List<uint> locations, int totalAvailable
+GameEventHouseData|-|Session session, HouseData data
+GameEventHouseProfile|-|Session session, ObjectGuid crystal, HouseProfile profile
+GameEventHouseStatus|8|Session session, WeenieError weenieError = WeenieError.BadParam
+GameEventHouseTransaction|8|Session session
+GameEventUpdateHAR|56|Session session, House house
+GameEventHouseUpdateRentPayment|80|Session session
+GameEventHouseUpdateRentTime|8|Session session
+GameEventHouseUpdateRestrictions|-|Session session, WorldObject obj, RestrictionDB restrictions
+GameEventIdentifyObjectResponse|-|Session session, WorldObject obj, bool success
+GameEventIdentifyObjectResponse|-|Session session, uint objectGuid
+GameEventInscriptionResponse|-|Session session, WorldObject worldObject
+GameEventInventoryServerSaveFailed|12|Session session, uint itemGuid, WeenieError errorType = WeenieError.None
+GameEventItemServerSaysContainId|20|Session session, WorldObject itemToBeContained, WorldObject container
+GameEventItemServerSaysMoveItem|8|Session session, WorldObject worldObject
+GameEventJoinGameResponse|12|Session session, ObjectGuid boardGuid, ChessColor color
+GameEventKillerNotification|120|Session session, string deathMessage
+GameEventMagicDispelEnchantment|8|Session session, ushort spellID, ushort layer
+GameEventMagicDispelMultipleEnchantments|204|Session session, List<LayeredSpell> spells
+GameEventMagicDispelMultipleEnchantments|204|Session session, List<PropertiesEnchantmentRegistry> enchantments
+GameEventMagicPurgeBadEnchantments|8|Session session
+GameEventMagicPurgeEnchantments|4|Session session
+GameEventMagicRemoveEnchantment|8|Session session, ushort spellID, ushort layer
+GameEventMagicRemoveMultipleEnchantments|56|Session session, List<LayeredSpell> spells
+GameEventMagicRemoveSpell|8|Session session, ushort spellId, ushort layer = 0
+GameEventMagicUpdateEnchantment|68|Session session, Enchantment enchantment
+GameEventMagicUpdateMultipleEnchantments|-|Session session, List<Enchantment> enchantments
+GameEventMagicUpdateSpell|8|Session session, ushort spellId, ushort layer = 0
+GameEventMoveResponse|12|Session session, ObjectGuid boardGuid, ChessMoveResult result
+GameEventOpponentStalemate|16|Session session, ObjectGuid boardGuid, ChessColor color, bool stalemate
+GameEventOpponentTurn|-|Session session, ObjectGuid boardGuid, ChessMoveData moveData
+GameEventPingResponse|4|Session session
+GameEventPlayerDescription|16384|Session session
+GameEventPopupString|-|Session session, string message
+GameEventPortalStorm|4|Session session
+GameEventPortalStormBrewing|8|Session session, float extent = 0.4f
+GameEventPortalStormImminent|8|Session session, float extent = 0.6f
+GameEventPortalStormSubsided|4|Session session
+GameEventQueryAgeResponse|32|Session session, string targetName, string age
+GameEventQueryItemManaResponse|16|Session session, uint target, float mana, uint success
+GameEventRegisterTrade|20|Session session, ObjectGuid initiator, ObjectGuid partner
+GameEventResetTrade|8|Session session, ObjectGuid whoReset
+GameEventSalvageOperationsResult|40|Session session, Skill skill, List<SalvageMessage> messages
+GameEventSendClientContractTracker|52|Session session, CharacterPropertiesContractRegistry contract
+GameEventSendClientContractTrackerTable|512|Session session
+GameEventSetTurbineChatChannels|44|Session session, uint allegiance = 0, uint society = 0
+GameEventStartBarber|68|Session session
+GameEventStartGame|12|Session session, ObjectGuid boardGuid, ChessColor color
+GameEventTell|-|WorldObject worldObject, string messageText, Player player, ChatMessageType chatMessageType
+GameEventTell|-|Session session, string messageText, string senderName, uint senderID, uint targetID, ChatMessageType chatMessageType
+GameEventTradeFailure|12|Session session, uint objectGuid, WeenieError reason
+GameEventUpdateHealth|12|Session session, uint objectid, float health
+GameEventUpdateTitle|12|Session session, uint title, bool setAsDisplayTitle = false
+GameEventUseDone|8|Session session, WeenieError errorType = WeenieError.None
+GameEventVictimNotification|120|Session session, string deathMessage
+GameEventViewContents|-|Session session, Container container
+GameEventWeenieError|8|Session session, WeenieError errorType
+GameEventWeenieErrorWithString|52|Session session, WeenieErrorWithString errorType, string message
+GameEventWieldItem|12|Session session, uint objectId, EquipMask newLocation

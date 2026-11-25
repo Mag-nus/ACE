@@ -1,0 +1,289 @@
+Type ACE.Server.Physics.Animation.AFrame  total records 246
+---- counts by category ----
+    4  ALIAS(call:AFrame.Combine) ASSIGN PARAM(Ref)
+    1  ALIAS(call:AFrame.Combine) LOCAL-INIT
+    1  ALIAS(call:ObjectDesc.ObjAlign) ASSIGN field
+    1  ALIAS(call:ObjectDesc.RotateObj) ASSIGN field
+    1  ALIAS(call:Position.Subtract) LOCAL-INIT
+    3  ALIAS(field) ASSIGN LOCAL
+    1  ALIAS(local) ASSIGN PARAM(by-value)
+    5  ALIAS(param) ASSIGN field
+   10  ARG-BY-REF
+    6  ARG-SHARED(call:AnimSequenceNode.get_pos_frame)
+    3  ARG-SHARED(element)
+   29  ARG-SHARED(field)
+    9  ARG-SHARED(local)
+   31  ARG-SHARED(param)
+    3  CALLS-PARAM-MUTATOR ChessMatch.CalculateWeeniePosition(arg2) arg=local
+    1  CALLS-PARAM-MUTATOR ConstraintManager.adjust_offset(arg0) arg=param
+    7  CALLS-PARAM-MUTATOR PhysicsObj.set_frame(arg0) arg=field
+    2  CALLS-PARAM-MUTATOR PhysicsObj.set_frame(arg0) arg=local
+    8  CALLS-PARAM-MUTATOR Sequence.apply_physics(arg0) arg=param
+    1  CALLS-PARAM-MUTATOR StickyManager.adjust_offset(arg0) arg=param
+    7  CTOR-ARG-SHARED(field)
+    3  CTOR-ARG-SHARED(param)
+   17  MUTATE-CALL via field
+    4  MUTATE-CALL via LOCAL
+    3  MUTATE-CALL via PARAM(by-value)
+    4  MUTATE-CALL via PARAM(Ref)
+   49  MUTATE-FIELD via field
+    8  MUTATE-FIELD via LOCAL
+   10  MUTATE-FIELD via PARAM(by-value)
+    1  MUTATE-FIELD via PARAM(Ref)
+    2  NULL-ASSIGN LOCAL-INIT
+    8  NULL-CHECK
+    1  RETURN-SHARED(element)
+    2  RETURN-SHARED(field)
+---- by-value-parameter mutators ----
+  PhysicsObj.set_frame params[0]
+  ChessMatch.CalculateWeeniePosition params[2]
+  Sequence.apply_physics params[0]
+  ConstraintManager.adjust_offset params[0]
+  StickyManager.adjust_offset params[0]
+---- detail ----
+ALIAS(call:AFrame.Combine) ASSIGN PARAM(Ref) | Physics/Animation/Sequence.cs:170 | frame = AFrame.Combine(frame, currAnim.get_pos_frame((int)frameNum))
+ALIAS(call:AFrame.Combine) ASSIGN PARAM(Ref) | Physics/Animation/Sequence.cs:196 | frame = AFrame.Combine(frame, currAnim.get_pos_frame((int)frameNum))
+ALIAS(call:AFrame.Combine) ASSIGN PARAM(Ref) | Physics/Animation/Sequence.cs:383 | frame = AFrame.Combine(frame, currAnim.get_pos_frame(lastFrame))
+ALIAS(call:AFrame.Combine) ASSIGN PARAM(Ref) | Physics/PhysicsObj.cs:1879 | newFrame = AFrame.Combine(Position.Frame, offsetFrame)
+ALIAS(call:AFrame.Combine) LOCAL-INIT | Physics/PhysicsObj.cs:1637 | frame = partIdx >= PartArray.NumParts ?                 AFrame.Combine(Position.Frame, childFrame) : AFrame.Combine(PartArray.Parts[partIdx].Pos.Frame...
+ALIAS(call:ObjectDesc.ObjAlign) ASSIGN field | Physics/Common/Landblock.cs:262 | pos.Frame = ObjectDesc.ObjAlign(obj, walkable.Plane, pos.Frame.Origin)
+ALIAS(call:ObjectDesc.RotateObj) ASSIGN field | Physics/Common/Landblock.cs:264 | pos.Frame = ObjectDesc.RotateObj(obj, globalCellX, globalCellY, j, pos.Frame.Origin)
+ALIAS(call:Position.Subtract) LOCAL-INIT | Physics/Managers/InterpolationManager.cs:240 | offset = first.Position.Subtract(PhysicsObj.Position)
+ALIAS(field) ASSIGN LOCAL | Physics/Particles/ParticleEmitter.cs:227 | frame = Parent.Position.Frame
+ALIAS(field) ASSIGN LOCAL | Physics/Particles/ParticleEmitter.cs:229 | frame = Parent.PartArray.Parts[PartIndex].Pos.Frame
+ALIAS(field) ASSIGN LOCAL | Physics/Particles/ParticleEmitter.cs:232 | frame = Particles[i].StartFrame
+ALIAS(local) ASSIGN PARAM(by-value) | Physics/Managers/InterpolationManager.cs:253 | frame = offset
+ALIAS(param) ASSIGN field | Physics/Common/Position.cs:37 | Frame = frame
+ALIAS(param) ASSIGN field | Physics/Common/ShadowPart.cs:20 | Frame = frame
+ALIAS(param) ASSIGN field | Physics/Common/ShadowPart.cs:28 | Frame = frame
+ALIAS(param) ASSIGN field | Physics/PhysicsObj.cs:1951 | Position.Frame = newFrame
+ALIAS(param) ASSIGN field | Physics/PhysicsObj.cs:3751 | Position.Frame = frame
+ARG-BY-REF | Physics/Animation/Sequence.cs:136 | update_internal(quantum, ref CurrAnim, ref FrameNumber, ref offsetFrame)
+ARG-BY-REF | Physics/Animation/Sequence.cs:438 | advance_to_next_animation(timeElapsed, ref animNode, ref frameNum, ref frame)
+ARG-BY-REF | Physics/Animation/Sequence.cs:442 | update_internal(timeElapsed, ref animNode, ref frameNum, ref frame)
+ARG-BY-REF | Physics/PartArray.cs:591 | Sequence.Update((float)quantum, ref offsetFrame)
+ARG-BY-REF | Physics/PhysicsObj.cs:1666 | UpdatePositionInternal(quantum, ref newPos.Frame)
+ARG-BY-REF | Physics/PhysicsObj.cs:1818 | PartArray.Update(quantum, ref newPos.Frame)
+ARG-BY-REF | Physics/PhysicsObj.cs:1869 | PartArray.Update(quantum, ref offsetFrame)
+ARG-BY-REF | Physics/PhysicsObj.cs:1882 | UpdatePhysicsInternal((float)quantum, ref newFrame)
+ARG-BY-REF | Physics/PhysicsObj.cs:2035 | PartArray.Update(deltaTime, ref empty)
+ARG-BY-REF | Physics/PhysicsObj.cs:4404 | UpdatePositionInternal(deltaTime, ref frame)
+ARG-SHARED(call:AnimSequenceNode.get_pos_frame) -> AFrame.Combine | Physics/Animation/Sequence.cs:170 | AFrame.Combine(frame, currAnim.get_pos_frame((int)frameNum))
+ARG-SHARED(call:AnimSequenceNode.get_pos_frame) -> AFrame.Combine | Physics/Animation/Sequence.cs:196 | AFrame.Combine(frame, currAnim.get_pos_frame((int)frameNum))
+ARG-SHARED(call:AnimSequenceNode.get_pos_frame) -> AFrame.Combine | Physics/Animation/Sequence.cs:383 | AFrame.Combine(frame, currAnim.get_pos_frame(lastFrame))
+ARG-SHARED(call:AnimSequenceNode.get_pos_frame) -> AFrame.Subtract | Physics/Animation/Sequence.cs:154 | frame.Subtract(currAnim.get_pos_frame((int)frameNum))
+ARG-SHARED(call:AnimSequenceNode.get_pos_frame) -> AFrame.Subtract | Physics/Animation/Sequence.cs:180 | frame.Subtract(currAnim.get_pos_frame((int)frameNum))
+ARG-SHARED(call:AnimSequenceNode.get_pos_frame) -> AFrame.Subtract | Physics/Animation/Sequence.cs:412 | frame.Subtract(currAnim.get_pos_frame(lastFrame))
+ARG-SHARED(element) -> PhysicsObj.add_obj_to_cell | Physics/Common/EnvCell.cs:391 | staticObj.add_obj_to_cell(this, StaticObjectFrames[i])
+ARG-SHARED(element) -> PhysicsObj.UpdateChild | Physics/PhysicsObj.cs:1651 | UpdateChild(Children.Objects[i], Children.PartNumbers[i], Children.Frames[i])
+ARG-SHARED(element) -> PhysicsObj.UpdateChild | Physics/PhysicsObj.cs:3850 | obj.UpdateChild(this, obj.Children.PartNumbers[index], obj.Children.Frames[index])
+ARG-SHARED(field) -> AFrame.Combine | Physics/PhysicsObj.cs:1638 | AFrame.Combine(Position.Frame, childFrame)
+ARG-SHARED(field) -> AFrame.Combine | Physics/PhysicsObj.cs:1638 | AFrame.Combine(PartArray.Parts[partIdx].Pos.Frame, childFrame)
+ARG-SHARED(field) -> AFrame.Combine | Physics/PhysicsObj.cs:1879 | AFrame.Combine(Position.Frame, offsetFrame)
+ARG-SHARED(field) -> AFrame.Equals | Physics/Common/Position.cs:282 | Frame.Equals(pos.Frame)
+ARG-SHARED(field) -> AFrame.Equals | Physics/PhysicsObj.cs:1670 | newPos.Frame.Equals(Position.Frame)
+ARG-SHARED(field) -> AFrame.InterpolateRotation | Physics/Transition.cs:560 | SpherePath.CheckPos.Frame.InterpolateRotation(SpherePath.BeginPos.Frame, SpherePath.EndPos.Frame, delta)
+ARG-SHARED(field) -> AFrame.InterpolateRotation | Physics/Transition.cs:560 | SpherePath.CheckPos.Frame.InterpolateRotation(SpherePath.BeginPos.Frame, SpherePath.EndPos.Frame, delta)
+ARG-SHARED(field) -> AFrame.Subtract | Physics/Common/Position.cs:186 | Frame.Subtract(pos.Frame)
+ARG-SHARED(field) -> PartArray.SetFrame | Physics/PhysicsObj.cs:1148 | PartArray.SetFrame(Position.Frame)
+ARG-SHARED(field) -> PartArray.SetFrame | Physics/PhysicsObj.cs:1830 | PartArray.SetFrame(Position.Frame)
+ARG-SHARED(field) -> PartArray.SetFrame | Physics/PhysicsObj.cs:1953 | PartArray.SetFrame(Position.Frame)
+ARG-SHARED(field) -> PartArray.SetFrame | Physics/PhysicsObj.cs:714 | PartArray.SetFrame(Position.Frame)
+ARG-SHARED(field) -> PartArray.SetFrame | Physics/PhysicsObj.cs:750 | PartArray.SetFrame(Position.Frame)
+ARG-SHARED(field) -> PartCell.AddPart | Physics/PartArray.cs:43 | objCell.AddPart(Parts[i], clipPlaneList, objCell.Pos.Frame, numShadowParts)
+ARG-SHARED(field) -> PartCell.AddPart | Physics/PhysicsObj.cs:228 | shadowCell.AddPart(part, null,                         shadowCell.Pos.Frame, ShadowObjects.Count)
+ARG-SHARED(field) -> Particle.Init | Physics/Particles/ParticleEmitter.cs:147 | Particles[nextIdx].Init(Info, Parent, PartIndex, ParentOffset, Parts[nextIdx], randomOffset, firstParticle, randomA, randomB, randomC)
+ARG-SHARED(field) -> PhysicsObj.add_obj_to_cell | Physics/Common/Landblock.cs:277 | physicsObj.add_obj_to_cell(cell, pos.Frame)
+ARG-SHARED(field) -> PhysicsObj.add_obj_to_cell | Physics/Common/Landblock.cs:504 | obj.add_obj_to_cell(cell, position.Frame)
+ARG-SHARED(field) -> PhysicsObj.set_frame | Physics/PhysicsObj.cs:1191 | set_frame(curPos.Frame)
+ARG-SHARED(field) -> PhysicsObj.set_frame | Physics/PhysicsObj.cs:1673 | set_frame(newPos.Frame)
+ARG-SHARED(field) -> PhysicsObj.set_frame | Physics/PhysicsObj.cs:1721 | set_frame(newPos.Frame)
+ARG-SHARED(field) -> PhysicsObj.set_frame | Physics/PhysicsObj.cs:1820 | set_frame(newPos.Frame)
+ARG-SHARED(field) -> PhysicsObj.set_frame | Physics/PhysicsObj.cs:3667 | set_frame(Position.Frame)
+ARG-SHARED(field) -> PhysicsObj.set_frame | Physics/PhysicsObj.cs:4040 | set_frame(pos.Frame)
+ARG-SHARED(field) -> PhysicsObj.set_frame | Physics/PhysicsObj.cs:537 | set_frame(pos.Frame)
+ARG-SHARED(field) -> PhysicsObj.set_initial_frame | Physics/Common/Landblock.cs:120 | obj.set_initial_frame(obj.Position.Frame)
+ARG-SHARED(field) -> PhysicsObj.set_initial_frame | Physics/Common/Landblock.cs:269 | physicsObj.set_initial_frame(pos.Frame)
+ARG-SHARED(field) -> PhysicsObj.set_initial_frame | Physics/Common/Landblock.cs:445 | building.set_initial_frame(position.Frame)
+ARG-SHARED(field) -> PhysicsObj.set_initial_frame | Physics/PhysicsObj.cs:1710 | set_initial_frame(newPos.Frame)
+ARG-SHARED(local) -> AFrame.Combine | Physics/PhysicsObj.cs:1879 | AFrame.Combine(Position.Frame, offsetFrame)
+ARG-SHARED(local) -> ChessMatch.CalculateWeeniePosition | Entity/Chess/ChessMatch.cs:572 | CalculateWeeniePosition(piece.Coord, piece.Color, frame)
+ARG-SHARED(local) -> ChessMatch.CalculateWeeniePosition | Entity/Chess/ChessMatch.cs:624 | CalculateWeeniePosition(piece.Coord, piece.Color, frame)
+ARG-SHARED(local) -> ChessMatch.CalculateWeeniePosition | Entity/Chess/ChessMatch.cs:646 | CalculateWeeniePosition(piece.Coord, piece.Color, frame)
+ARG-SHARED(local) -> PartArray.SetFrame | Physics/PhysicsObj.cs:3443 | PartArray.SetFrame(offsetFrame)
+ARG-SHARED(local) -> Particle.Update | Physics/Particles/ParticleEmitter.cs:235 | Particles[i].Update(Info.ParticleType, firstParticle, part, frame)
+ARG-SHARED(local) -> PhysicsObj.set_frame | Physics/PhysicsObj.cs:1640 | childObj.set_frame(frame)
+ARG-SHARED(local) -> PhysicsObj.set_frame | Physics/PhysicsObj.cs:4405 | set_frame(frame)
+ARG-SHARED(local) -> PositionManager.AdjustOffset | Physics/PhysicsObj.cs:1877 | PositionManager.AdjustOffset(offsetFrame, quantum)
+ARG-SHARED(param) -> AFrame.Combine | Physics/Animation/Sequence.cs:170 | AFrame.Combine(frame, currAnim.get_pos_frame((int)frameNum))
+ARG-SHARED(param) -> AFrame.Combine | Physics/Animation/Sequence.cs:196 | AFrame.Combine(frame, currAnim.get_pos_frame((int)frameNum))
+ARG-SHARED(param) -> AFrame.Combine | Physics/Animation/Sequence.cs:383 | AFrame.Combine(frame, currAnim.get_pos_frame(lastFrame))
+ARG-SHARED(param) -> AFrame.Combine | Physics/PartArray.cs:605 | Parts[i].Pos.Frame.Combine(frame, new AFrame(curFrame.Frames[i]), Scale)
+ARG-SHARED(param) -> AFrame.Combine | Physics/PhysicsObj.cs:1638 | AFrame.Combine(Position.Frame, childFrame)
+ARG-SHARED(param) -> AFrame.Combine | Physics/PhysicsObj.cs:1638 | AFrame.Combine(PartArray.Parts[partIdx].Pos.Frame, childFrame)
+ARG-SHARED(param) -> AFrame.Equals | Physics/Animation/AFrame.cs:83 | frame.Equals(this)
+ARG-SHARED(param) -> ChildList.AddChild | Physics/PhysicsObj.cs:1943 | Children.AddChild(obj, frame, partIdx, 0)
+ARG-SHARED(param) -> ConstraintManager.adjust_offset | Physics/Managers/PositionManager.cs:27 | ConstraintManager.adjust_offset(frame, quantum)
+ARG-SHARED(param) -> InterpolationManager.adjust_offset | Physics/Managers/PositionManager.cs:23 | InterpolationManager.adjust_offset(frame, quantum)
+ARG-SHARED(param) -> List.Add | Physics/Common/ChildList.cs:36 | Frames.Add(frame)
+ARG-SHARED(param) -> PartArray.SetFrame | Physics/PhysicsObj.cs:3655 | PartArray.SetFrame(frame)
+ARG-SHARED(param) -> PartArray.SetFrame | Physics/PhysicsObj.cs:3754 | PartArray.SetFrame(frame)
+ARG-SHARED(param) -> PartArray.UpdateParts | Physics/PartArray.cs:396 | UpdateParts(frame)
+ARG-SHARED(param) -> Particle.Update | Physics/Particles/Particle.cs:118 | Update(info.ParticleType, persistent, part, pFrame)
+ARG-SHARED(param) -> ParticleEmitter.SetParenting | Physics/Particles/ParticleManager.cs:33 | emitter.SetParenting(partIdx, offset)
+ARG-SHARED(param) -> ParticleManager.CreateBlockingParticleEmitter | Physics/Particles/ParticleManager.cs:23 | CreateBlockingParticleEmitter(obj, emitterInfoID, partIdx, offset, emitterID)
+ARG-SHARED(param) -> ParticleManager.CreateBlockingParticleEmitter | Physics/PhysicsObj.cs:2253 | ParticleManager.CreateBlockingParticleEmitter(this, emitterInfoID, partIdx, offset, emitterID)
+ARG-SHARED(param) -> ParticleManager.CreateParticleEmitter | Physics/PhysicsObj.cs:2261 | ParticleManager.CreateParticleEmitter(this, emitterInfoID, partIdx, offset, emitterID)
+ARG-SHARED(param) -> PhysicsObj.add_child | Physics/PhysicsObj.cs:3872 | obj.add_child(this, partIdx, frame)
+ARG-SHARED(param) -> PhysicsObj.set_parent | Physics/Particles/ParticleEmitter.cs:42 | PhysicsObj.set_parent(Parent, partIdx, frame)
+ARG-SHARED(param) -> PhysicsObj.UpdateChild | Physics/PhysicsObj.cs:3884 | obj.UpdateChild(this, partIdx, frame)
+ARG-SHARED(param) -> Sequence.apply_physics | Physics/Animation/Sequence.cs:141 | apply_physics(offsetFrame, quantum, quantum)
+ARG-SHARED(param) -> Sequence.apply_physics | Physics/Animation/Sequence.cs:156 | apply_physics(frame, 1.0f / currAnim.Framerate, timeElapsed)
+ARG-SHARED(param) -> Sequence.apply_physics | Physics/Animation/Sequence.cs:172 | apply_physics(frame, 1.0f / currAnim.Framerate, timeElapsed)
+ARG-SHARED(param) -> Sequence.apply_physics | Physics/Animation/Sequence.cs:182 | apply_physics(frame, 1.0f / currAnim.Framerate, timeElapsed)
+ARG-SHARED(param) -> Sequence.apply_physics | Physics/Animation/Sequence.cs:198 | apply_physics(frame, 1.0f / currAnim.Framerate, timeElapsed)
+ARG-SHARED(param) -> Sequence.apply_physics | Physics/Animation/Sequence.cs:386 | apply_physics(frame, 1.0f / framerate, timeElapsed)
+ARG-SHARED(param) -> Sequence.apply_physics | Physics/Animation/Sequence.cs:415 | apply_physics(frame, 1.0f / framerate, timeElapsed)
+ARG-SHARED(param) -> Sequence.apply_physics | Physics/Animation/Sequence.cs:425 | apply_physics(frame, timeElapsed, timeElapsed)
+ARG-SHARED(param) -> StickyManager.adjust_offset | Physics/Managers/PositionManager.cs:25 | StickyManager.adjust_offset(frame, quantum)
+CALLS-PARAM-MUTATOR ChessMatch.CalculateWeeniePosition(arg2) arg=local | Entity/Chess/ChessMatch.cs:572 | CalculateWeeniePosition(piece.Coord, piece.Color, frame)
+CALLS-PARAM-MUTATOR ChessMatch.CalculateWeeniePosition(arg2) arg=local | Entity/Chess/ChessMatch.cs:624 | CalculateWeeniePosition(piece.Coord, piece.Color, frame)
+CALLS-PARAM-MUTATOR ChessMatch.CalculateWeeniePosition(arg2) arg=local | Entity/Chess/ChessMatch.cs:646 | CalculateWeeniePosition(piece.Coord, piece.Color, frame)
+CALLS-PARAM-MUTATOR ConstraintManager.adjust_offset(arg0) arg=param | Physics/Managers/PositionManager.cs:27 | ConstraintManager.adjust_offset(frame, quantum)
+CALLS-PARAM-MUTATOR PhysicsObj.set_frame(arg0) arg=field | Physics/PhysicsObj.cs:1191 | set_frame(curPos.Frame)
+CALLS-PARAM-MUTATOR PhysicsObj.set_frame(arg0) arg=field | Physics/PhysicsObj.cs:1673 | set_frame(newPos.Frame)
+CALLS-PARAM-MUTATOR PhysicsObj.set_frame(arg0) arg=field | Physics/PhysicsObj.cs:1721 | set_frame(newPos.Frame)
+CALLS-PARAM-MUTATOR PhysicsObj.set_frame(arg0) arg=field | Physics/PhysicsObj.cs:1820 | set_frame(newPos.Frame)
+CALLS-PARAM-MUTATOR PhysicsObj.set_frame(arg0) arg=field | Physics/PhysicsObj.cs:3667 | set_frame(Position.Frame)
+CALLS-PARAM-MUTATOR PhysicsObj.set_frame(arg0) arg=field | Physics/PhysicsObj.cs:4040 | set_frame(pos.Frame)
+CALLS-PARAM-MUTATOR PhysicsObj.set_frame(arg0) arg=field | Physics/PhysicsObj.cs:537 | set_frame(pos.Frame)
+CALLS-PARAM-MUTATOR PhysicsObj.set_frame(arg0) arg=local | Physics/PhysicsObj.cs:1640 | childObj.set_frame(frame)
+CALLS-PARAM-MUTATOR PhysicsObj.set_frame(arg0) arg=local | Physics/PhysicsObj.cs:4405 | set_frame(frame)
+CALLS-PARAM-MUTATOR Sequence.apply_physics(arg0) arg=param | Physics/Animation/Sequence.cs:141 | apply_physics(offsetFrame, quantum, quantum)
+CALLS-PARAM-MUTATOR Sequence.apply_physics(arg0) arg=param | Physics/Animation/Sequence.cs:156 | apply_physics(frame, 1.0f / currAnim.Framerate, timeElapsed)
+CALLS-PARAM-MUTATOR Sequence.apply_physics(arg0) arg=param | Physics/Animation/Sequence.cs:172 | apply_physics(frame, 1.0f / currAnim.Framerate, timeElapsed)
+CALLS-PARAM-MUTATOR Sequence.apply_physics(arg0) arg=param | Physics/Animation/Sequence.cs:182 | apply_physics(frame, 1.0f / currAnim.Framerate, timeElapsed)
+CALLS-PARAM-MUTATOR Sequence.apply_physics(arg0) arg=param | Physics/Animation/Sequence.cs:198 | apply_physics(frame, 1.0f / currAnim.Framerate, timeElapsed)
+CALLS-PARAM-MUTATOR Sequence.apply_physics(arg0) arg=param | Physics/Animation/Sequence.cs:386 | apply_physics(frame, 1.0f / framerate, timeElapsed)
+CALLS-PARAM-MUTATOR Sequence.apply_physics(arg0) arg=param | Physics/Animation/Sequence.cs:415 | apply_physics(frame, 1.0f / framerate, timeElapsed)
+CALLS-PARAM-MUTATOR Sequence.apply_physics(arg0) arg=param | Physics/Animation/Sequence.cs:425 | apply_physics(frame, timeElapsed, timeElapsed)
+CALLS-PARAM-MUTATOR StickyManager.adjust_offset(arg0) arg=param | Physics/Managers/PositionManager.cs:25 | StickyManager.adjust_offset(frame, quantum)
+CTOR-ARG-SHARED(field) -> new AFrame | Entity/Chess/ChessMatch.cs:571 | new AFrame(ChessBoard.PhysicsObj.Position.Frame)
+CTOR-ARG-SHARED(field) -> new AFrame | Entity/Chess/ChessMatch.cs:623 | new AFrame(ChessBoard.PhysicsObj.Position.Frame)
+CTOR-ARG-SHARED(field) -> new AFrame | Entity/Chess/ChessMatch.cs:645 | new AFrame(ChessBoard.PhysicsObj.Position.Frame)
+CTOR-ARG-SHARED(field) -> new AFrame | Physics/Common/Position.cs:50 | new AFrame(p.Frame)
+CTOR-ARG-SHARED(field) -> new AFrame | Physics/Particles/Particle.cs:41 | new AFrame(parent.Position.Frame)
+CTOR-ARG-SHARED(field) -> new AFrame | Physics/Particles/Particle.cs:43 | new AFrame(parent.PartArray.Parts[partIdx].Pos.Frame)
+CTOR-ARG-SHARED(field) -> new AFrame | Physics/PhysicsObj.cs:3477 | new AFrame(newPos.Frame)
+CTOR-ARG-SHARED(param) -> new AFrame | Physics/Particles/Particle.cs:155 | new AFrame(parent)
+CTOR-ARG-SHARED(param) -> new AFrame | Physics/Particles/ParticleEmitter.cs:46 | new AFrame(frame)
+CTOR-ARG-SHARED(param) -> new AFrame | Physics/PhysicsObj.cs:3646 | new AFrame(frame)
+MUTATE-CALL via field | Physics/Common/Position.cs:186 | Frame.Subtract(pos.Frame)
+MUTATE-CALL via field | Physics/Managers/InterpolationManager.cs:63 | interpolationNode.Position.Frame.set_heading(PhysicsObj.get_heading())
+MUTATE-CALL via field | Physics/Managers/InterpolationManager.cs:79 | interpolationNode.Position.Frame.set_heading(PhysicsObj.get_heading())
+MUTATE-CALL via field | Physics/Managers/MoveToManager.cs:246 | CurrentTargetPosition.Frame.set_heading(movementParams.DesiredHeading)
+MUTATE-CALL via field | Physics/Managers/MoveToManager.cs:276 | SoughtPosition.Frame.set_heading(heading)
+MUTATE-CALL via field | Physics/Managers/MoveToManager.cs:300 | SoughtPosition.Frame.set_heading(movementParams.DesiredHeading)
+MUTATE-CALL via field | Physics/PartArray.cs:605 | Parts[i].Pos.Frame.Combine(frame, new AFrame(curFrame.Frames[i]), Scale)
+MUTATE-CALL via field | Physics/Particles/Particle.cs:157 | part.Pos.Frame.Rotate(lifetime * C)
+MUTATE-CALL via field | Physics/PhysicsObj.cs:1681 | newPos.Frame.set_vector_heading(Vector3.Normalize(diff))
+MUTATE-CALL via field | Physics/PhysicsObj.cs:1684 | newPos.Frame.set_vector_heading(Vector3.Normalize(Velocity))
+MUTATE-CALL via field | Physics/PhysicsObj.cs:2036 | Position.Frame.Rotate(Omega)
+MUTATE-CALL via field | Physics/PhysicsObj.cs:3442 | Position.Frame.GRotate(offset)
+MUTATE-CALL via field | Physics/PhysicsObj.cs:3666 | Position.Frame.set_heading(degrees)
+MUTATE-CALL via field | Physics/Transition.cs:514 | SpherePath.CurPos.Frame.set_rotate(SpherePath.EndPos.Frame.Orientation)
+MUTATE-CALL via field | Physics/Transition.cs:522 | SpherePath.CurPos.Frame.set_rotate(SpherePath.EndPos.Frame.Orientation)
+MUTATE-CALL via field | Physics/Transition.cs:560 | SpherePath.CheckPos.Frame.InterpolateRotation(SpherePath.BeginPos.Frame, SpherePath.EndPos.Frame, delta)
+MUTATE-CALL via field | WorldObjects/WorldObject_Magic.cs:1808 | sp.PhysicsObj.Position.Frame.set_vector_heading(dir)
+MUTATE-CALL via LOCAL | Physics/Common/ObjectDesc.cs:82 | frame.set_heading(degrees)
+MUTATE-CALL via LOCAL | Physics/Common/ObjectDesc.cs:96 | frame.set_heading(degrees)
+MUTATE-CALL via LOCAL | Physics/Managers/InterpolationManager.cs:251 | offset.set_heading(0.0f)
+MUTATE-CALL via LOCAL | Physics/Transition.cs:403 | frame.set_heading(angle * j)
+MUTATE-CALL via PARAM(by-value) | Entity/Chess/ChessMatch.cs:566 | frame.set_heading(heading)
+MUTATE-CALL via PARAM(by-value) | Physics/Animation/Sequence.cs:229 | frame.Rotate(Omega * quantum)
+MUTATE-CALL via PARAM(by-value) | Physics/Managers/StickyManager.cs:132 | offset.set_heading(heading)
+MUTATE-CALL via PARAM(Ref) | Physics/Animation/Sequence.cs:154 | frame.Subtract(currAnim.get_pos_frame((int)frameNum))
+MUTATE-CALL via PARAM(Ref) | Physics/Animation/Sequence.cs:180 | frame.Subtract(currAnim.get_pos_frame((int)frameNum))
+MUTATE-CALL via PARAM(Ref) | Physics/Animation/Sequence.cs:412 | frame.Subtract(currAnim.get_pos_frame(lastFrame))
+MUTATE-CALL via PARAM(Ref) | Physics/PhysicsObj.cs:1860 | frameOffset.GRotate(Omega * quantum)
+MUTATE-FIELD via field | Command/Handlers/DeveloperContentCommands.cs:1755 | newPos.Frame.Origin.Z = session.Player.CurrentLandblock.PhysicsLandblock.GetZ(newPos.Frame.Origin)
+MUTATE-FIELD via field | Command/Handlers/DeveloperContentCommands.cs:3077 | obj.PhysicsObj.Position.Frame.Orientation = newRotation
+MUTATE-FIELD via field | Command/Handlers/DeveloperContentCommands.cs:3182 | obj.PhysicsObj.Position.Frame.Orientation = newRotation
+MUTATE-FIELD via field | Entity/Landblock.cs:291 | pos.Frame.Origin.Z = PhysicsLandblock.GetZ(pos.Frame.Origin)
+MUTATE-FIELD via field | Physics/BSP/BSPTree.cs:341 | path.CheckPos.Frame.Origin += offset
+MUTATE-FIELD via field | Physics/Common/Landblock.cs:242 | pos.Frame.Origin = loc
+MUTATE-FIELD via field | Physics/Common/LandblockStruct.cs:255 | landCell.Pos.Frame.Origin.X = originX * LandDefs.HalfSquareLength
+MUTATE-FIELD via field | Physics/Common/LandblockStruct.cs:256 | landCell.Pos.Frame.Origin.Y = originY * LandDefs.HalfSquareLength
+MUTATE-FIELD via field | Physics/Common/Position.cs:192 | Frame.Origin += offset
+MUTATE-FIELD via field | Physics/Managers/TargetManager.cs:96 | pos.Frame.Origin += PhysicsObj.get_velocity() * (float)quantum
+MUTATE-FIELD via field | Physics/Particles/Particle.cs:141 | part.Pos.Frame.Origin = parent.Origin + Offset
+MUTATE-FIELD via field | Physics/Particles/Particle.cs:145 | part.Pos.Frame.Origin = (lifetime * A) + parent.Origin + Offset
+MUTATE-FIELD via field | Physics/Particles/Particle.cs:150 | part.Pos.Frame.Origin += (lifetime * lifetime * B / 2.0f) + (lifetime * A) + Offset
+MUTATE-FIELD via field | Physics/Particles/Particle.cs:156 | part.Pos.Frame.Origin += (lifetime * lifetime * B / 2.0f) + (lifetime * A) + Offset
+MUTATE-FIELD via field | Physics/Particles/Particle.cs:161 | part.Pos.Frame.Origin.X = (float)Math.Cos(lifetime * B.X) + swarm.X
+MUTATE-FIELD via field | Physics/Particles/Particle.cs:162 | part.Pos.Frame.Origin.Y = (float)Math.Sin(lifetime * B.Y) + swarm.Y
+MUTATE-FIELD via field | Physics/Particles/Particle.cs:163 | part.Pos.Frame.Origin.Z = (float)Math.Cos(lifetime * B.Z) + swarm.Z
+MUTATE-FIELD via field | Physics/Particles/Particle.cs:166 | part.Pos.Frame.Origin = (lifetime * B + C * A.X) * lifetime + Offset + parent.Origin
+MUTATE-FIELD via field | Physics/Particles/Particle.cs:169 | part.Pos.Frame.Origin = ((float)Math.Cos(A.X * lifetime) * C) + (lifetime * lifetime * B) + parent.Origin + Offset
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:1404 | newPos.Frame.Origin.X += (float)ThreadSafeRandom.Next(-1.0f, 1.0f) * setPos.RadX
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:1405 | newPos.Frame.Origin.Y += (float)ThreadSafeRandom.Next(-1.0f, 1.0f) * setPos.RadY
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:1410 | newPos.Frame.Origin.X = Math.Clamp(newPos.Frame.Origin.X, 0.5f, 191.5f)
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:1411 | newPos.Frame.Origin.Y = Math.Clamp(newPos.Frame.Origin.Y, 0.5f, 191.5f)
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:1442 | newPos.Frame.Origin.Z = groundZ
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:1709 | newPos.Frame.Origin = Position.Frame.Origin
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:1720 | newPos.Frame.Origin = Position.Frame.Origin
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:320 | newPos.Frame.Origin = transition.SpherePath.CurPos.Frame.Origin
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:3899 | RequestPos.Frame.Origin = pos
+MUTATE-FIELD via field | Physics/PhysicsObj.cs:3900 | RequestPos.Frame.Orientation = rotation
+MUTATE-FIELD via field | Physics/SpherePath.cs:125 | CheckPos.Frame.Origin += offset
+MUTATE-FIELD via field | Physics/SpherePath.cs:140 | CheckPos.Frame.Origin += offset
+MUTATE-FIELD via field | Physics/Transition.cs:722 | SpherePath.CheckPos.Frame.Origin.Z -= stepDownHeight
+MUTATE-FIELD via field | WorldObjects/Creature_Missile.cs:367 | obj.PhysicsObj.Position.Frame.Origin = pos
+MUTATE-FIELD via field | WorldObjects/Creature_Missile.cs:368 | obj.PhysicsObj.Position.Frame.Orientation = rotation
+MUTATE-FIELD via field | WorldObjects/Creature_Navigation.cs:238 | PhysicsObj.Position.Frame.Orientation = Location.Rotation
+MUTATE-FIELD via field | WorldObjects/Player_Tick.cs:500 | PhysicsObj.Position.Frame.Orientation = newPosition.Rotation
+MUTATE-FIELD via field | WorldObjects/SpellProjectile.cs:882 | PhysicsObj.Position.Frame.Origin = pos
+MUTATE-FIELD via field | WorldObjects/SpellProjectile.cs:883 | PhysicsObj.Position.Frame.Orientation = rotation
+MUTATE-FIELD via field | WorldObjects/WorldObject_Magic.cs:1540 | startPos.Frame.Origin.Z += Height * startFactor
+MUTATE-FIELD via field | WorldObjects/WorldObject_Magic.cs:1545 | endPos.Frame.Origin.Z += target.Height * endFactor
+MUTATE-FIELD via field | WorldObjects/WorldObject.cs:207 | location.Frame.Origin = Location.Pos
+MUTATE-FIELD via field | WorldObjects/WorldObject.cs:208 | location.Frame.Orientation = Location.Rotation
+MUTATE-FIELD via field | WorldObjects/WorldObject.cs:321 | startPos.Frame.Origin.Z += PhysicsObj.GetHeight() - SightObj.GetHeight()
+MUTATE-FIELD via field | WorldObjects/WorldObject.cs:322 | targetPos.Frame.Origin.Z += wo.PhysicsObj.GetHeight() - SightObj.GetHeight()
+MUTATE-FIELD via field | WorldObjects/WorldObject.cs:326 | startPos.Frame.Origin += dir * radsum
+MUTATE-FIELD via field | WorldObjects/WorldObject.cs:359 | startPos.Frame.Origin.Z += PhysicsObj.GetHeight() - SightObj.GetHeight()
+MUTATE-FIELD via field | WorldObjects/WorldObject.cs:360 | targetPos.Frame.Origin.Z += SightObj.GetHeight()
+MUTATE-FIELD via field | WorldObjects/WorldObject.cs:364 | startPos.Frame.Origin += dir * radsum
+MUTATE-FIELD via field | WorldObjects/WorldObject.cs:415 | targetPos.Frame.Origin.Z += PhysicsObj.GetHeight() - proj.PhysicsObj.GetHeight()
+MUTATE-FIELD via LOCAL | Physics/Animation/AFrame.cs:46 | frame.Origin = a.Origin + Vector3.Transform(b.Origin, a.Orientation)
+MUTATE-FIELD via LOCAL | Physics/Animation/AFrame.cs:47 | frame.Orientation = Quaternion.Multiply(a.Orientation, b.Orientation)
+MUTATE-FIELD via LOCAL | Physics/Common/ObjectDesc.cs:78 | frame.Origin = loc
+MUTATE-FIELD via LOCAL | Physics/Common/ObjectDesc.cs:93 | frame.Origin = loc
+MUTATE-FIELD via LOCAL | Physics/Managers/InterpolationManager.cs:248 | offset.Origin *= (float)maxQuantum / distance
+MUTATE-FIELD via LOCAL | Physics/PhysicsObj.cs:1872 | offsetFrame.Origin *= Scale
+MUTATE-FIELD via LOCAL | Physics/PhysicsObj.cs:1874 | offsetFrame.Origin *= 0.0f
+MUTATE-FIELD via LOCAL | Physics/PhysicsObj.cs:3440 | offsetFrame.Orientation = AFrame.get_rotate_offset(offset)
+MUTATE-FIELD via PARAM(by-value) | Entity/Chess/ChessMatch.cs:565 | frame.Origin += new Vector3(coord.X - 3.5f, coord.Y - 3.5f, 0.0f)
+MUTATE-FIELD via PARAM(by-value) | Physics/Animation/Sequence.cs:228 | frame.Origin += Velocity * quantum
+MUTATE-FIELD via PARAM(by-value) | Physics/Managers/ConstraintManager.cs:71 | offset.Origin *= (ConstraintDistanceMax - ConstraintPosOffset) / (ConstraintDistanceMax - ConstraintDistanceStart)
+MUTATE-FIELD via PARAM(by-value) | Physics/Managers/ConstraintManager.cs:74 | offset.Origin = Vector3.Zero
+MUTATE-FIELD via PARAM(by-value) | Physics/Managers/StickyManager.cs:100 | offset.Origin = PhysicsObj.Position.GlobalToLocalVec(offset.Origin)
+MUTATE-FIELD via PARAM(by-value) | Physics/Managers/StickyManager.cs:101 | offset.Origin.Z = 0.0f
+MUTATE-FIELD via PARAM(by-value) | Physics/Managers/StickyManager.cs:107 | offset.Origin = Vector3.Zero
+MUTATE-FIELD via PARAM(by-value) | Physics/Managers/StickyManager.cs:121 | offset.Origin *= delta
+MUTATE-FIELD via PARAM(by-value) | Physics/Managers/StickyManager.cs:99 | offset.Origin = PhysicsObj.Position.GetOffset(targetPosition)
+MUTATE-FIELD via PARAM(by-value) | Physics/PhysicsObj.cs:3644 | frame.Orientation = new Quaternion(0, 0, 0, 0)
+MUTATE-FIELD via PARAM(Ref) | Physics/PhysicsObj.cs:1856 | frameOffset.Origin += movement
+NULL-ASSIGN LOCAL-INIT | Physics/Particles/ParticleEmitter.cs:220 | frame = null
+NULL-ASSIGN LOCAL-INIT | Physics/PhysicsObj.cs:2034 | empty = null
+NULL-CHECK | Physics/Animation/Sequence.cs:139 | offsetFrame != null
+NULL-CHECK | Physics/Animation/Sequence.cs:151 | frame != null
+NULL-CHECK | Physics/Animation/Sequence.cs:167 | frame != null
+NULL-CHECK | Physics/Animation/Sequence.cs:177 | frame != null
+NULL-CHECK | Physics/Animation/Sequence.cs:193 | frame != null
+NULL-CHECK | Physics/Animation/Sequence.cs:380 | frame != null
+NULL-CHECK | Physics/Animation/Sequence.cs:409 | frame != null
+NULL-CHECK | Physics/Animation/Sequence.cs:424 | frame != null
+RETURN-SHARED(element) | Physics/Animation/AnimSequenceNode.cs:64 | return Anim.PosFrames[frameIdx];
+RETURN-SHARED(field) | Physics/Common/Position.cs:187 | return Frame;
+RETURN-SHARED(field) | Physics/PhysicsObj.cs:2544 | return Position.Frame;

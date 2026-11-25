@@ -1,0 +1,14 @@
+AFrame is STRUCT
+new Position()                                                       21.2 ns     48.0 B/op
+new Position(Position)                                                6.3 ns     48.0 B/op
+new Transition()                                                     72.8 ns   1048.0 B/op
+Transition ctor + InitSphere(2) + InitPath                          116.0 ns   1336.0 B/op
+SpherePath.SetCheckPos                                               12.3 ns     48.0 B/op
+SpherePath.SaveCheckPos + RestoreCheckPos                            17.4 ns     96.0 B/op
+Transition.SetCurrentCheckPos                                        22.7 ns     96.0 B/op
+SpherePath.CacheLocalSpaceSphere                                     45.4 ns     48.0 B/op
+PhysicsObj.UpdateObjectInternal (bare obj)                           43.8 ns     48.0 B/op
+PhysicsObj.set_frame(Position.Frame)                                  6.6 ns      0.0 B/op
+PhysicsObj.UpdatePositionInternal                                    28.3 ns      0.0 B/op
+UpdateObjectInternal moving (Velocity 1,1,0)                         47.4 ns     48.0 B/op
+check final origin: <100, 100, 50>
