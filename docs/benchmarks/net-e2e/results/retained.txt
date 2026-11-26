@@ -1,0 +1,18 @@
+[env] .NET 10.0.15, 4 cpus, ServerGC=True, latency=Interactive, log=bridge, listeners 127.0.0.1:34316 / 127.0.0.1:34317, sessionMap[1000]
+[env] packetLog.IsEnabled(Debug)=False  log.IsEnabled(Debug)=True
+[env] Timers.PortalYearTicks=309739521  (ushort)=16384
+
+=== (c) RETAINED bytes per cached packet in the REAL cachedPackets: 10000 scenario flushes with nothing acknowledged, then every key removed with TryRemove; ===
+    retained = (GC.GetTotalMemory(true) with the packets cached) - (the same after removing them), divided by the number of cached packets.
+    This counts the ServerPacket object graph and the dictionary node, not the dictionary's bucket table (which does not shrink). COPY = docs LegacySession, same method, same messages.
+scenario                              cached pkts/flush  REAL B/cached pkt  REAL B/flush  COPY B/cached pkt  wire B/pkt (avg)  retained/wire   docs: 358-1174 B per cached packet
+1 x 60 B message                                   1.00                384           384                384                96           4.0x
+6 small (60,44,80,52,72,40)                        1.00               1152          1152               1152               464           2.5x
+ack + echo only                                    1.00                336           336                336                32          10.5x
+ack + echo + 3 small (60,48,64)                    2.00                504          1008                832               136           3.7x
+1500 B + 3 small (60,92,40)                        4.00                812          3248                812               471           1.7x
+pure ack only (2 s timer)                          0.00                336             0                n/a                24          14.0x
+
+real	0m3.426s
+user	0m1.304s
+sys	0m1.231s

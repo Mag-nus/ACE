@@ -1,0 +1,337 @@
+diff -ru a/Source/ACE.Server/Physics/Animation/AFrame.cs b/Source/ACE.Server/Physics/Animation/AFrame.cs
+--- a/Source/ACE.Server/Physics/Animation/AFrame.cs	2024-03-12 21:37:50.000000000 -0500
++++ b/Source/ACE.Server/Physics/Animation/AFrame.cs	2026-11-25 09:46:34.661808564 -0600
+@@ -110,7 +110,8 @@
+ 
+         public void GRotate(Vector3 rotation)
+         {
+-            Orientation *= Quaternion.CreateFromYawPitchRoll(rotation.X, rotation.Y, rotation.Z);
++            if (rotation != Vector3.Zero)
++                Orientation *= Quaternion.CreateFromYawPitchRoll(rotation.X, rotation.Y, rotation.Z);
+             Orientation  = Quaternion.Normalize(Orientation);
+         }
+ 
+diff -ru a/Source/ACE.Server/Physics/Common/CellArray.cs b/Source/ACE.Server/Physics/Common/CellArray.cs
+--- a/Source/ACE.Server/Physics/Common/CellArray.cs	2020-11-04 08:30:06.000000000 -0600
++++ b/Source/ACE.Server/Physics/Common/CellArray.cs	2026-11-25 09:46:34.661717326 -0600
+@@ -37,6 +37,16 @@
+             }
+         }
+ 
++        public ObjCell GetCellAt(int index)
++        {
++            foreach (var cell in Cells.Values)
++            {
++                if (index == 0) return cell;
++                index--;
++            }
++            throw new System.ArgumentOutOfRangeException(nameof(index));
++        }
++
+         public void remove_cell(ObjCell cell)
+         {
+             if (Cells.ContainsKey(cell.ID))
+diff -ru a/Source/ACE.Server/Physics/Common/LandCell.cs b/Source/ACE.Server/Physics/Common/LandCell.cs
+--- a/Source/ACE.Server/Physics/Common/LandCell.cs	2026-09-22 08:50:21.000000000 -0500
++++ b/Source/ACE.Server/Physics/Common/LandCell.cs	2026-11-25 09:46:34.661510599 -0600
+@@ -83,6 +83,8 @@
+         {
+             if (cellArray.AddedOutside) return;
+ 
++            cellArray.AddedOutside = true;
++
+             if (numSphere != 0)
+             {
+                 foreach (var sphere in spheres)
+diff -ru a/Source/ACE.Server/Physics/Common/ObjCell.cs b/Source/ACE.Server/Physics/Common/ObjCell.cs
+--- a/Source/ACE.Server/Physics/Common/ObjCell.cs	2026-11-25 02:41:50.000000000 -0600
++++ b/Source/ACE.Server/Physics/Common/ObjCell.cs	2026-11-25 09:46:34.661742335 -0600
+@@ -354,7 +354,7 @@
+             {
+                 for (var i = 0; i < cellArray.Cells.Count; i++)
+                 {
+-                    var cell = cellArray.Cells.Values.ElementAt(i);
++                    var cell = cellArray.GetCellAt(i);
+                     if (cell == null) continue;
+ 
+                     cell.find_transit_cells(position, numSphere, sphere, cellArray, path);
+diff -ru a/Source/ACE.Server/Physics/Common/Position.cs b/Source/ACE.Server/Physics/Common/Position.cs
+--- a/Source/ACE.Server/Physics/Common/Position.cs	2026-09-22 08:52:25.000000000 -0500
++++ b/Source/ACE.Server/Physics/Common/Position.cs	2026-11-25 09:46:34.661852393 -0600
+@@ -61,6 +61,13 @@
+             Frame = new AFrame();
+         }
+ 
++        public void CopyFrom(Position p)
++        {
++            ObjCellID = p.ObjCellID;
++            Frame.Origin = p.Frame.Origin;
++            Frame.Orientation = p.Frame.Orientation;
++        }
++
+         public Vector3 LocalToLocal(Position pos, Vector3 offset)
+         {
+             var cellOffset = pos.Frame.LocalToGlobal(offset);
+diff -ru a/Source/ACE.Server/Physics/CylSphere.cs b/Source/ACE.Server/Physics/CylSphere.cs
+--- a/Source/ACE.Server/Physics/CylSphere.cs	2026-09-22 08:50:21.000000000 -0500
++++ b/Source/ACE.Server/Physics/CylSphere.cs	2026-11-25 09:46:34.661831674 -0600
+@@ -345,7 +345,9 @@
+         {
+             var path = transition.SpherePath;
+ 
+-            path.CacheLocalSpaceSphere(pos, 1.0f);
++            path.LocalSpacePos.ObjCellID = pos.ObjCellID;
++            path.LocalSpacePos.Frame.Origin = pos.Frame.Origin;
++            path.LocalSpacePos.Frame.Orientation = pos.Frame.Orientation;
+             var global_cylsphere = new CylSphere(LowPoint, Height, Radius, scale);
+             global_cylsphere.LowPoint = path.CheckPos.LocalToGlobal(pos, global_cylsphere.LowPoint);
+ 
+diff -ru a/Source/ACE.Server/Physics/PhysicsObj.cs b/Source/ACE.Server/Physics/PhysicsObj.cs
+--- a/Source/ACE.Server/Physics/PhysicsObj.cs	2026-11-25 02:42:12.000000000 -0600
++++ b/Source/ACE.Server/Physics/PhysicsObj.cs	2026-11-25 09:46:34.661658767 -0600
+@@ -1653,6 +1653,9 @@
+ 
+         public int InitialUpdates;
+ 
++        private Position scratchNewPos;
++        private AFrame scratchOffsetFrame;
++
+         public void UpdateObjectInternal(double quantum)
+         {
+             if ((TransientState & TransientStateFlags.Active) == 0 || CurCell == null)
+@@ -1662,7 +1665,8 @@
+                 set_ethereal(false, false);
+ 
+             JumpedThisFrame = false;
+-            var newPos = new Position(Position.ObjCellID);
++            var newPos = scratchNewPos ??= new Position();
++            newPos.ObjCellID = Position.ObjCellID;
+             UpdatePositionInternal(quantum, ref newPos.Frame);
+ 
+             if (PartArray != null && PartArray.GetNumSphere() != 0)
+@@ -1707,7 +1711,7 @@
+                             log.LogWarning("{Name} ({ID:X8}).UpdateObjectInternal({Quantum}) - avoided CurCell=null from {Position} to {NewPos}", Name, ID, quantum, Position, newPos);
+ 
+                         newPos.Frame.Origin = Position.Frame.Origin;
+-                        set_initial_frame(newPos.Frame);
++                        set_initial_frame(newPos.Frame);    // set_initial_frame copies (below)
+                         CachedVelocity = Vector3.Zero;
+                     }
+                 }
+@@ -1862,7 +1866,9 @@
+ 
+         public void UpdatePositionInternal(double quantum, ref AFrame newFrame)
+         {
+-            var offsetFrame = new AFrame();
++            var offsetFrame = scratchOffsetFrame ??= new AFrame();
++            offsetFrame.Origin = Vector3.Zero;
++            offsetFrame.Orientation = Quaternion.Identity;
+ 
+             if (!State.HasFlag(PhysicsState.Hidden))
+             {
+@@ -1876,7 +1882,12 @@
+             if (PositionManager != null)
+                 PositionManager.AdjustOffset(offsetFrame, quantum);
+ 
+-            newFrame = AFrame.Combine(Position.Frame, offsetFrame);
++            {
++                var combinedOrigin = Position.Frame.Origin + Vector3.Transform(offsetFrame.Origin, Position.Frame.Orientation);
++                var combinedOrientation = Quaternion.Multiply(Position.Frame.Orientation, offsetFrame.Orientation);
++                newFrame.Origin = combinedOrigin;
++                newFrame.Orientation = combinedOrientation;
++            }
+ 
+             if (!State.HasFlag(PhysicsState.Hidden))
+                 UpdatePhysicsInternal((float)quantum, ref newFrame);
+@@ -1948,7 +1959,7 @@
+         {
+             enter_cell(newCell);
+ 
+-            Position.Frame = newFrame;
++            Position.Frame = new AFrame(newFrame);
+             if (PartArray != null && !State.HasFlag(PhysicsState.ParticleEmitter))
+                 PartArray.SetFrame(Position.Frame);
+ 
+@@ -2495,7 +2506,7 @@
+             for (var i = 0; i < cellArray.Cells.Count; i++)
+             //foreach (var cell in checkCells)
+             {
+-                var cell = cellArray.Cells.Values.ElementAt(i);
++                var cell = cellArray.GetCellAt(i);
+                 if (cell == null) continue;
+ 
+                 PartArray.calc_cross_cells_static(cell, cellArray);
+@@ -3288,7 +3299,7 @@
+ 
+         public void report_collision_end(bool forceEnd)
+         {
+-            if (CollisionTable == null) return;
++            if (CollisionTable == null || CollisionTable.Count == 0) return;
+ 
+             var ends = new List<uint>();
+ 
+@@ -3474,7 +3485,8 @@
+         public void set_current_pos(Position newPos)
+         {
+             Position.ObjCellID = newPos.ObjCellID;
+-            Position.Frame = new AFrame(newPos.Frame);
++            Position.Frame.Origin = newPos.Frame.Origin;
++            Position.Frame.Orientation = newPos.Frame.Orientation;
+ 
+             if (CurCell == null || CurCell.ID != Position.ObjCellID)
+             {
+@@ -3643,9 +3655,8 @@
+             if (!frame.IsValid() && frame.IsValidExceptForHeading())
+                 frame.Orientation = new Quaternion(0, 0, 0, 0);
+ 
+-            Position.Frame = new AFrame(frame);
+-            //Position.Frame.Origin = frame.Origin;
+-            //Position.Frame.Orientation = frame.Orientation;
++            Position.Frame.Origin = frame.Origin;
++            Position.Frame.Orientation = frame.Orientation;
+ 
+             // custom for server:
+             // only update part frames for objects with physics bsp
+@@ -3748,7 +3759,7 @@
+         /// </summary>
+         public void set_initial_frame(AFrame frame)
+         {
+-            Position.Frame = frame;
++            Position.Frame = new AFrame(frame);
+ 
+             if (PartArray != null && !State.HasFlag(PhysicsState.ParticleEmitter))
+                 PartArray.SetFrame(frame);
+diff -ru a/Source/ACE.Server/Physics/SpherePath.cs b/Source/ACE.Server/Physics/SpherePath.cs
+--- a/Source/ACE.Server/Physics/SpherePath.cs	2024-03-12 21:37:50.000000000 -0500
++++ b/Source/ACE.Server/Physics/SpherePath.cs	2026-11-25 09:46:34.661871673 -0600
+@@ -256,7 +256,10 @@
+ 
+         public void RestoreCheckPos()
+         {
+-            CheckPos = new Position(BackupCheckPos);
++            if (ReferenceEquals(CheckPos, CurPos) || ReferenceEquals(CheckPos, BackupCheckPos))
++                CheckPos = new Position(BackupCheckPos);
++            else
++                CheckPos.CopyFrom(BackupCheckPos);
+             CheckCell = BackupCell;
+             CellArrayValid = false;
+             CacheGlobalSphere(null);
+@@ -265,12 +268,15 @@
+         public void SaveCheckPos()
+         {
+             BackupCell = CheckCell;
+-            BackupCheckPos = new Position(CheckPos);
++            BackupCheckPos.CopyFrom(CheckPos);
+         }
+ 
+         public void SetCheckPos(Position position, ObjCell cell)
+         {
+-            CheckPos = new Position(position);
++            if (ReferenceEquals(CheckPos, CurPos) || ReferenceEquals(CheckPos, position))
++                CheckPos = new Position(position);
++            else
++                CheckPos.CopyFrom(position);
+             CheckCell = cell;
+             CellArrayValid = false;
+             CacheGlobalSphere(null);
+@@ -280,7 +286,7 @@
+         {
+             Collide = true;
+             BackupCell = CheckCell;
+-            BackupCheckPos = new Position(CheckPos);
++            BackupCheckPos.CopyFrom(CheckPos);
+             StepUpNormal = new Vector3(collisionNormal.X, collisionNormal.Y, collisionNormal.Z);
+             WalkInterp = 1.0f;
+         }
+diff -ru a/Source/ACE.Server/Physics/Transition.cs b/Source/ACE.Server/Physics/Transition.cs
+--- a/Source/ACE.Server/Physics/Transition.cs	2026-09-22 08:52:25.000000000 -0500
++++ b/Source/ACE.Server/Physics/Transition.cs	2026-11-25 09:46:34.661783175 -0600
+@@ -160,7 +160,7 @@
+ 
+             for (var i = 0; i < CellArray.Cells.Count; i++)
+             {
+-                var cell = CellArray.Cells.Values.ElementAt(i);
++                var cell = CellArray.GetCellAt(i);
+                 if (cell == null || cell.Equals(currCell)) continue;
+ 
+                 var collides = cell.FindCollisions(this);
+@@ -208,7 +208,7 @@
+             if (!ObjectInfo.State.HasFlag(ObjectInfoState.OnWalkable) || SpherePath.CheckWalkables())
+                 return true;
+ 
+-            SpherePath.BackupCheckPos = new Position(SpherePath.CheckPos);
++            SpherePath.BackupCheckPos.CopyFrom(SpherePath.CheckPos);
+             SpherePath.BackupCell = SpherePath.CheckCell;
+ 
+             var stepHeight = ObjectInfo.StepDownHeight;
+@@ -687,9 +687,48 @@
+         /// Initializes a new default transition
+         /// </summary>
+         /// <returns></returns>
++        [System.ThreadStatic] private static Transition pooledTransition;
++
+         public static Transition MakeTransition()
+         {
+-            return new Transition();
++            var t = pooledTransition;
++            if (t == null)
++                return pooledTransition = new Transition();
++            t.Reset();
++            return t;
++        }
++
++        private static void ResetPos(Position p) { p.ObjCellID = 0; p.Frame.Origin = Vector3.Zero; p.Frame.Orientation = Quaternion.Identity; }
++
++        // verbatim from docs/benchmarks/physics-core/Bench/TransitionPoolProto.cs
++        public void Reset()
++        {
++            var t = this;
++            var oi = t.ObjectInfo;
++            oi.Object = null; oi.State = 0; oi.Scale = 0; oi.StepUpHeight = 0; oi.StepDownHeight = 0;
++            oi.Ethereal = false; oi.StepDown = false; oi.TargetID = 0;
++
++            var ci = t.CollisionInfo;
++            ci.LastKnownContactPlaneValid = false; ci.LastKnownContactPlane = default; ci.LastKnownContactPlaneIsWater = false;
++            ci.ContactPlaneValid = false; ci.ContactPlane = default; ci.ContactPlaneCellID = 0; ci.LastKnownContactPlaneCellID = 0;
++            ci.ContactPlaneIsWater = false; ci.SlidingNormalValid = false; ci.SlidingNormal = default; ci.CollisionNormalValid = false;
++            ci.CollisionNormal = default; ci.AdjustOffset = default; ci.NumCollideObject = 0; ci.CollideObject.Clear();
++            ci.LastCollidedObject = null; ci.CollidedWithEnvironment = false; ci.FramesStationaryFall = 0; ci.VerifiedRestrictions = false;
++
++            var ca = t.CellArray;
++            ca.AddedOutside = false; ca.LoadCells = false; ca.Cells.Clear(); ca.NumCells = 0;
++
++            var sp = t.SpherePath;
++            sp.NumSphere = 0; sp.LocalSphere.Clear(); sp.LocalLowPoint = default; sp.GlobalSphere.Clear(); sp.GlobalLowPoint = default;
++            sp.LocalSpaceSphere.Clear(); sp.LocalSpaceLowPoint = default; sp.LocalSpaceCurrCenter.Clear(); sp.GlobalCurrCenter.Clear();
++            ResetPos(sp.LocalSpacePos); sp.LocalSpaceZ = default; sp.BeginCell = null; sp.BeginPos = null; sp.EndPos = null; sp.CurCell = null;
++            sp.CurPos = new Position(); sp.CheckPos = new Position(); sp.BackupCheckPos = new Position();
++            sp.GlobalOffset = default; sp.StepUp = false; sp.StepUpNormal = default; sp.Collide = false; sp.CheckCell = null;
++            sp.InsertType = 0; sp.StepDown = false; sp.Backup = 0; sp.BackupCell = null; sp.ObstructionEthereal = false;
++            sp.HitsInteriorCell = false; sp.BuildingCheck = false; sp.WalkableAllowance = 0; sp.WalkInterp = 0; sp.StepDownAmt = 0;
++            sp.WalkableCheckPos = new Sphere(); sp.Walkable = null; sp.CheckWalkable = false; sp.WalkableUp = default; sp.WalkablePos = null;
++            sp.WalkableScale = 0; sp.CellArrayValid = false; sp.NegStepUp = false; sp.NegCollisionNormal = default; sp.NegPolyHit = false;
++            sp.PlacementAllowsSliding = true;
+         }
+ 
+         public TransitionState PlacementInsert()
+@@ -761,7 +800,7 @@
+ 
+             SpherePath.WalkableAllowance = zLandingValue;
+             SpherePath.BackupCell = SpherePath.CheckCell;
+-            SpherePath.BackupCheckPos = new Position(SpherePath.CheckPos);
++            SpherePath.BackupCheckPos.CopyFrom(SpherePath.CheckPos);
+ 
+             var stepDown = StepDown(stepDownHeight, zLandingValue);
+ 
+@@ -1081,7 +1120,10 @@
+ 
+         public void SetCurrentCheckPos()
+         {
+-            SpherePath.CurPos = new Position(SpherePath.CheckPos);
++            if (ReferenceEquals(SpherePath.CurPos, SpherePath.CheckPos))
++                SpherePath.CurPos = new Position(SpherePath.CheckPos);
++            else
++                SpherePath.CurPos.CopyFrom(SpherePath.CheckPos);
+             SpherePath.CurCell = SpherePath.CheckCell;
+             SpherePath.CacheGlobalCurrCenter();
+ 

@@ -1,0 +1,731 @@
+a: a  creature, flat, inside one cell   [base]   4000 updates, dt 0.2000
+   calls per update_object                                         all   same/1c
+   (number of updates in class)                                   4000      4000
+   PhysicsObj.update_object                                       1.00      1.00
+   PhysicsObj.UpdateObjectInternal                                2.00      2.00
+   PhysicsObj.transition                                          2.00      2.00
+   PhysicsObj.SetPositionInternal(Transition)                     2.00      2.00
+   PhysicsObj.set_frame                                           2.00      2.00
+   PhysicsObj.handle_all_collisions                               2.00      2.00
+   PhysicsObj.report_collision_end                                2.00      2.00
+   PhysicsObj.remove_shadows_from_cells                           2.00      2.00
+   PhysicsObj.add_shadows_to_cell(CellArray)                      2.00      2.00
+   PhysicsObj.get_object_info                                     2.00      2.00
+   PhysicsObj.UpdatePositionInternal                              2.00      2.00
+   Transition..ctor                                               2.00      2.00
+   Transition.FindTransitionalPosition                            2.00      2.00
+   Transition.TransitionalInsert                                  2.00      2.00
+   Transition.InsertIntoCell                                      2.00      2.00
+   Transition.CheckOtherCells                                     2.00      2.00
+   Transition.ValidateTransition                                  2.00      2.00
+   Transition.SetCurrentCheckPos                                  2.00      2.00
+   Transition.AdjustOffset                                        2.00      2.00
+   SpherePath.SetCheckPos                                         4.00      4.00
+   SpherePath.CacheGlobalSphere                                   8.00      8.00
+   SpherePath.AddOffsetToCheckPos(Vector3)                        2.00      2.00
+   ObjCell.find_cell_list(Position,int,List<Sphere>,...)          2.00      2.00
+   ObjCell.FindObjCollisions                                      2.00      2.00
+   LandCell.FindEnvCollisions                                     2.00      2.00
+   LandCell.find_transit_cells(sphere)                            2.00      2.00
+   LandCell.add_all_outside_cells(sphere)                         4.00      4.00
+   LandCell.add_outside_cell(x,y)                                 8.00      8.00
+   LScape.get_landcell                                           10.00     10.00
+   LScape.get_landblock                                          10.00     10.00
+   LandblockManager.GetLandblock (P.1 lock)                      10.00     10.00
+   Sequence.apply_physics                                         2.00      2.00
+   MoveToManager.UseTime                                          2.00      2.00
+   new Position (any ctor)                                       18.00     18.00
+   new AFrame (any ctor)                                         24.00     24.00
+   new Sphere (any ctor)                                         16.00     16.00
+   new ShadowObj                                                  2.00      2.00
+   new CellArray                                                  2.00      2.00
+   new SpherePath                                                 2.00      2.00
+   new ObjectInfo                                                 4.00      4.00
+   new CollisionInfo                                              2.00      2.00
+
+a-edge: a2 creature, flat, along a cell edge (2 cells)   [base]   4000 updates, dt 0.2000
+   calls per update_object                                         all   same/2c
+   (number of updates in class)                                   4000      4000
+   PhysicsObj.update_object                                       1.00      1.00
+   PhysicsObj.UpdateObjectInternal                                2.00      2.00
+   PhysicsObj.transition                                          2.00      2.00
+   PhysicsObj.SetPositionInternal(Transition)                     2.00      2.00
+   PhysicsObj.set_frame                                           2.00      2.00
+   PhysicsObj.handle_all_collisions                               2.00      2.00
+   PhysicsObj.report_collision_end                                2.00      2.00
+   PhysicsObj.remove_shadows_from_cells                           2.00      2.00
+   PhysicsObj.add_shadows_to_cell(CellArray)                      2.00      2.00
+   PhysicsObj.get_object_info                                     2.00      2.00
+   PhysicsObj.UpdatePositionInternal                              2.00      2.00
+   Transition..ctor                                               2.00      2.00
+   Transition.FindTransitionalPosition                            2.00      2.00
+   Transition.TransitionalInsert                                  2.00      2.00
+   Transition.InsertIntoCell                                      2.00      2.00
+   Transition.CheckOtherCells                                     2.00      2.00
+   Transition.ValidateTransition                                  2.00      2.00
+   Transition.SetCurrentCheckPos                                  2.00      2.00
+   Transition.AdjustOffset                                        2.00      2.00
+   SpherePath.SetCheckPos                                         4.00      4.00
+   SpherePath.CacheGlobalSphere                                   8.00      8.00
+   SpherePath.AddOffsetToCheckPos(Vector3)                        2.00      2.00
+   ObjCell.find_cell_list(Position,int,List<Sphere>,...)          2.00      2.00
+   ObjCell.FindObjCollisions                                      4.00      4.00
+   LandCell.FindEnvCollisions                                     4.00      4.00
+   LandCell.find_transit_cells(sphere)                            4.00      4.00
+   LandCell.add_all_outside_cells(sphere)                         6.00      6.00
+   LandCell.add_outside_cell(x,y)                                24.00     24.00
+   LScape.get_landcell                                           26.00     26.00
+   LScape.get_landblock                                          26.00     26.00
+   LandblockManager.GetLandblock (P.1 lock)                      26.00     26.00
+   Sequence.apply_physics                                         2.00      2.00
+   MoveToManager.UseTime                                          2.00      2.00
+   new Position (any ctor)                                       18.00     18.00
+   new AFrame (any ctor)                                         24.00     24.00
+   new Sphere (any ctor)                                         16.00     16.00
+   new ShadowObj                                                  4.00      4.00
+   new CellArray                                                  2.00      2.00
+   new SpherePath                                                 2.00      2.00
+   new ObjectInfo                                                 4.00      4.00
+   new CollisionInfo                                              2.00      2.00
+
+b: b  creature, flat, crossing a cell boundary   [base]   4000 updates, dt 0.2000
+   calls per update_object                                         all   same/1c   same/2c   cell/1c   cell/2c
+   (number of updates in class)                                   4000      3625       125       125       125
+   PhysicsObj.update_object                                       1.00      1.00      1.00      1.00      1.00
+   PhysicsObj.UpdateObjectInternal                                2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.transition                                          2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.SetPositionInternal(Transition)                     2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.set_frame                                           2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.change_cell                                         0.06      0.00      0.00      1.00      1.00
+   PhysicsObj.handle_all_collisions                               2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.report_collision_end                                2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.remove_shadows_from_cells                           2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.add_shadows_to_cell(CellArray)                      2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.get_object_info                                     2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.handle_visible_cells_non_player                     0.06      0.00      0.00      1.00      1.00
+   PhysicsObj.UpdatePositionInternal                              2.00      2.00      2.00      2.00      2.00
+   Transition..ctor                                               2.00      2.00      2.00      2.00      2.00
+   Transition.FindTransitionalPosition                            2.00      2.00      2.00      2.00      2.00
+   Transition.TransitionalInsert                                  2.00      2.00      2.00      2.00      2.00
+   Transition.InsertIntoCell                                      2.00      2.00      2.00      2.00      2.00
+   Transition.CheckOtherCells                                     2.00      2.00      2.00      2.00      2.00
+   Transition.ValidateTransition                                  2.00      2.00      2.00      2.00      2.00
+   Transition.SetCurrentCheckPos                                  2.00      2.00      2.00      2.00      2.00
+   Transition.AdjustOffset                                        2.00      2.00      2.00      2.00      2.00
+   SpherePath.SetCheckPos                                         4.00      4.00      4.00      4.00      4.00
+   SpherePath.CacheGlobalSphere                                   8.00      8.00      8.00      8.00      8.00
+   SpherePath.AddOffsetToCheckPos(Vector3)                        2.00      2.00      2.00      2.00      2.00
+   ObjCell.find_cell_list(Position,int,List<Sphere>,...)          2.00      2.00      2.00      2.00      2.00
+   ObjCell.FindObjCollisions                                      2.12      2.00      3.00      3.00      4.00
+   LandCell.FindEnvCollisions                                     2.12      2.00      3.00      3.00      4.00
+   LandCell.find_transit_cells(sphere)                            2.12      2.00      3.00      3.00      4.00
+   LandCell.add_all_outside_cells(sphere)                         4.12      4.00      5.00      5.00      6.00
+   LandCell.add_outside_cell(x,y)                                 9.00      8.00     16.00     16.00     24.00
+   LScape.get_landcell                                           11.00     10.00     18.00     18.00     26.00
+   LScape.get_landblock                                          11.06     10.00     18.00     19.00     27.00
+   LandblockManager.GetLandblock (P.1 lock)                      11.06     10.00     18.00     19.00     27.00
+   ObjectMaint.GetVisibleObjects(cell,type)                       0.06      0.00      0.00      1.00      1.00
+   Landblock.GetServerObjects                                     0.06      0.00      0.00      1.00      1.00
+   Sequence.apply_physics                                         2.00      2.00      2.00      2.00      2.00
+   MoveToManager.UseTime                                          2.00      2.00      2.00      2.00      2.00
+   new Position (any ctor)                                       18.00     18.00     18.00     18.00     18.00
+   new AFrame (any ctor)                                         24.00     24.00     24.00     24.00     24.00
+   new Sphere (any ctor)                                         16.00     16.00     16.00     16.00     16.00
+   new ShadowObj                                                  2.12      2.00      3.00      3.00      4.00
+   new CellArray                                                  2.00      2.00      2.00      2.00      2.00
+   new SpherePath                                                 2.00      2.00      2.00      2.00      2.00
+   new ObjectInfo                                                 4.00      4.00      4.00      4.00      4.00
+   new CollisionInfo                                              2.00      2.00      2.00      2.00      2.00
+
+b-diag: b2 creature, flat, diagonal through a cell corner   [base]   4000 updates, dt 0.2000
+   calls per update_object                                         all   same/1c   same/4c   cell/4c
+   (number of updates in class)                                   4000      3500       250       250
+   PhysicsObj.update_object                                       1.00      1.00      1.00      1.00
+   PhysicsObj.UpdateObjectInternal                                2.00      2.00      2.00      2.00
+   PhysicsObj.transition                                          2.00      2.00      2.00      2.00
+   PhysicsObj.SetPositionInternal(Transition)                     2.00      2.00      2.00      2.00
+   PhysicsObj.set_frame                                           2.00      2.00      2.00      2.00
+   PhysicsObj.change_cell                                         0.06      0.00      0.00      1.00
+   PhysicsObj.handle_all_collisions                               2.00      2.00      2.00      2.00
+   PhysicsObj.report_collision_end                                2.00      2.00      2.00      2.00
+   PhysicsObj.remove_shadows_from_cells                           2.00      2.00      2.00      2.00
+   PhysicsObj.add_shadows_to_cell(CellArray)                      2.00      2.00      2.00      2.00
+   PhysicsObj.get_object_info                                     2.00      2.00      2.00      2.00
+   PhysicsObj.handle_visible_cells_non_player                     0.06      0.00      0.00      1.00
+   PhysicsObj.UpdatePositionInternal                              2.00      2.00      2.00      2.00
+   Transition..ctor                                               2.00      2.00      2.00      2.00
+   Transition.FindTransitionalPosition                            2.00      2.00      2.00      2.00
+   Transition.TransitionalInsert                                  2.00      2.00      2.00      2.00
+   Transition.InsertIntoCell                                      2.00      2.00      2.00      2.00
+   Transition.CheckOtherCells                                     2.00      2.00      2.00      2.00
+   Transition.ValidateTransition                                  2.00      2.00      2.00      2.00
+   Transition.SetCurrentCheckPos                                  2.00      2.00      2.00      2.00
+   Transition.AdjustOffset                                        2.00      2.00      2.00      2.00
+   SpherePath.SetCheckPos                                         4.00      4.00      4.00      4.00
+   SpherePath.CacheGlobalSphere                                   8.00      8.00      8.00      8.00
+   SpherePath.AddOffsetToCheckPos(Vector3)                        2.00      2.00      2.00      2.00
+   ObjCell.find_cell_list(Position,int,List<Sphere>,...)          2.00      2.00      2.00      2.00
+   ObjCell.FindObjCollisions                                      2.75      2.11      6.50      8.00
+   LandCell.FindEnvCollisions                                     2.75      2.11      6.50      8.00
+   LandCell.find_transit_cells(sphere)                            2.75      2.11      6.50      8.00
+   LandCell.add_all_outside_cells(sphere)                         4.75      4.11      8.50     10.00
+   LandCell.add_outside_cell(x,y)                                17.00      9.29     62.00     80.00
+   LScape.get_landcell                                           19.00     11.29     64.00     82.00
+   LScape.get_landblock                                          19.06     11.29     64.00     83.00
+   LandblockManager.GetLandblock (P.1 lock)                      19.06     11.29     64.00     83.00
+   ObjectMaint.GetVisibleObjects(cell,type)                       0.06      0.00      0.00      1.00
+   Landblock.GetServerObjects                                     0.06      0.00      0.00      1.00
+   Sequence.apply_physics                                         2.00      2.00      2.00      2.00
+   MoveToManager.UseTime                                          2.00      2.00      2.00      2.00
+   new Position (any ctor)                                       18.00     18.00     18.00     18.00
+   new AFrame (any ctor)                                         24.00     24.00     24.00     24.00
+   new Sphere (any ctor)                                         16.00     16.00     16.00     16.00
+   new ShadowObj                                                  2.75      2.11      6.50      8.00
+   new CellArray                                                  2.00      2.00      2.00      2.00
+   new SpherePath                                                 2.00      2.00      2.00      2.00
+   new ObjectInfo                                                 4.00      4.00      4.00      4.00
+   new CollisionInfo                                              2.00      2.00      2.00      2.00
+
+c: c  creature, flat, crossing a landblock boundary   [base]   4000 updates, dt 0.2000
+   calls per update_object                                         all   same/1c   same/2c  block/1c  block/2c
+   (number of updates in class)                                   4000      3625       125       125       125
+   PhysicsObj.update_object                                       1.00      1.00      1.00      1.00      1.00
+   PhysicsObj.UpdateObjectInternal                                2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.transition                                          2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.SetPositionInternal(Transition)                     2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.set_frame                                           2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.change_cell                                         0.06      0.00      0.00      1.00      1.00
+   PhysicsObj.handle_all_collisions                               2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.report_collision_end                                2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.remove_shadows_from_cells                           2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.add_shadows_to_cell(CellArray)                      2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.get_object_info                                     2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.handle_visible_cells_non_player                     0.06      0.00      0.00      1.00      1.00
+   PhysicsObj.UpdatePositionInternal                              2.00      2.00      2.00      2.00      2.00
+   Transition..ctor                                               2.00      2.00      2.00      2.00      2.00
+   Transition.FindTransitionalPosition                            2.00      2.00      2.00      2.00      2.00
+   Transition.TransitionalInsert                                  2.00      2.00      2.00      2.00      2.00
+   Transition.InsertIntoCell                                      2.00      2.00      2.00      2.00      2.00
+   Transition.CheckOtherCells                                     2.00      2.00      2.00      2.00      2.00
+   Transition.ValidateTransition                                  2.00      2.00      2.00      2.00      2.00
+   Transition.SetCurrentCheckPos                                  2.00      2.00      2.00      2.00      2.00
+   Transition.AdjustOffset                                        2.00      2.00      2.00      2.00      2.00
+   SpherePath.SetCheckPos                                         4.00      4.00      4.00      4.00      4.00
+   SpherePath.CacheGlobalSphere                                   8.00      8.00      8.00      8.00      8.00
+   SpherePath.AddOffsetToCheckPos(Vector3)                        2.00      2.00      2.00      2.00      2.00
+   ObjCell.find_cell_list(Position,int,List<Sphere>,...)          2.00      2.00      2.00      2.00      2.00
+   ObjCell.FindObjCollisions                                      2.12      2.00      3.00      3.00      4.00
+   LandCell.FindEnvCollisions                                     2.12      2.00      3.00      3.00      4.00
+   LandCell.find_transit_cells(sphere)                            2.12      2.00      3.00      3.00      4.00
+   LandCell.add_all_outside_cells(sphere)                         4.12      4.00      5.00      5.00      6.00
+   LandCell.add_outside_cell(x,y)                                 9.00      8.00     16.00     16.00     24.00
+   LScape.get_landcell                                           11.00     10.00     18.00     18.00     26.00
+   LScape.get_landblock                                          11.06     10.00     18.00     19.00     27.00
+   LandblockManager.GetLandblock (P.1 lock)                      11.06     10.00     18.00     19.00     27.00
+   ObjectMaint.GetVisibleObjects(cell,type)                       0.06      0.00      0.00      1.00      1.00
+   Landblock.GetServerObjects                                     0.06      0.00      0.00      1.00      1.00
+   Sequence.apply_physics                                         2.00      2.00      2.00      2.00      2.00
+   MoveToManager.UseTime                                          2.00      2.00      2.00      2.00      2.00
+   new Position (any ctor)                                       18.00     18.00     18.00     18.00     18.00
+   new AFrame (any ctor)                                         24.00     24.00     24.00     24.00     24.00
+   new Sphere (any ctor)                                         16.00     16.00     16.00     16.00     16.00
+   new ShadowObj                                                  2.12      2.00      3.00      3.00      4.00
+   new CellArray                                                  2.00      2.00      2.00      2.00      2.00
+   new SpherePath                                                 2.00      2.00      2.00      2.00      2.00
+   new ObjectInfo                                                 4.00      4.00      4.00      4.00      4.00
+   new CollisionInfo                                              2.00      2.00      2.00      2.00      2.00
+
+c-diag: c2 creature, flat, diagonal through a landblock corner   [base]   4000 updates, dt 0.2000
+   calls per update_object                                         all   same/1c   same/4c  block/4c
+   (number of updates in class)                                   4000      3500       250       250
+   PhysicsObj.update_object                                       1.00      1.00      1.00      1.00
+   PhysicsObj.UpdateObjectInternal                                2.00      2.00      2.00      2.00
+   PhysicsObj.transition                                          2.00      2.00      2.00      2.00
+   PhysicsObj.SetPositionInternal(Transition)                     2.00      2.00      2.00      2.00
+   PhysicsObj.set_frame                                           2.00      2.00      2.00      2.00
+   PhysicsObj.change_cell                                         0.06      0.00      0.00      1.00
+   PhysicsObj.handle_all_collisions                               2.00      2.00      2.00      2.00
+   PhysicsObj.report_collision_end                                2.00      2.00      2.00      2.00
+   PhysicsObj.remove_shadows_from_cells                           2.00      2.00      2.00      2.00
+   PhysicsObj.add_shadows_to_cell(CellArray)                      2.00      2.00      2.00      2.00
+   PhysicsObj.get_object_info                                     2.00      2.00      2.00      2.00
+   PhysicsObj.handle_visible_cells_non_player                     0.06      0.00      0.00      1.00
+   PhysicsObj.UpdatePositionInternal                              2.00      2.00      2.00      2.00
+   Transition..ctor                                               2.00      2.00      2.00      2.00
+   Transition.FindTransitionalPosition                            2.00      2.00      2.00      2.00
+   Transition.TransitionalInsert                                  2.00      2.00      2.00      2.00
+   Transition.InsertIntoCell                                      2.00      2.00      2.00      2.00
+   Transition.CheckOtherCells                                     2.00      2.00      2.00      2.00
+   Transition.ValidateTransition                                  2.00      2.00      2.00      2.00
+   Transition.SetCurrentCheckPos                                  2.00      2.00      2.00      2.00
+   Transition.AdjustOffset                                        2.00      2.00      2.00      2.00
+   SpherePath.SetCheckPos                                         4.00      4.00      4.00      4.00
+   SpherePath.CacheGlobalSphere                                   8.00      8.00      8.00      8.00
+   SpherePath.AddOffsetToCheckPos(Vector3)                        2.00      2.00      2.00      2.00
+   ObjCell.find_cell_list(Position,int,List<Sphere>,...)          2.00      2.00      2.00      2.00
+   ObjCell.FindObjCollisions                                      2.75      2.11      6.50      8.00
+   LandCell.FindEnvCollisions                                     2.75      2.11      6.50      8.00
+   LandCell.find_transit_cells(sphere)                            2.75      2.11      6.50      8.00
+   LandCell.add_all_outside_cells(sphere)                         4.75      4.11      8.50     10.00
+   LandCell.add_outside_cell(x,y)                                17.00      9.29     62.00     80.00
+   LScape.get_landcell                                           19.00     11.29     64.00     82.00
+   LScape.get_landblock                                          19.06     11.29     64.00     83.00
+   LandblockManager.GetLandblock (P.1 lock)                      19.06     11.29     64.00     83.00
+   ObjectMaint.GetVisibleObjects(cell,type)                       0.06      0.00      0.00      1.00
+   Landblock.GetServerObjects                                     0.06      0.00      0.00      1.00
+   Sequence.apply_physics                                         2.00      2.00      2.00      2.00
+   MoveToManager.UseTime                                          2.00      2.00      2.00      2.00
+   new Position (any ctor)                                       18.00     18.00     18.00     18.00
+   new AFrame (any ctor)                                         24.00     24.00     24.00     24.00
+   new Sphere (any ctor)                                         16.00     16.00     16.00     16.00
+   new ShadowObj                                                  2.75      2.11      6.50      8.00
+   new CellArray                                                  2.00      2.00      2.00      2.00
+   new SpherePath                                                 2.00      2.00      2.00      2.00
+   new ObjectInfo                                                 4.00      4.00      4.00      4.00
+   new CollisionInfo                                              2.00      2.00      2.00      2.00
+
+d: d  creature, 9.5 deg slope, inside one cell   [base]   4000 updates, dt 0.2000
+   calls per update_object                                         all   same/1c
+   (number of updates in class)                                   4000      4000
+   PhysicsObj.update_object                                       1.00      1.00
+   PhysicsObj.UpdateObjectInternal                                2.00      2.00
+   PhysicsObj.transition                                          2.00      2.00
+   PhysicsObj.SetPositionInternal(Transition)                     2.00      2.00
+   PhysicsObj.set_frame                                           2.00      2.00
+   PhysicsObj.handle_all_collisions                               2.00      2.00
+   PhysicsObj.report_collision_end                                2.00      2.00
+   PhysicsObj.remove_shadows_from_cells                           2.00      2.00
+   PhysicsObj.add_shadows_to_cell(CellArray)                      2.00      2.00
+   PhysicsObj.get_object_info                                     2.00      2.00
+   PhysicsObj.UpdatePositionInternal                              2.00      2.00
+   Transition..ctor                                               2.00      2.00
+   Transition.FindTransitionalPosition                            2.00      2.00
+   Transition.TransitionalInsert                                  6.00      6.00
+   Transition.InsertIntoCell                                      6.00      6.00
+   Transition.CheckOtherCells                                     6.00      6.00
+   Transition.ValidateTransition                                  2.00      2.00
+   Transition.SetCurrentCheckPos                                  2.00      2.00
+   Transition.StepDown                                            2.00      2.00
+   Transition.AdjustOffset                                        2.00      2.00
+   SpherePath.SetCheckPos                                         4.00      4.00
+   SpherePath.SaveCheckPos                                        2.00      2.00
+   SpherePath.CacheGlobalSphere                                  18.00     18.00
+   SpherePath.AddOffsetToCheckPos(Vector3)                        6.00      6.00
+   ObjCell.find_cell_list(Position,int,List<Sphere>,...)          6.00      6.00
+   ObjCell.FindObjCollisions                                      6.00      6.00
+   LandCell.FindEnvCollisions                                     8.00      8.00
+   LandCell.find_transit_cells(sphere)                            6.00      6.00
+   LandCell.add_all_outside_cells(sphere)                        12.00     12.00
+   LandCell.add_outside_cell(x,y)                                24.00     24.00
+   LScape.get_landcell                                           30.00     30.00
+   LScape.get_landblock                                          30.00     30.00
+   LandblockManager.GetLandblock (P.1 lock)                      30.00     30.00
+   Sequence.apply_physics                                         2.00      2.00
+   MoveToManager.UseTime                                          2.00      2.00
+   new Position (any ctor)                                       20.00     20.00
+   new AFrame (any ctor)                                         26.00     26.00
+   new Sphere (any ctor)                                         22.00     22.00
+   new ShadowObj                                                  2.00      2.00
+   new CellArray                                                  2.00      2.00
+   new SpherePath                                                 2.00      2.00
+   new ObjectInfo                                                 4.00      4.00
+   new CollisionInfo                                              2.00      2.00
+
+d-hills: d3 creature, rolling hills, 90 m diagonal   [base]   4000 updates, dt 0.2000
+   calls per update_object                                         all   same/1c   same/2c   same/4c   cell/1c   cell/2c   cell/4c
+   (number of updates in class)                                   4000      3648       164         1        29       156         2
+   PhysicsObj.update_object                                       1.00      1.00      1.00      1.00      1.00      1.00      1.00
+   PhysicsObj.UpdateObjectInternal                                2.00      2.00      2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.transition                                          2.00      2.00      2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.SetPositionInternal(Transition)                     2.00      2.00      2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.set_frame                                           2.00      2.00      2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.change_cell                                         0.05      0.00      0.00      0.00      1.00      1.00      1.00
+   PhysicsObj.handle_all_collisions                               2.00      2.00      2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.report_collision_end                                2.00      2.00      2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.remove_shadows_from_cells                           2.00      2.00      2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.add_shadows_to_cell(CellArray)                      2.00      2.00      2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.get_object_info                                     2.00      2.00      2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.handle_visible_cells_non_player                     0.05      0.00      0.00      0.00      1.00      1.00      1.00
+   PhysicsObj.UpdatePositionInternal                              2.00      2.00      2.00      2.00      2.00      2.00      2.00
+   Transition..ctor                                               2.00      2.00      2.00      2.00      2.00      2.00      2.00
+   Transition.FindTransitionalPosition                            2.00      2.00      2.00      2.00      2.00      2.00      2.00
+   Transition.TransitionalInsert                                  6.00      6.00      6.00      6.00      6.00      6.00      6.00
+   Transition.InsertIntoCell                                      6.00      6.00      6.00      6.00      6.00      6.00      6.00
+   Transition.CheckOtherCells                                     6.00      6.00      6.00      6.00      6.00      6.00      6.00
+   Transition.ValidateTransition                                  2.00      2.00      2.00      2.00      2.00      2.00      2.00
+   Transition.SetCurrentCheckPos                                  2.00      2.00      2.00      2.00      2.00      2.00      2.00
+   Transition.StepDown                                            2.00      2.00      2.00      2.00      2.00      2.00      2.00
+   Transition.AdjustOffset                                        2.00      2.00      2.00      2.00      2.00      2.00      2.00
+   SpherePath.SetCheckPos                                         4.00      4.00      4.00      4.00      4.00      4.00      4.00
+   SpherePath.SaveCheckPos                                        2.00      2.00      2.00      2.00      2.00      2.00      2.00
+   SpherePath.CacheGlobalSphere                                  18.00     18.00     18.00     18.00     18.00     18.00     18.00
+   SpherePath.AddOffsetToCheckPos(Vector3)                        6.00      6.00      6.00      6.00      6.00      6.00      6.00
+   ObjCell.find_cell_list(Position,int,List<Sphere>,...)          6.00      6.00      6.00      6.00      6.00      6.00      6.00
+   ObjCell.FindObjCollisions                                      6.49      6.05     10.37     24.00      9.00     12.08     18.00
+   LandCell.FindEnvCollisions                                     8.49      8.05     12.37     26.00     11.00     14.08     20.00
+   LandCell.find_transit_cells(sphere)                            6.49      6.05     10.37     24.00      9.00     12.08     18.00
+   LandCell.add_all_outside_cells(sphere)                        12.49     12.05     16.37     30.00     15.00     18.08     24.00
+   LandCell.add_outside_cell(x,y)                                28.01     24.40     58.98    240.00     48.00     73.08    156.00
+   LScape.get_landcell                                           34.01     30.40     64.98    246.00     54.00     79.08    162.00
+   LScape.get_landblock                                          34.05     30.40     64.98    246.00     55.00     80.08    163.00
+   LandblockManager.GetLandblock (P.1 lock)                      34.05     30.40     64.98    246.00     55.00     80.08    163.00
+   ObjectMaint.GetVisibleObjects(cell,type)                       0.05      0.00      0.00      0.00      1.00      1.00      1.00
+   Landblock.GetServerObjects                                     0.05      0.00      0.00      0.00      1.00      1.00      1.00
+   Sequence.apply_physics                                         2.00      2.00      2.00      2.00      2.00      2.00      2.00
+   MoveToManager.UseTime                                          2.00      2.00      2.00      2.00      2.00      2.00      2.00
+   new Position (any ctor)                                       20.00     20.00     20.00     20.00     20.00     20.00     20.00
+   new AFrame (any ctor)                                         26.00     26.00     26.00     26.00     26.00     26.00     26.00
+   new Sphere (any ctor)                                         22.00     22.00     22.00     22.00     22.00     22.00     22.00
+   new ShadowObj                                                  2.16      2.02      3.46      8.00      3.00      4.03      6.00
+   new CellArray                                                  2.00      2.00      2.00      2.00      2.00      2.00      2.00
+   new SpherePath                                                 2.00      2.00      2.00      2.00      2.00      2.00      2.00
+   new ObjectInfo                                                 4.00      4.00      4.00      4.00      4.00      4.00      4.00
+   new CollisionInfo                                              2.00      2.00      2.00      2.00      2.00      2.00      2.00
+
+e: e  creature standing still (MovementManager => stays Active)   [base]   4000 updates, dt 0.2000
+   calls per update_object                                         all   same/1c
+   (number of updates in class)                                   4000      4000
+   PhysicsObj.update_object                                       1.00      1.00
+   PhysicsObj.UpdateObjectInternal                                2.00      2.00
+   PhysicsObj.set_frame                                           2.00      2.00
+   PhysicsObj.UpdatePositionInternal                              2.00      2.00
+   Sequence.apply_physics                                         2.00      2.00
+   MoveToManager.UseTime                                          2.00      2.00
+   new Position (any ctor)                                        2.00      2.00
+   new AFrame (any ctor)                                          8.00      8.00
+
+f-near-20: f  creature passing 20 cylsphere objects in its cell, no contact   [base]   4000 updates, dt 0.2000
+   calls per update_object                                         all   same/1c
+   (number of updates in class)                                   4000      4000
+   PhysicsObj.update_object                                       1.00      1.00
+   PhysicsObj.UpdateObjectInternal                                2.00      2.00
+   PhysicsObj.transition                                          2.00      2.00
+   PhysicsObj.SetPositionInternal(Transition)                     2.00      2.00
+   PhysicsObj.set_frame                                           2.00      2.00
+   PhysicsObj.handle_all_collisions                               2.00      2.00
+   PhysicsObj.report_collision_end                                2.00      2.00
+   PhysicsObj.remove_shadows_from_cells                           2.00      2.00
+   PhysicsObj.add_shadows_to_cell(CellArray)                      2.00      2.00
+   PhysicsObj.FindObjCollisions                                  40.00     40.00
+   PhysicsObj.get_object_info                                     2.00      2.00
+   PhysicsObj.UpdatePositionInternal                              2.00      2.00
+   Transition..ctor                                               2.00      2.00
+   Transition.FindTransitionalPosition                            2.00      2.00
+   Transition.TransitionalInsert                                  2.00      2.00
+   Transition.InsertIntoCell                                      2.00      2.00
+   Transition.CheckOtherCells                                     2.00      2.00
+   Transition.ValidateTransition                                  2.00      2.00
+   Transition.SetCurrentCheckPos                                  2.00      2.00
+   Transition.AdjustOffset                                        2.00      2.00
+   SpherePath.SetCheckPos                                         4.00      4.00
+   SpherePath.CacheLocalSpaceSphere                              40.00     40.00
+   SpherePath.CacheGlobalSphere                                   8.00      8.00
+   SpherePath.AddOffsetToCheckPos(Vector3)                        2.00      2.00
+   ObjCell.find_cell_list(Position,int,List<Sphere>,...)          2.00      2.00
+   ObjCell.FindObjCollisions                                      2.00      2.00
+   LandCell.FindEnvCollisions                                     2.00      2.00
+   LandCell.find_transit_cells(sphere)                            2.00      2.00
+   LandCell.add_all_outside_cells(sphere)                         4.00      4.00
+   LandCell.add_outside_cell(x,y)                                 8.00      8.00
+   LScape.get_landcell                                           10.00     10.00
+   LScape.get_landblock                                          10.00     10.00
+   LandblockManager.GetLandblock (P.1 lock)                      10.00     10.00
+   CylSphere.IntersectsSphere(Position,float,Transition)         40.00     40.00
+   Sequence.apply_physics                                         2.00      2.00
+   MoveToManager.UseTime                                          2.00      2.00
+   new Position (any ctor)                                       58.00     58.00
+   new AFrame (any ctor)                                         64.00     64.00
+   new Sphere (any ctor)                                         24.00     24.00
+   new CylSphere (any ctor)                                      40.00     40.00
+   new ShadowObj                                                  2.00      2.00
+   new CellArray                                                  2.00      2.00
+   new SpherePath                                                 2.00      2.00
+   new ObjectInfo                                                 4.00      4.00
+   new CollisionInfo                                              2.00      2.00
+
+f-slide-20: f  creature sliding along a wall, 20 cylsphere objects in its cell   [base]   4000 updates, dt 0.2000
+   calls per update_object                                         all   same/1c
+   (number of updates in class)                                   4000      4000
+   PhysicsObj.update_object                                       1.00      1.00
+   PhysicsObj.UpdateObjectInternal                                2.00      2.00
+   PhysicsObj.transition                                          2.00      2.00
+   PhysicsObj.SetPositionInternal(Transition)                     2.00      2.00
+   PhysicsObj.set_frame                                           2.00      2.00
+   PhysicsObj.handle_all_collisions                               2.00      2.00
+   PhysicsObj.report_collision_end                                2.00      2.00
+   PhysicsObj.track_object_collision                              0.87      0.87
+   PhysicsObj.remove_shadows_from_cells                           2.00      2.00
+   PhysicsObj.add_shadows_to_cell(CellArray)                      2.00      2.00
+   PhysicsObj.FindObjCollisions                                  53.05     53.05
+   PhysicsObj.get_object_info                                     2.00      2.00
+   PhysicsObj.UpdatePositionInternal                              2.00      2.00
+   Transition..ctor                                               2.00      2.00
+   Transition.FindTransitionalPosition                            2.00      2.00
+   Transition.TransitionalInsert                                  2.00      2.00
+   Transition.InsertIntoCell                                      2.00      2.00
+   Transition.CheckOtherCells                                     2.00      2.00
+   Transition.ValidateTransition                                  2.00      2.00
+   Transition.SetCurrentCheckPos                                  2.00      2.00
+   Transition.AdjustOffset                                        2.00      2.00
+   SpherePath.SetCheckPos                                         4.00      4.00
+   SpherePath.CacheLocalSpaceSphere                              53.05     53.05
+   SpherePath.CacheGlobalSphere                                   8.87      8.87
+   SpherePath.AddOffsetToCheckPos(Vector3)                        2.87      2.87
+   ObjCell.find_cell_list(Position,int,List<Sphere>,...)          2.00      2.00
+   ObjCell.FindObjCollisions                                      2.87      2.87
+   LandCell.FindEnvCollisions                                     2.87      2.87
+   LandCell.find_transit_cells(sphere)                            2.00      2.00
+   LandCell.add_all_outside_cells(sphere)                         4.00      4.00
+   LandCell.add_outside_cell(x,y)                                 8.00      8.00
+   LScape.get_landcell                                           10.00     10.00
+   LScape.get_landblock                                          10.00     10.00
+   LandblockManager.GetLandblock (P.1 lock)                      10.00     10.00
+   CylSphere.IntersectsSphere(Position,float,Transition)         53.05     53.05
+   Sequence.apply_physics                                         2.00      2.00
+   MoveToManager.UseTime                                          2.00      2.00
+   new Position (any ctor)                                       71.05     71.05
+   new AFrame (any ctor)                                         77.05     77.05
+   new Sphere (any ctor)                                         24.87     24.87
+   new CylSphere (any ctor)                                      53.05     53.05
+   new ShadowObj                                                  2.00      2.00
+   new CellArray                                                  2.00      2.00
+   new SpherePath                                                 2.00      2.00
+   new ObjectInfo                                                 4.00      4.00
+   new CollisionInfo                                              2.00      2.00
+   new CollisionRecord                                            0.87      0.87
+
+m: B  missile r=0.1, 20 m/s, 30 Hz, flat   [base]   4000 updates, dt 0.0334
+   calls per update_object                                         all   same/1c   same/2c   cell/2c
+   (number of updates in class)                                   4000      3692       154       154
+   PhysicsObj.update_object                                       1.00      1.00      1.00      1.00
+   PhysicsObj.UpdateObjectInternal                                1.00      1.00      1.00      1.00
+   PhysicsObj.transition                                          1.00      1.00      1.00      1.00
+   PhysicsObj.SetPositionInternal(Transition)                     1.00      1.00      1.00      1.00
+   PhysicsObj.set_frame                                           1.00      1.00      1.00      1.00
+   PhysicsObj.change_cell                                         0.04      0.00      0.00      1.00
+   PhysicsObj.handle_all_collisions                               1.00      1.00      1.00      1.00
+   PhysicsObj.report_collision_end                                1.00      1.00      1.00      1.00
+   PhysicsObj.remove_shadows_from_cells                           1.00      1.00      1.00      1.00
+   PhysicsObj.add_shadows_to_cell(CellArray)                      1.00      1.00      1.00      1.00
+   PhysicsObj.get_object_info                                     1.00      1.00      1.00      1.00
+   PhysicsObj.handle_visible_cells_non_player                     0.04      0.00      0.00      1.00
+   PhysicsObj.UpdatePositionInternal                              1.00      1.00      1.00      1.00
+   Transition..ctor                                               1.00      1.00      1.00      1.00
+   Transition.FindTransitionalPosition                            1.00      1.00      1.00      1.00
+   Transition.TransitionalInsert                                  7.00      7.00      7.00      7.00
+   Transition.InsertIntoCell                                      7.00      7.00      7.00      7.00
+   Transition.CheckOtherCells                                     7.00      7.00      7.00      7.00
+   Transition.ValidateTransition                                  7.00      7.00      7.00      7.00
+   Transition.SetCurrentCheckPos                                  7.00      7.00      7.00      7.00
+   Transition.AdjustOffset                                        7.00      7.00      7.00      7.00
+   SpherePath.SetCheckPos                                         8.00      8.00      8.00      8.00
+   SpherePath.CacheGlobalSphere                                  22.00     22.00     22.00     22.00
+   SpherePath.AddOffsetToCheckPos(Vector3)                        7.00      7.00      7.00      7.00
+   ObjCell.find_cell_list(Position,int,List<Sphere>,...)          7.00      7.00      7.00      7.00
+   ObjCell.FindObjCollisions                                      7.35      7.00     11.50     11.50
+   LandCell.FindEnvCollisions                                     7.35      7.00     11.50     11.50
+   LandCell.find_transit_cells(sphere)                            7.35      7.00     11.50     11.50
+   LandCell.add_all_outside_cells(sphere)                        14.35     14.00     18.50     18.50
+   LandCell.add_outside_cell(x,y)                                14.69     14.00     23.00     23.00
+   LScape.get_landcell                                           21.69     21.00     30.00     30.00
+   LScape.get_landblock                                          21.73     21.00     30.00     31.00
+   LandblockManager.GetLandblock (P.1 lock)                      21.73     21.00     30.00     31.00
+   ObjectMaint.GetVisibleObjects(cell,type)                       0.04      0.00      0.00      1.00
+   Landblock.GetServerObjects                                     0.04      0.00      0.00      1.00
+   Sequence.apply_physics                                         1.00      1.00      1.00      1.00
+   new Position (any ctor)                                       21.00     21.00     21.00     21.00
+   new AFrame (any ctor)                                         24.00     24.00     24.00     24.00
+   new Sphere (any ctor)                                         11.00     11.00     11.00     11.00
+   new ShadowObj                                                  1.08      1.00      2.00      2.00
+   new CellArray                                                  1.00      1.00      1.00      1.00
+   new SpherePath                                                 1.00      1.00      1.00      1.00
+   new ObjectInfo                                                 2.00      2.00      2.00      2.00
+   new CollisionInfo                                              1.00      1.00      1.00      1.00
+
+m-big: B  missile r=0.3, 20 m/s, 30 Hz, flat   [base]   4000 updates, dt 0.0334
+   calls per update_object                                         all   same/1c   same/2c   cell/2c
+   (number of updates in class)                                   4000      3692       154       154
+   PhysicsObj.update_object                                       1.00      1.00      1.00      1.00
+   PhysicsObj.UpdateObjectInternal                                1.00      1.00      1.00      1.00
+   PhysicsObj.transition                                          1.00      1.00      1.00      1.00
+   PhysicsObj.SetPositionInternal(Transition)                     1.00      1.00      1.00      1.00
+   PhysicsObj.set_frame                                           1.00      1.00      1.00      1.00
+   PhysicsObj.change_cell                                         0.04      0.00      0.00      1.00
+   PhysicsObj.handle_all_collisions                               1.00      1.00      1.00      1.00
+   PhysicsObj.report_collision_end                                1.00      1.00      1.00      1.00
+   PhysicsObj.remove_shadows_from_cells                           1.00      1.00      1.00      1.00
+   PhysicsObj.add_shadows_to_cell(CellArray)                      1.00      1.00      1.00      1.00
+   PhysicsObj.get_object_info                                     1.00      1.00      1.00      1.00
+   PhysicsObj.handle_visible_cells_non_player                     0.04      0.00      0.00      1.00
+   PhysicsObj.UpdatePositionInternal                              1.00      1.00      1.00      1.00
+   Transition..ctor                                               1.00      1.00      1.00      1.00
+   Transition.FindTransitionalPosition                            1.00      1.00      1.00      1.00
+   Transition.TransitionalInsert                                  3.00      3.00      3.00      3.00
+   Transition.InsertIntoCell                                      3.00      3.00      3.00      3.00
+   Transition.CheckOtherCells                                     3.00      3.00      3.00      3.00
+   Transition.ValidateTransition                                  3.00      3.00      3.00      3.00
+   Transition.SetCurrentCheckPos                                  3.00      3.00      3.00      3.00
+   Transition.AdjustOffset                                        3.00      3.00      3.00      3.00
+   SpherePath.SetCheckPos                                         4.00      4.00      4.00      4.00
+   SpherePath.CacheGlobalSphere                                  10.00     10.00     10.00     10.00
+   SpherePath.AddOffsetToCheckPos(Vector3)                        3.00      3.00      3.00      3.00
+   ObjCell.find_cell_list(Position,int,List<Sphere>,...)          3.00      3.00      3.00      3.00
+   ObjCell.FindObjCollisions                                      3.19      3.00      5.50      5.50
+   LandCell.FindEnvCollisions                                     3.19      3.00      5.50      5.50
+   LandCell.find_transit_cells(sphere)                            3.19      3.00      5.50      5.50
+   LandCell.add_all_outside_cells(sphere)                         6.19      6.00      8.50      8.50
+   LandCell.add_outside_cell(x,y)                                 6.54      6.00     13.00     13.00
+   LScape.get_landcell                                            9.54      9.00     16.00     16.00
+   LScape.get_landblock                                           9.58      9.00     16.00     17.00
+   LandblockManager.GetLandblock (P.1 lock)                       9.58      9.00     16.00     17.00
+   ObjectMaint.GetVisibleObjects(cell,type)                       0.04      0.00      0.00      1.00
+   Landblock.GetServerObjects                                     0.04      0.00      0.00      1.00
+   Sequence.apply_physics                                         1.00      1.00      1.00      1.00
+   new Position (any ctor)                                       13.00     13.00     13.00     13.00
+   new AFrame (any ctor)                                         16.00     16.00     16.00     16.00
+   new Sphere (any ctor)                                          7.00      7.00      7.00      7.00
+   new ShadowObj                                                  1.08      1.00      2.00      2.00
+   new CellArray                                                  1.00      1.00      1.00      1.00
+   new SpherePath                                                 1.00      1.00      1.00      1.00
+   new ObjectInfo                                                 2.00      2.00      2.00      2.00
+   new CollisionInfo                                              1.00      1.00      1.00      1.00
+
+a-fast: a  creature at 7 m/s (2 steps per transition), flat, one cell   [base]   4000 updates, dt 0.2000
+   calls per update_object                                         all   same/1c
+   (number of updates in class)                                   4000      4000
+   PhysicsObj.update_object                                       1.00      1.00
+   PhysicsObj.UpdateObjectInternal                                2.00      2.00
+   PhysicsObj.transition                                          2.00      2.00
+   PhysicsObj.SetPositionInternal(Transition)                     2.00      2.00
+   PhysicsObj.set_frame                                           2.00      2.00
+   PhysicsObj.handle_all_collisions                               2.00      2.00
+   PhysicsObj.report_collision_end                                2.00      2.00
+   PhysicsObj.remove_shadows_from_cells                           2.00      2.00
+   PhysicsObj.add_shadows_to_cell(CellArray)                      2.00      2.00
+   PhysicsObj.get_object_info                                     2.00      2.00
+   PhysicsObj.UpdatePositionInternal                              2.00      2.00
+   Transition..ctor                                               2.00      2.00
+   Transition.FindTransitionalPosition                            2.00      2.00
+   Transition.TransitionalInsert                                  4.00      4.00
+   Transition.InsertIntoCell                                      4.00      4.00
+   Transition.CheckOtherCells                                     4.00      4.00
+   Transition.ValidateTransition                                  4.00      4.00
+   Transition.SetCurrentCheckPos                                  4.00      4.00
+   Transition.AdjustOffset                                        4.00      4.00
+   SpherePath.SetCheckPos                                         6.00      6.00
+   SpherePath.CacheGlobalSphere                                  14.00     14.00
+   SpherePath.AddOffsetToCheckPos(Vector3)                        4.00      4.00
+   ObjCell.find_cell_list(Position,int,List<Sphere>,...)          4.00      4.00
+   ObjCell.FindObjCollisions                                      4.00      4.00
+   LandCell.FindEnvCollisions                                     4.00      4.00
+   LandCell.find_transit_cells(sphere)                            4.00      4.00
+   LandCell.add_all_outside_cells(sphere)                         8.00      8.00
+   LandCell.add_outside_cell(x,y)                                16.00     16.00
+   LScape.get_landcell                                           20.00     20.00
+   LScape.get_landblock                                          20.00     20.00
+   LandblockManager.GetLandblock (P.1 lock)                      20.00     20.00
+   Sequence.apply_physics                                         2.00      2.00
+   MoveToManager.UseTime                                          2.00      2.00
+   new Position (any ctor)                                       22.00     22.00
+   new AFrame (any ctor)                                         28.00     28.00
+   new Sphere (any ctor)                                         18.00     18.00
+   new ShadowObj                                                  2.00      2.00
+   new CellArray                                                  2.00      2.00
+   new SpherePath                                                 2.00      2.00
+   new ObjectInfo                                                 4.00      4.00
+   new CollisionInfo                                              2.00      2.00
+
+a-anim: a  creature + cyclic 30 fps animation, flat, one cell   [base]   4000 updates, dt 0.2000
+   calls per update_object                                         all   same/1c
+   (number of updates in class)                                   4000      4000
+   PhysicsObj.update_object                                       1.00      1.00
+   PhysicsObj.UpdateObjectInternal                                2.00      2.00
+   PhysicsObj.transition                                          2.00      2.00
+   PhysicsObj.SetPositionInternal(Transition)                     2.00      2.00
+   PhysicsObj.set_frame                                           2.00      2.00
+   PhysicsObj.handle_all_collisions                               2.00      2.00
+   PhysicsObj.report_collision_end                                2.00      2.00
+   PhysicsObj.remove_shadows_from_cells                           2.00      2.00
+   PhysicsObj.add_shadows_to_cell(CellArray)                      2.00      2.00
+   PhysicsObj.get_object_info                                     2.00      2.00
+   PhysicsObj.UpdatePositionInternal                              2.00      2.00
+   Transition..ctor                                               2.00      2.00
+   Transition.FindTransitionalPosition                            2.00      2.00
+   Transition.TransitionalInsert                                  2.00      2.00
+   Transition.InsertIntoCell                                      2.00      2.00
+   Transition.CheckOtherCells                                     2.00      2.00
+   Transition.ValidateTransition                                  2.00      2.00
+   Transition.SetCurrentCheckPos                                  2.00      2.00
+   Transition.AdjustOffset                                        2.00      2.00
+   SpherePath.SetCheckPos                                         4.00      4.00
+   SpherePath.CacheGlobalSphere                                   8.00      8.00
+   SpherePath.AddOffsetToCheckPos(Vector3)                        2.00      2.00
+   ObjCell.find_cell_list(Position,int,List<Sphere>,...)          2.00      2.00
+   ObjCell.FindObjCollisions                                      2.00      2.00
+   LandCell.FindEnvCollisions                                     2.00      2.00
+   LandCell.find_transit_cells(sphere)                            2.00      2.00
+   LandCell.add_all_outside_cells(sphere)                         4.00      4.00
+   LandCell.add_outside_cell(x,y)                                 8.00      8.00
+   LScape.get_landcell                                           10.00     10.00
+   LScape.get_landblock                                          10.00     10.00
+   LandblockManager.GetLandblock (P.1 lock)                      10.00     10.00
+   Sequence.apply_physics                                         6.00      6.00
+   MoveToManager.UseTime                                          2.00      2.00
+   new Position (any ctor)                                       18.00     18.00
+   new AFrame (any ctor)                                         35.40     35.40
+   new Sphere (any ctor)                                         16.00     16.00
+   new ShadowObj                                                  2.00      2.00
+   new CellArray                                                  2.00      2.00
+   new SpherePath                                                 2.00      2.00
+   new ObjectInfo                                                 4.00      4.00
+   new CollisionInfo                                              2.00      2.00
+
+b-pop-50: b  creature, flat, crossing a cell boundary, 50 other objects in the landblock   [base]   4000 updates, dt 0.2000
+   calls per update_object                                         all   same/1c   same/2c   cell/1c   cell/2c
+   (number of updates in class)                                   4000      3625       125       125       125
+   PhysicsObj.update_object                                       1.00      1.00      1.00      1.00      1.00
+   PhysicsObj.UpdateObjectInternal                                2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.transition                                          2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.SetPositionInternal(Transition)                     2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.set_frame                                           2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.change_cell                                         0.06      0.00      0.00      1.00      1.00
+   PhysicsObj.handle_all_collisions                               2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.report_collision_end                                2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.remove_shadows_from_cells                           2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.add_shadows_to_cell(CellArray)                      2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.get_object_info                                     2.00      2.00      2.00      2.00      2.00
+   PhysicsObj.handle_visible_cells_non_player                     0.06      0.00      0.00      1.00      1.00
+   PhysicsObj.UpdatePositionInternal                              2.00      2.00      2.00      2.00      2.00
+   Transition..ctor                                               2.00      2.00      2.00      2.00      2.00
+   Transition.FindTransitionalPosition                            2.00      2.00      2.00      2.00      2.00
+   Transition.TransitionalInsert                                  2.00      2.00      2.00      2.00      2.00
+   Transition.InsertIntoCell                                      2.00      2.00      2.00      2.00      2.00
+   Transition.CheckOtherCells                                     2.00      2.00      2.00      2.00      2.00
+   Transition.ValidateTransition                                  2.00      2.00      2.00      2.00      2.00
+   Transition.SetCurrentCheckPos                                  2.00      2.00      2.00      2.00      2.00
+   Transition.AdjustOffset                                        2.00      2.00      2.00      2.00      2.00
+   SpherePath.SetCheckPos                                         4.00      4.00      4.00      4.00      4.00
+   SpherePath.CacheGlobalSphere                                   8.00      8.00      8.00      8.00      8.00
+   SpherePath.AddOffsetToCheckPos(Vector3)                        2.00      2.00      2.00      2.00      2.00
+   ObjCell.find_cell_list(Position,int,List<Sphere>,...)          2.00      2.00      2.00      2.00      2.00
+   ObjCell.FindObjCollisions                                      2.12      2.00      3.00      3.00      4.00
+   LandCell.FindEnvCollisions                                     2.12      2.00      3.00      3.00      4.00
+   LandCell.find_transit_cells(sphere)                            2.12      2.00      3.00      3.00      4.00
+   LandCell.add_all_outside_cells(sphere)                         4.12      4.00      5.00      5.00      6.00
+   LandCell.add_outside_cell(x,y)                                 9.00      8.00     16.00     16.00     24.00
+   LScape.get_landcell                                           11.00     10.00     18.00     18.00     26.00
+   LScape.get_landblock                                          11.06     10.00     18.00     19.00     27.00
+   LandblockManager.GetLandblock (P.1 lock)                      11.06     10.00     18.00     19.00     27.00
+   ObjectMaint.GetVisibleObjects(cell,type)                       0.06      0.00      0.00      1.00      1.00
+   Landblock.GetServerObjects                                     0.06      0.00      0.00      1.00      1.00
+   Sequence.apply_physics                                         2.00      2.00      2.00      2.00      2.00
+   MoveToManager.UseTime                                          2.00      2.00      2.00      2.00      2.00
+   new Position (any ctor)                                       18.00     18.00     18.00     18.00     18.00
+   new AFrame (any ctor)                                         24.00     24.00     24.00     24.00     24.00
+   new Sphere (any ctor)                                         16.00     16.00     16.00     16.00     16.00
+   new ShadowObj                                                  2.12      2.00      3.00      3.00      4.00
+   new CellArray                                                  2.00      2.00      2.00      2.00      2.00
+   new SpherePath                                                 2.00      2.00      2.00      2.00      2.00
+   new ObjectInfo                                                 4.00      4.00      4.00      4.00      4.00
+   new CollisionInfo                                              2.00      2.00      2.00      2.00      2.00
+

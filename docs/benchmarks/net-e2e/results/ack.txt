@@ -1,0 +1,25 @@
+[env] .NET 10.0.15, 4 cpus, ServerGC=True, latency=Interactive, log=bridge, listeners 127.0.0.1:22222 / 127.0.0.1:22223, sessionMap[1000]
+[env] packetLog.IsEnabled(Debug)=False  log.IsEnabled(Debug)=True
+[env] Timers.PortalYearTicks=309739721  (ushort)=16584
+
+=== (f) REAL NetworkSession.AcknowledgeSequence(seq) (private; called directly through an accessor) with K packets in the real cachedPackets, n=20000 acks per run ===
+    Between acks, 4 (or 1, or 0) REAL packets are flushed through the real session (outside the timed region), and the ack removes that many.
+    COPY = docs Micro.cs shape on ConcurrentDictionary<uint, object>: (a) the scan only, timed like REAL; (b) the docs loop as written (4 TryAdd + scan in the timed region).
+ K cached removed/ack |           REAL AcknowledgeSequence |                     COPY scan only |     COPY docs loop (4 TryAdd + scan) | docs NT.7 'Keys.Where (today)'
+    (REAL and 'COPY scan only' ns figures include the measurement bracket: 16.1 ns)
+       10           4 |     231.7 ns (med     245.6)      280.0 B |     178.7 ns (med     186.6)      256.0 B |     213.5 ns (med     217.9)      352.0 B | (not measured)
+       10           1 |     182.2 ns (med     184.9)      272.0 B |     147.1 ns (med     153.6)      248.0 B |                                      | 
+       10           0 |     124.8 ns (med     126.6)      264.0 B |     116.1 ns (med     126.9)      240.0 B |                                      | 
+       40           4 |     315.9 ns (med     357.3)      400.0 B |     302.3 ns (med     324.3)      376.0 B |     333.4 ns (med     373.8)      472.0 B | 476 ns, 472 B
+       40           1 |     266.6 ns (med     279.3)      392.0 B |     269.1 ns (med     282.9)      368.0 B |                                      | 
+       40           0 |     193.4 ns (med     196.2)      384.0 B |     223.6 ns (med     245.6)      360.0 B |                                      | 
+      400           4 |    1616.2 ns (med    1676.5)     1840.0 B |    1842.6 ns (med    1876.5)     1816.0 B |    1757.8 ns (med    1828.5)     1912.0 B | 1.7 us, 1.9 KB
+      400           1 |    1664.4 ns (med    1825.4)     1832.0 B |    1916.5 ns (med    1936.8)     1808.0 B |                                      | 
+      400           0 |    1091.5 ns (med    1102.0)     1824.0 B |    1480.8 ns (med    1486.5)     1800.0 B |                                      | 
+     2400           4 |    8399.9 ns (med    8480.0)     9840.0 B |    9665.4 ns (med   10089.8)     9816.0 B |    8543.7 ns (med    8682.9)     9912.0 B | 6.8 us, 9.9 KB
+     2400           1 |    7507.4 ns (med    7977.6)     9832.0 B |    9358.2 ns (med    9724.9)     9808.0 B |                                      | 
+     2400           0 |    7275.9 ns (med    7413.5)     9824.0 B |    9565.7 ns (med    9854.5)     9800.0 B |                                      | 
+
+real	0m38.810s
+user	0m10.671s
+sys	0m17.320s

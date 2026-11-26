@@ -13,6 +13,7 @@ SOURCE OF THIS DOCUMENT
       Pass 4  ObjectMaint algorithms + BSP     13 findings -> SECTION N
       Pass 5  the collision math core          12 findings -> SECTION O
       Pass 6  MEASURED deep dive (2026-11-25)  26 findings -> SECTION Q
+      Pass 7  review of pass 6, end-to-end runs (2026-11-25)  -> SECTION R
   Pass 2 covers a disjoint region - Animation/, Common/ in depth, Managers/,
   Trajectory.cs, PartArray.cs - so its findings are kept in their own section.
 
@@ -25,6 +26,10 @@ SOURCE OF THIS DOCUMENT
   PG.1 (Section Q, measured) shows the P.1 lock is entered 1.7-4.6x more often
   than necessary because of a one-line missing flag; fixing it multiplies the
   payoff. (F.12's "9x" is superseded.)
+  R.2 (Section R) measures that lock: total throughput FALLS as threads are
+  added, and P.1's fix as first written is unsafe - use R.2's version.
+  R.1 measures the per-object tick loop: up to ~0.8 CPU-seconds per second at
+  300,000 loaded objects.
 
   MEMORY - Section M establishes that there is NOT ONE `struct` in the entire
   subsystem (VERIFIED). Every value type - Sphere, AFrame, Position, BBox -
@@ -40,7 +45,8 @@ SOURCE OF THIS DOCUMENT
 
 Sections A-O are UNPROFILED: a static read of the code weighted by call
 frequency, not measured hot spots. Section Q (2026-11-25) is MEASURED, and its
-Q.C corrects several earlier findings. Validate before optimising.
+Q.C corrects several earlier findings. Section R reviews Section Q, corrects
+it (R.C), and adds end-to-end measurements. Validate before optimising.
 
 CALL-FREQUENCY MODEL
   LandblockManager.TickPhysics runs from WorldManager.UpdateGameWorld at
@@ -82,6 +88,9 @@ P.1  A global upgradeable lock serialises the parallel physics tick
      FIX: add a lock-free fast path to GetLandblock - read landblocks[x,y]
      (volatile) first and return immediately when non-null; take the lock only
      on the load path.
+     [Pass 7: UNSAFE AS WRITTEN - the landblock is published before Init()
+     has built its buildings and static objects. Use the ready-array version
+     in R.2, which also has the measured cost of this lock.]
 
 
 SECTION B - ALLOCATION ON THE PER-OBJECT-PER-FRAME PATH
@@ -1580,7 +1589,9 @@ SECTION Q - SIXTH PASS: MEASURED DEEP DIVE (2026-11-25)
 ================================================================================
 ================================================================================
 
-Run against Claude1 @ 867315772 (upstream master through #4553). Unlike
+Run against Claude1 @ 867315772 (upstream master through #4553).
+[Pass 7: the binary measured was in fact an older 2026-11-23 build; the hot
+paths are unchanged - see R.C.] Unlike
 Sections A-O, every cost here was MEASURED. The measurements used the real
 ACE.Server.dll (Release, .NET 10.0.15, Linux, 4-vCPU VM, optimised build
 checked via DebuggableAttribute), driven with synthetic inputs. No dat files
@@ -1707,6 +1718,8 @@ PC.1 [HIGH] The fixed per-transition setup is ~1.75 KB / ~30 objects; a safe
      handler audited), and the real rate of nested transitions.
      Confidence: bytes and Reset completeness VERIFIED; server-wide rate
      PLAUSIBLE. This supersedes the sizing in M.2 and implements M.3.
+     [Pass 7: real per-update figures are in R.4; the composed total is right
+     only per transition - see R.C.]
 
 PC.2 [MEDIUM-HIGH] P.3's fix ("copy into the existing CheckPos") is unsafe as
      written; an alias-guarded version is safe
@@ -1744,6 +1757,8 @@ PC.2 [MEDIUM-HIGH] P.3's fix ("copy into the existing CheckPos") is unsafe as
      post-transition readers (PhysicsObj.SetPositionInternal:1177, the
      WorldObject line-of-sight callers, DeveloperContentCommands:2921) only
      read CurPos after the transition. Confidence: VERIFIED.
+     [Pass 7: confirmed end to end, including the alias hazard; saves 240-1,200 B
+     per transition - see R.4, R.C.]
 
 PC.3 [MEDIUM] Per-frame scaffold: 176-224 B per update removable with no public
      API change (corrects F.5)
@@ -2037,6 +2052,8 @@ PG.1 [HIGH] find_cell_list repeats add_all_outside_cells once for every land
      Not verified: parity with the retail client, and mods calling
      add_all_outside_cells directly. Confidence: VERIFIED (real code, identical
      results). Do it together with P.1.
+     [Pass 7: counts confirmed; timings inflated by the attached prefix, and the
+     "5 calls per transition" frequency is wrong - see R.3, R.C.]
 
 PG.2 [HIGH in crowds, MEDIUM otherwise] CylSphere.IntersectsSphere builds the
      full local-space cache for every cylsphere object it tests, but only one
@@ -2057,19 +2074,20 @@ PG.2 [HIGH in crowds, MEDIUM otherwise] CylSphere.IntersectsSphere builds the
      path.LocalSpacePos (ObjCellID + Frame).
      SAFETY: every reader of LocalSpacePos / LocalSpaceSphere /
      LocalSpaceCurrCenter / LocalSpaceZ / LocalSpaceLowPoint was grepped.
-     BSPTree.cs (24 reads) and GfxObj.cs:655 read only after a fresh cache
-     (EnvCell.cs:94, PhysicsPart.cs:197); Transition.cs:306-307 re-caches
+     BSPTree.cs (24 reads) and Common/GfxObj.cs:77 read only after a fresh cache
+     (EnvCell.cs:94, PhysicsPart.cs:56); Transition.cs:306-307 re-caches
      first; LocalSpaceLowPoint is never read; CylSphere.cs:443 is the only
      reader of the cylsphere's own cache. Nothing keeps a reference to
      LocalSpacePos (SetWalkable copies it, SpherePath.cs:300).
      Not verified: mods reading SpherePath.LocalSpace* after a cylsphere test.
      Confidence: VERIFIED. This also makes O.4's "reuse a preallocated
      LocalSpacePos" step verified-safe.
+     [Pass 7: end to end, x0.61 time and -36% bytes in a crowd of 20 - see R.4.]
 
 PG.3 [MEDIUM] PhysicsPart.FindObjCollisions builds the local-space cache before
      the cheap bounding-sphere reject
-     PhysicsPart.cs:193-201 (CacheLocalSpaceSphere, then GfxObj.FindObjCollisions);
-     the reject is GfxObj.cs:651-668
+     PhysicsPart.cs:52-60 (CacheLocalSpaceSphere, then GfxObj.FindObjCollisions);
+     the reject is Common/GfxObj.cs:73-89
 
      The full 40 ns + 80 B cache runs for every part of every BSP object
      (static scenery, fences, building part 0 via
@@ -2377,8 +2395,10 @@ cpu-gc-plan.txt items 12 and 26, perf-datloader.txt P.4 (geometry
   - Creature MaxQuantum sub-stepping (2 transitions per 5 Hz update):
     deliberate. The source notes that MaxQuantum 0.2 "is buggy with
     MoveToManager turning"; do not raise it.
-  - The Landblock.TickPhysics outer loop: one virtual call and a flag test per
-    object per tick.
+  - [RETRACTED - this entry was wrong. The Landblock.TickPhysics outer loop was
+    listed here as "one virtual call and a flag test per object per tick".
+    Measured in R.1: 3-5 ns per object when few are loaded, 25 ns at 100,000
+    and 43-53 ns at 300,000, i.e. up to ~0.8 CPU-seconds per second at 60 Hz.]
   - CollideObject.FirstOrDefault(closure) in the line-of-sight methods: 0 B
     measured in steady state.
   - Exceptions as control flow: none in Physics/.
@@ -2451,6 +2471,399 @@ NOT VERIFIED anywhere in Section Q:
   - Whether any OnCollideObject handler retains a Transition.
   - Parity with the retail client for PG.1 and PG.9.
   - Mods and other projects consuming the public fields and types named above.
+
+================================================================================
+================================================================================
+SECTION R - SEVENTH PASS: REVIEW OF SECTION Q, WITH NEW MEASUREMENTS
+            (2026-11-25)
+================================================================================
+================================================================================
+
+A second, independent pass over Section Q, against Claude1 @ 0dfa403e0. It did
+five things:
+
+  1. Checked every file:line reference in Section Q mechanically (191
+     references). Two were wrong and are corrected in place (R.C).
+  2. Re-read the highest-risk claims against the source: the Q.0 frequency
+     model, PC.1, PC.2, PC.7, PC.12, PG.1, PG.2, PG.4, PG.7, PG.8 and the bugs
+     filed in bugs-physics.txt Section Q. All are accurately described.
+  3. Re-ran Section Q's cell-list benchmark; it reproduces.
+  4. Measured two things on the real code that no earlier pass measured: the
+     per-object loop in Landblock.TickPhysics (R.1) and the global landblock
+     lock under threads (R.2).
+  5. Ran REAL physics updates end to end on synthetic terrain, which Section Q
+     could not do, and compared them with its composed estimates (R.4).
+
+Timings were taken on a shared 4-vCPU VM; use them as ratios within one run.
+Allocation figures are exact. Linux only.
+
+Benchmark code: docs/benchmarks/physics-tickloop (R.1),
+docs/benchmarks/landblock-lock (R.2) and docs/benchmarks/physics-e2e (R.4).
+
+
+R.1  [HIGH at scale] The per-object loop in Landblock.TickPhysics is NOT cold
+     (corrects Q.D; measures perf-entity-server.txt E.1)
+     Entity/Landblock.cs:398-420; WorldObjects/WorldObject_Tick.cs:230-296
+
+         foreach (WorldObject wo in worldObjects.Values)
+         {
+             var landblockUpdate = wo.UpdateObjectPhysics();
+             ...
+
+     Every game tick (60 Hz), every object in every non-dormant landblock gets
+     a virtual call that almost always returns at once. Section Q.D listed this
+     as not worth attention ("one virtual call and a flag test per object per
+     tick"). The method carries the maintainer's own note from 2019:
+         // TODO: Almost all of the CPU time is spent between this note and the first Try block.
+     WHAT ONE OBJECT COSTS: the virtual call, then reads of wo.PhysicsObj and
+     its TransientState; for a creature also LastPhysicsUpdate (the 5 Hz
+     throttle); for other objects State, IsAnimating and InitialUpdates. These
+     live in two or three different cache lines of two large objects.
+
+     Measured: the real WorldObject.UpdateObjectPhysics on real PhysicsObj
+     instances that take the early-outs, in dictionaries of 150 objects (as
+     Landblock.worldObjects is), with 2-6 KB of other live data per object so
+     they are spread over the heap as real objects are. Server GC, best of 5.
+     Nanoseconds per object per tick:
+         objects    inactive item   active idle item   throttled creature   mixed
+           1,000         2.8              5.0                 4.9             5.0
+          20,000         7.8             10.3                 8.8             9.1
+         100,000        13.7             25.7                24.8            25.1
+         300,000        32.2             53.0                44.2            43.0
+     At 60 Hz, the mixed case is 11 ms of CPU per second at 20,000 objects,
+     151 ms at 100,000 and 775 ms at 300,000.
+     The cost is cache misses, not instructions: the per-object figure rises
+     tenfold as the set outgrows the cache. Between real ticks the server
+     touches a lot of other memory, so at small counts the real cost is
+     probably nearer the cold figures than the 3-5 ns measured here.
+     NOT VERIFIED: how many world objects a production server holds; that
+     number decides whether this is a few percent of a core or most of one.
+     The work is spread across landblock-group threads, so it shows up as CPU
+     more than as tick time.
+
+     FIX: E.1's physics-active list - iterate only objects that can need an
+     update. The coupling surface is small, and was checked:
+       - PhysicsObj.IsAnimating is set TRUE at exactly one site
+         (Animation/MotionInterp.cs:391) and false at four
+         (MotionInterp.cs:172, 231; Player.cs:919, 944).
+       - InitialUpdates is only incremented inside UpdateObjectInternal
+         (PhysicsObj.cs:1674, 1723).
+       - Missiles are activated at Creature_Missile.cs:388 and
+         SpellProjectile.cs:892.
+       - Players always need the call (RequestedLocation, Player_Tick.cs:294).
+     So an object enters the active set when it is added to the landblock
+     (covers its first two updates), when MotionInterp sets IsAnimating, when a
+     missile is activated, and when a creature starts dying; players stay in
+     it. It leaves when UpdateObjectPhysics finds nothing to do and
+     InitialUpdates > 1.
+     SAFETY: this is a coupling change. A missed wake-up source would leave an
+     object that never animates on the server. Verify each source above, and
+     objects that move between landblocks mid-animation, before relying on it.
+     A cheaper first step is to measure: count worldObjects against the
+     objects that get past the early-outs, per tick, on a live server.
+     Confidence: cost VERIFIED (measured); fix PLAUSIBLE.
+
+R.2  [HIGH] P.1 measured: the global landblock lock scales NEGATIVELY - and
+     P.1's fix as written is unsafe
+     Managers/LandblockManager.cs:478-537, via Common/LScape.cs:53-63
+
+     Measured on the real LandblockManager.GetLandblock(id, false, false) with
+     the landblock already loaded, which is the call behind every physics
+     LScape.get_landcell:
+                                            1 thread      2 threads     4 threads
+         real GetLandblock, total calls/s    67.5 M        41.2 M        28.2 M
+           wall time per call per thread     15 ns         49 ns         142 ns
+           CPU per call                      15 ns         48 ns         134 ns
+         same lookup under EnterReadLock     76.4 M        73.5 M        67.4 M
+         lock-free Volatile.Read            1,531 M       3,049 M       5,871 M
+     Adding threads REDUCES total throughput: four threads together complete
+     42% of what one thread does alone, and burn 9x the CPU per call. A plain
+     read lock does not scale either (13 -> 59 ns per call), which is the cost
+     shape of the static ObjectMaint lock (F.1). A lock-free read costs 0.7 ns
+     at every thread count.
+     These are bounds: threads here call back to back. In the server the calls
+     come in bursts - 5 to 41 per find_cell_list (PG.1), several
+     find_cell_lists per transition - so two threads running transitions at
+     the same time collide constantly; a thread running alone pays 15 ns.
+     Multi-threaded physics ticking is ON in the shipped config
+     (Config.js.example, MultiThreadedLandblockGroupPhysicsTicking), and
+     monster transitions run inside the multi-threaded landblock tick too.
+
+     P.1'S FIX AS WRITTEN IS UNSAFE. P.1 says "read landblocks[x,y] (volatile)
+     first and return immediately when non-null". But the load path publishes
+     the landblock BEFORE it is initialised:
+
+         landblock = landblocks[x, y] = new Landblock(landblockId);   // under the write lock
+         ...
+         landblock.Init();     // PhysicsLandblock.PostInit(): land cells, buildings, static objects
+
+     Today no other thread can observe that window, because the upgradeable
+     lock is held through Init() and every other caller blocks on it. With a
+     lock-free read of landblocks[x,y], a second thread could run collision
+     against a landblock whose buildings and static objects are not there yet
+     (Physics/Common/Landblock.cs:69-75), or enumerate a list that PostInit is
+     still filling.
+     It is reachable: two landblock groups separated by exactly one unloaded
+     landblock can both have an object near its edge, and both then ask for it.
+     SAFE VERSION:
+       - Add a second array, readyLandblocks[255, 255].
+       - Publish to it (Volatile.Write) at the end of the load path, after
+         Init() has returned, still inside the lock.
+       - Clear it next to `landblocks[...] = null` in UnloadLandblocks
+         (LandblockManager.cs:707), under the write lock.
+       - Fast path at the top of GetLandblock:
+             if (!loadAdjacents && !permaload)
+             {
+                 var ready = Volatile.Read(ref readyLandblocks[x, y]);
+                 if (ready != null) return ready;
+             }
+     The loading thread's own re-entrant lookups during Init() miss the fast
+     path and take the recursive lock exactly as today. The unload race is
+     unchanged: a caller can already hold a landblock that is then unloaded.
+     SIDE BENEFIT: a landblock load holds the WRITE lock through the Landblock
+     constructor (dat reads and building the physics landblock) and the
+     upgradeable lock through Init(). Today that stalls every other thread's
+     lookups of landblocks that are already loaded; with the fast path it does
+     not.
+     HOW TO VALIDATE ON A LIVE SERVER: the server already computes a physics
+     tick efficiency figure (LandblockManager.cs:336-342,
+     TickPhysicsEfficiencyTracker). Compare it before and after.
+     Confidence: measurement VERIFIED; hazard VERIFIED by reading; the safe
+     version is PLAUSIBLE (not prototyped in the server).
+
+R.3  PG.1: confirmed, with one extension and one caveat
+     - The one-line fix was re-read and re-run: the sphere overload of
+       add_all_outside_cells never sets AddedOutside, and the call counts
+       (5 -> 3, 13 -> 5, 41 -> 9 per find_cell_list) reproduce.
+     - CAVEAT: Section Q's timing ratios (2.0-3.4x) were taken with Harmony
+       prefixes attached to get_landcell, which makes every avoided call look
+       more expensive than it is. The call counts are exact; see R.4 for
+       timings without patches attached.
+     - EXTENSION: add_outside_cell (Common/LandCell.cs:208-220) fetches the
+       cell - the global-lock lookup - BEFORE add_cell checks whether it is
+       already in the array:
+           var landCell = Get(cellID);
+           if (landCell != null)
+               cellArray.add_cell(cellID, landCell);     // ContainsKey happens in here
+       Check `cellArray.Cells.ContainsKey(cellID)` first and skip the lookup.
+       After PG.1 a two-sphere object in the interior of a cell still does
+       three lookups (GetVisible, then one per sphere for the same cell); with
+       this it does two. It is equivalent: add_cell discards the duplicate
+       anyway, and a key that is present was fetched earlier. Not measured.
+
+R.4  Real physics updates, end to end (the first measurement of a whole
+     transition)
+     Section Q could not run a transition, so its per-update totals were
+     composed from pieces. This harness runs the real
+     PhysicsObj.update_object() with PhysicsEngine.Instance.Server = true:
+       - terrain from the real CellLandblock parser and physics Landblock
+         constructor (flat, a 9.5 degree slope, rolling hills);
+       - the real LandblockManager.GetLandblock lookup, lock included;
+       - objects from the real SetupModel parser, placed with the calls
+         WorldObject.AddPhysicsObj uses;
+       - no Harmony attached during any timing or allocation run. Fixes are
+         emulated as SOURCE edits and rebuilt, built from the current tree.
+     Object A is creature-like: 2 spheres, 1 cylsphere, 17 parts, moving at
+     4 m/s, ticked every 0.2 s as a monster is (so one update_object is 2
+     UpdateObjectInternal calls and 2 transitions). Object B is a missile.
+     LIMITS: no MotionTable-driven movement, no indoor cells, buildings or BSP
+     objects (PG.3-PG.6 are not covered), no players, one thread, workstation
+     GC, and none of the WorldObject-side work (sync, broadcast, relocation).
+     Object dimensions are assumptions.
+
+     PER update_object, object A:
+         flat ground, one cell                 4,880 B    1.31 us
+         along a cell edge (2 cells)           5,104 B    1.91 us
+         update that changes cell              5,592 B    2.01 us
+         near a corner (4 cells)               5,756 B    3.4 us
+         9.5 degree slope                      5,552 B    2.27 us
+         rolling hills, average                5,614 B    2.50 us
+         standing still, active                  448 B    146 ns
+         standing still, inactive                  0 B      9 ns
+     So one transition on flat ground is 2,440 B in about 51 objects, and
+     about 0.66 us. A landblock change costs the same as a cell change here.
+
+     CROWDS: N cylsphere objects standing in the walker's cell, per update:
+          N     passing, no contact      sliding along them
+          0      4,880 B / 1.37 us              -
+          5      6,560 B / 2.03 us        7,034 B / 2.43 us
+         20     10,160 B / 3.63 us       11,882 B / 4.53 us
+         50     17,360 B / 6.87 us       22,202 B / 9.0 us
+     That is +120 B and about +55 ns per neighbour per transition. Sphere-only
+     neighbours add time but no allocation.
+
+     MISSILES, per update (one transition, up to 30 Hz):
+         radius 0.1, 20 m/s (7 steps)          4,000 B    1.70 us
+         radius 0.3, 20 m/s (3 steps)          2,900 B    1.01 us
+         radius 0.3,  8 m/s (1 step)           2,372 B    0.63 us
+
+     OTHER MEASURED EFFECTS:
+       - A cell change with other server objects nearby adds 8 B and ~4.8 ns
+         per object (GetServerObjects(true)).
+       - After walking through 256 cells an update takes 1.61 us instead of
+         1.31: ShadowObjects is never pruned (bugs-physics.txt H.2, now
+         measured).
+       - Placing a creature into a dense crowd (1,500 creatures in 60 x 60 m)
+         costs 72.5 KB and 56 us per enter_world (the FindPlacementPos ring
+         search).
+
+     ALLOCATION BY TYPE, flat ground (sampled): AFrame 23.7%, SpherePath 12.2%,
+     Position 11.9%, Sphere 10.0%, Sphere[] 7.1%, List<Sphere> 6.5%,
+     CollisionInfo 5.2%, dictionary entries 3.9%, Dictionary<uint, ObjCell>
+     3.4%, boxed dictionary enumerator 3.3%.
+     In a crowd of 20: AFrame 29.9%, Position 18.7%, CylSphere 15.9%.
+
+     CALL COUNTS per transition:
+                                        flat, 1 cell   edge, 2 cells   slope
+         find_cell_list                      1               1            3
+         LScape.get_landcell                 5              13           15
+         SetCheckPos                         2               2            2
+         SetCurrentCheckPos                  1               1            1
+     At a corner get_landcell runs 41 times per find_cell_list.
+     CacheLocalSpaceSphere and CylSphere.IntersectsSphere run once per
+     cylsphere neighbour per transition (0 with none, 20 with 20).
+     Transition.BuildCellArray and PhysicsObj.calc_cross_cells were never
+     called in any scenario.
+     COUNTING TRAP: a Harmony prefix is silently bypassed wherever the JIT
+     inlined the target (SetCheckPos showed 2 instead of 4). Count under
+     DOTNET_JitNoInline=1.
+
+     THE PROPOSED FIXES, end to end. Each is a small source diff in
+     docs/benchmarks/physics-e2e/variants/<name>/source.diff, and each applies
+     to the current tree with `git apply`. Change per update_object:
+         PG.1                    flat 0 B, x0.92; edge x0.77; slope x0.85
+         PC.7                    -64 B
+         PC.8 (boxing only)      flat -160 B; slope -480 B; missile -588 B
+         PC.11                   flat x0.96; standing still 142 -> 70 ns
+         PG.2                    no change alone; crowd of 20:
+                                 10,160 -> 6,480 B, x0.61
+         PC.3 stage 0            -448 B; standing still 448 -> 0 B
+         PC.2 (guarded)          flat -480 B; slope -640 B; missile -1,200 B
+         Q.E items 1-5 together  flat 4,880 -> 3,728 B, x0.77; edge x0.67;
+                                 crowd of 20 x0.50; crowd of 50 x0.44;
+                                 standing still x0.32
+         PC.1 pool               -2,464 B (-1,232 per transition), x0.86
+         everything              flat 4,880 -> 1,264 B, x0.63;
+                                 crowd of 20 2,864 B, x0.45;
+                                 missile 772 B, x0.73
+         PG.7                    113,440 -> 73,480 B and 17.5 -> 10.8 us per
+                                 physics Landblock built
+     With PG.1, get_landcell calls per update fall 10 -> 6 (one cell),
+     26 -> 10 (edge), 82 -> 18 (corner crossing) and 30 -> 18 (slope).
+     The PC.1 row used one reused instance per thread, not the proposed stack
+     with release scopes.
+
+     IDENTICAL RESULTS, every variant against the unmodified build:
+       - the hash of the first 20,000 updates matches in all 8 scenarios;
+       - a random walk over hills among 1,499 obstacles, 2 seeds x 200,000
+         updates, compared per update on cell, position, orientation, state
+         and shadow-cell set: 0 mismatches;
+       - 1,000,000 updates (35,607 cell changes, 3,804 landblock changes,
+         about 50,000 updates in contact) for PG.1, PG.2, items 1-5, the pool
+         and everything together: 0 mismatches;
+       - placing 1,500 creatures into a crowd: identical.
+     NEGATIVE CONTROL: the unguarded in-place SetCheckPos (P.3 as first
+     written) gives 161,621 mismatches in 200,000 updates and a different
+     placement result. That confirms PC.2's alias warning, and shows these
+     checks can fail.
+     Confidence: VERIFIED, within the limits above. The flat-ground, crowd and
+     fix figures were re-run independently with the same results.
+
+
+--- R.C CORRECTIONS TO SECTION Q -----------------------------------------------
+
+WHICH BINARY WAS MEASURED. Section Q (and perf-network.txt Section G) say they
+     ran against Claude1 @ 867315772. The binary they actually measured was an
+     older build left in Source/ACE.Server/bin/x64/Release (2026-11-23, before
+     #4544 and #4553); a plain `dotnet build` of the project writes to
+     bin/Release instead. The hot-path source is the same, and the key figures
+     were re-measured here on a current build: the flat scenario is 4,832 B on
+     the old binary and 4,880 B on the current one. Byte counts move by up to
+     48 B per update with JIT stack-allocation decisions in any case.
+
+Q.D  TICK LOOP: retracted in place; see R.1.
+
+Q.D  FindPlacementPos "cold": it is per spawn and teleport, but one placement
+     into a dense crowd costs 72.5 KB and 56 us (R.4). PG.2 cuts it to 31 KB.
+
+PC.1 "about 2.3-2.9 KB per moving-object update" is right only per TRANSITION
+     in the simplest case (2,440 B). A monster tick is two transitions:
+     4,880 B. The composed model also left out, per transition unless stated:
+       - crowding: +120 B per cylsphere neighbour (50 neighbours: 8.7-11 KB);
+       - a cell change: +712 B, plus 8 B per server object nearby;
+       - a slope: +336 B;
+       - each extra step: +272 B;
+       - animation: about +300 B per sub-step;
+       - MoveToManager: +152 B per sub-step.
+     The pool saves 1,232 B per transition, not "~1 KB".
+
+PG.1 TIMINGS were inflated by the counting prefix attached during timing. In the
+     same lookup mode, without patches: 1.39x / 1.82x / 2.58x / 2.32x, not
+     2.0x / 2.4x / 3.4x / 3.2x. With the production lookup (uncontended lock
+     included, ~10-11 ns per get_landcell): 1.42x / 1.99x / 3.06x / 2.85x.
+     End to end PG.1 is worth 8% on flat ground and 23% along a cell edge,
+     before counting lock contention (R.2). The call counts were right.
+
+PG.1 FREQUENCY. "5 calls, one transition" is wrong. find_cell_list runs once
+     per STEP: once per transition on flat ground, three times on a slope.
+     Transition.BuildCellArray and PhysicsObj.calc_cross_cells are not on the
+     per-move path for non-BSP objects.
+
+PC.2 saves 240 B per transition on flat ground, 320 B on a slope and 1,200 B
+     for a 7-step missile - not "0.3-0.8 KB".
+
+PC.8 holds end to end (40 B per cell per loop), although a pristine
+     find_cell_list micro-benchmark on .NET 10 does not box at all.
+
+PC.11 saves 25-35 ns per UpdateObjectInternal end to end, more than its
+     micro-benchmark showed, and halves an idle active creature's update.
+
+Q.0  MISSILES. One transition per update is right, but a small fast missile
+     runs 3-7 STEPS inside it: 1.0-1.7 us and 2.9-4.0 KB per update, more than
+     a creature's whole 0.2 s tick.
+     CADENCE confirmed: 2 UpdateObjectInternal calls per 0.2 s creature tick.
+     One quirk: TickRate is a float compared with a double, so at exactly
+     1/60 s spacing an object updates every THIRD tick (20 per second); with
+     the main loop's ~1 ms jitter it is every second tick (~30 per second).
+     Making that exact would raise update rates, so leave it alone.
+
+PG.2, PG.3 CITATIONS. PhysicsPart.cs:193-201 and GfxObj.cs:651-668 did not
+     exist (the files are 163 and 113 lines). Corrected in place to
+     PhysicsPart.cs:52-60 and Common/GfxObj.cs:73-89. The other 189 references
+     in Section Q resolve to the code they describe.
+
+PG.9 and bugs-physics.txt Q.1 / Q.2 MAY BE RETAIL BEHAVIOUR. BBox.LocalToGlobal
+     and adjust_scene_obj_height look like direct ports. The client computes
+     cell membership for the same objects, so changing only the server can
+     create a disagreement where today both sides agree. Check against the
+     client before changing either. (Noted in bugs-physics.txt.)
+
+SEVERITY LABELS in Section Q rest on assumed object and update counts. R.4
+     gives measured per-update costs to multiply by real counts from a live
+     server.
+
+
+--- R.E PRIORITY, REVISED ------------------------------------------------------
+
+  1. R.2 + PG.1 (+ the R.3 extension). The safe lock-free fast path and the
+     AddedOutside flag. The lock is the only item here whose cost GROWS with
+     thread count, and PG.1 removes 40-78% of the calls that take it.
+  2. Q.E items 1-5 as one change: PG.1, PC.7 + PC.8 + PC.11, PG.2, PC.3 stage 0,
+     PC.2. The diffs exist, and they are verified identical over 1,000,000
+     updates: 24% fewer bytes and x0.77 time on open ground, x0.44-x0.50 in
+     crowds, and an idle active creature's update drops to 0 B.
+  3. R.1. First count objects on a live server; if the count is in the
+     hundreds of thousands, the active list is worth more than everything in
+     item 2.
+  4. PC.1. The pool: a further -2,464 B per update and x0.82 on top of item 2
+     (x0.86 on its own).
+  5. PG.7 (40 KB and 6.7 us off every physics Landblock built), then PG.4,
+     PC.12, PG.3 and the rest of Q.E in its order. PC.4 (AFrame struct) last.
+
+NOT VERIFIED in Section R: world-object counts and update mixes on a live
+server; contention under the server's real call pattern (R.2 gives bounds);
+indoor cells, buildings and BSP collision (not in the end-to-end harness);
+player paths; Windows; retail-client parity for PG.9.
 
 ================================================================================
 END OF REPORT

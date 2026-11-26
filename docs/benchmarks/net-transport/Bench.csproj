@@ -20,7 +20,7 @@
   </ItemGroup>
 
   <PropertyGroup>
-    <AceBin Condition="'$(AceBin)' == ''">$(MSBuildThisFileDirectory)../../../Source/ACE.Server/bin/x64/Release/net10.0</AceBin>
+    <AceBin Condition="'$(AceBin)' == ''">$(MSBuildThisFileDirectory)../../../Source/ACE.Server/bin/Release/net10.0</AceBin>
   </PropertyGroup>
 
   <ItemGroup>

@@ -1,0 +1,13 @@
+diff -ru a/Source/ACE.Server/Physics/Animation/AFrame.cs b/Source/ACE.Server/Physics/Animation/AFrame.cs
+--- a/Source/ACE.Server/Physics/Animation/AFrame.cs	2024-03-12 21:37:50.000000000 -0500
++++ b/Source/ACE.Server/Physics/Animation/AFrame.cs	2026-11-25 09:45:56.283660937 -0600
+@@ -110,7 +110,8 @@
+ 
+         public void GRotate(Vector3 rotation)
+         {
+-            Orientation *= Quaternion.CreateFromYawPitchRoll(rotation.X, rotation.Y, rotation.Z);
++            if (rotation != Vector3.Zero)
++                Orientation *= Quaternion.CreateFromYawPitchRoll(rotation.X, rotation.Y, rotation.Z);
+             Orientation  = Quaternion.Normalize(Orientation);
+         }
+ 

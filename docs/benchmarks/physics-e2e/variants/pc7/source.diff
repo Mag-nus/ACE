@@ -1,0 +1,12 @@
+diff -ru a/Source/ACE.Server/Physics/PhysicsObj.cs b/Source/ACE.Server/Physics/PhysicsObj.cs
+--- a/Source/ACE.Server/Physics/PhysicsObj.cs	2026-11-25 02:42:12.000000000 -0600
++++ b/Source/ACE.Server/Physics/PhysicsObj.cs	2026-11-25 09:45:42.679053289 -0600
+@@ -3288,7 +3288,7 @@
+ 
+         public void report_collision_end(bool forceEnd)
+         {
+-            if (CollisionTable == null) return;
++            if (CollisionTable == null || CollisionTable.Count == 0) return;
+ 
+             var ends = new List<uint>();
+ 

@@ -1,0 +1,97 @@
+diff -ru a/Source/ACE.Server/Physics/PhysicsObj.cs b/Source/ACE.Server/Physics/PhysicsObj.cs
+--- a/Source/ACE.Server/Physics/PhysicsObj.cs	2026-11-25 02:42:12.000000000 -0600
++++ b/Source/ACE.Server/Physics/PhysicsObj.cs	2026-11-25 09:46:12.881450079 -0600
+@@ -1653,6 +1653,9 @@
+ 
+         public int InitialUpdates;
+ 
++        private Position scratchNewPos;
++        private AFrame scratchOffsetFrame;
++
+         public void UpdateObjectInternal(double quantum)
+         {
+             if ((TransientState & TransientStateFlags.Active) == 0 || CurCell == null)
+@@ -1662,7 +1665,8 @@
+                 set_ethereal(false, false);
+ 
+             JumpedThisFrame = false;
+-            var newPos = new Position(Position.ObjCellID);
++            var newPos = scratchNewPos ??= new Position();
++            newPos.ObjCellID = Position.ObjCellID;
+             UpdatePositionInternal(quantum, ref newPos.Frame);
+ 
+             if (PartArray != null && PartArray.GetNumSphere() != 0)
+@@ -1707,7 +1711,7 @@
+                             log.LogWarning("{Name} ({ID:X8}).UpdateObjectInternal({Quantum}) - avoided CurCell=null from {Position} to {NewPos}", Name, ID, quantum, Position, newPos);
+ 
+                         newPos.Frame.Origin = Position.Frame.Origin;
+-                        set_initial_frame(newPos.Frame);
++                        set_initial_frame(newPos.Frame);    // set_initial_frame copies (below)
+                         CachedVelocity = Vector3.Zero;
+                     }
+                 }
+@@ -1862,7 +1866,9 @@
+ 
+         public void UpdatePositionInternal(double quantum, ref AFrame newFrame)
+         {
+-            var offsetFrame = new AFrame();
++            var offsetFrame = scratchOffsetFrame ??= new AFrame();
++            offsetFrame.Origin = Vector3.Zero;
++            offsetFrame.Orientation = Quaternion.Identity;
+ 
+             if (!State.HasFlag(PhysicsState.Hidden))
+             {
+@@ -1876,7 +1882,12 @@
+             if (PositionManager != null)
+                 PositionManager.AdjustOffset(offsetFrame, quantum);
+ 
+-            newFrame = AFrame.Combine(Position.Frame, offsetFrame);
++            {
++                var combinedOrigin = Position.Frame.Origin + Vector3.Transform(offsetFrame.Origin, Position.Frame.Orientation);
++                var combinedOrientation = Quaternion.Multiply(Position.Frame.Orientation, offsetFrame.Orientation);
++                newFrame.Origin = combinedOrigin;
++                newFrame.Orientation = combinedOrientation;
++            }
+ 
+             if (!State.HasFlag(PhysicsState.Hidden))
+                 UpdatePhysicsInternal((float)quantum, ref newFrame);
+@@ -1948,7 +1959,7 @@
+         {
+             enter_cell(newCell);
+ 
+-            Position.Frame = newFrame;
++            Position.Frame = new AFrame(newFrame);
+             if (PartArray != null && !State.HasFlag(PhysicsState.ParticleEmitter))
+                 PartArray.SetFrame(Position.Frame);
+ 
+@@ -3474,7 +3485,8 @@
+         public void set_current_pos(Position newPos)
+         {
+             Position.ObjCellID = newPos.ObjCellID;
+-            Position.Frame = new AFrame(newPos.Frame);
++            Position.Frame.Origin = newPos.Frame.Origin;
++            Position.Frame.Orientation = newPos.Frame.Orientation;
+ 
+             if (CurCell == null || CurCell.ID != Position.ObjCellID)
+             {
+@@ -3643,9 +3655,8 @@
+             if (!frame.IsValid() && frame.IsValidExceptForHeading())
+                 frame.Orientation = new Quaternion(0, 0, 0, 0);
+ 
+-            Position.Frame = new AFrame(frame);
+-            //Position.Frame.Origin = frame.Origin;
+-            //Position.Frame.Orientation = frame.Orientation;
++            Position.Frame.Origin = frame.Origin;
++            Position.Frame.Orientation = frame.Orientation;
+ 
+             // custom for server:
+             // only update part frames for objects with physics bsp
+@@ -3748,7 +3759,7 @@
+         /// </summary>
+         public void set_initial_frame(AFrame frame)
+         {
+-            Position.Frame = frame;
++            Position.Frame = new AFrame(frame);
+ 
+             if (PartArray != null && !State.HasFlag(PhysicsState.ParticleEmitter))
+                 PartArray.SetFrame(frame);

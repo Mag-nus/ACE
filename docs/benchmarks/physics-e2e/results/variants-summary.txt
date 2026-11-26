@@ -1,0 +1,45 @@
+bytes per update_object (exact):
+variant                       a              a-edge              b-diag                   d                   e           f-near-20          f-slide-20                   m
+base           4880.0 (   +0.0)    5104.0 (   +0.0)    5063.5 (   +0.0)    5552.0 (   +0.0)     448.0 (   +0.0)   10160.0 (   +0.0)   11882.6 (   +0.0)    4000.0 (   +0.0)
+pg1            4880.0 (   +0.0)    5104.0 (   +0.0)    5063.5 (   +0.0)    5552.0 (   +0.0)     448.0 (   +0.0)   10160.0 (   +0.0)   11883.4 (   +0.8)    4000.0 (   +0.0)
+pc7            4816.0 (  -64.0)    5040.0 (  -64.0)    4999.5 (  -64.0)    5488.0 (  -64.0)     448.0 (   +0.0)   10096.0 (  -64.0)   11882.4 (   -0.2)    3968.0 (  -32.0)
+pc8            4720.0 ( -160.0)    4784.0 ( -320.0)    4843.5 ( -220.0)    5072.0 ( -480.0)     448.0 (   +0.0)   10000.0 ( -160.0)   11722.8 ( -159.8)    3412.3 ( -587.7)
+pc11           4880.0 (   +0.0)    5104.0 (   +0.0)    5063.5 (   +0.0)    5552.0 (   +0.0)     448.0 (   +0.0)   10160.0 (   +0.0)   11883.3 (   +0.7)    4048.0 (  +48.0)
+q2             4656.0 ( -224.0)    4720.0 ( -384.0)    4779.5 ( -284.0)    5008.0 ( -544.0)     448.0 (   +0.0)    9936.0 ( -224.0)   11722.8 ( -159.8)    3428.3 ( -571.7)
+pg2            4880.0 (   +0.0)    5104.0 (   +0.0)    5063.5 (   +0.0)    5552.0 (   +0.0)     448.0 (   +0.0)    6480.0 (-3680.0)    7160.8 (-4721.8)    4000.0 (   +0.0)
+pc3            4432.0 ( -448.0)    4656.0 ( -448.0)    4615.5 ( -448.0)    5104.0 ( -448.0)       0.0 ( -448.0)    9712.0 ( -448.0)   11433.7 ( -448.9)    3776.0 ( -224.0)
+pc2            4400.0 ( -480.0)    4624.0 ( -480.0)    4583.5 ( -480.0)    4912.0 ( -640.0)     448.0 (   +0.0)    9680.0 ( -480.0)   11403.1 ( -479.5)    2800.0 (-1200.0)
+items1to5      3728.0 (-1152.0)    3792.0 (-1312.0)    3851.5 (-1212.0)    3920.0 (-1632.0)       0.0 ( -448.0)    5328.0 (-4832.0)    6073.1 (-5809.5)    2004.3 (-1995.7)
+pool           2416.0 (-2464.0)    2640.0 (-2464.0)    2537.5 (-2526.0)    3088.0 (-2464.0)     448.0 (   +0.0)    7472.0 (-2688.0)    9147.2 (-2735.4)    2768.0 (-1232.0)
+all            1264.0 (-3616.0)    1328.0 (-3776.0)    1325.5 (-3738.0)    1456.0 (-4096.0)       0.0 ( -448.0)    2864.0 (-7296.0)    3561.2 (-8321.4)     772.3 (-3227.7)
+
+best time per update_object, ns (min over runs; ratio to base in brackets; base was run first and last):
+variant                       a              a-edge              b-diag                   d                   e           f-near-20          f-slide-20                   m
+base               1311 (1.000)        1924 (1.000)        1684 (1.000)        2293 (1.000)         142 (1.000)        3595 (1.000)        4469 (1.000)        1737 (1.000)
+pg1                1199 (0.915)        1489 (0.774)        1354 (0.804)        1956 (0.853)         141 (0.993)        3560 (0.990)        4411 (0.987)        1588 (0.914)
+pc7                1318 (1.005)        1909 (0.992)        1695 (1.007)        2276 (0.993)         144 (1.014)        3501 (0.974)        4503 (1.008)        1920 (1.105)
+pc8                1319 (1.006)        1864 (0.969)        1653 (0.982)        2179 (0.950)         138 (0.972)        3533 (0.983)        4430 (0.991)        1627 (0.937)
+pc11               1264 (0.964)        1886 (0.980)        1581 (0.939)        2219 (0.968)          70 (0.493)        3531 (0.982)        4386 (0.981)        1711 (0.985)
+q2                 1220 (0.931)        1790 (0.930)        1538 (0.913)        2119 (0.924)          72 (0.507)        3511 (0.977)        4373 (0.979)        1603 (0.923)
+pg2                1349 (1.029)        2026 (1.053)        1719 (1.021)        2315 (1.010)         143 (1.007)        2187 (0.608)        2632 (0.589)        1764 (1.016)
+pc3                1290 (0.984)        1889 (0.982)        1648 (0.979)        2224 (0.970)         103 (0.725)        3613 (1.005)        4481 (1.003)        1807 (1.040)
+pc2                1259 (0.960)        1898 (0.986)        1671 (0.992)        2317 (1.010)         142 (1.000)        3518 (0.979)        4467 (1.000)        1660 (0.956)
+items1to5          1006 (0.767)        1291 (0.671)        1161 (0.689)        1644 (0.717)          45 (0.317)        1810 (0.503)        2270 (0.508)        1381 (0.795)
+pool               1130 (0.862)        1750 (0.910)        1485 (0.882)        2156 (0.940)         141 (0.993)        3428 (0.954)        4415 (0.988)        1688 (0.972)
+all                 830 (0.633)        1117 (0.581)         987 (0.586)        1458 (0.636)          46 (0.324)        1611 (0.448)        2081 (0.466)        1268 (0.730)
+
+base runs (ns): {'a': [1336, 1311], 'a-edge': [1936, 1924], 'b-diag': [1691, 1684], 'd': [2293, 2393], 'e': [142, 142], 'f-near-20': [3595, 3661], 'f-slide-20': [4469, 4504], 'm': [1737, 1737]}
+
+identical-results checks:
+  base       hash of first 20k updates equal to base in all 8 scenarios: True;  random walk vs base: (reference)
+  pg1        hash of first 20k updates equal to base in all 8 scenarios: True;  random walk vs base: seed 1 n=200000: 0 mismatches, 0 shadow-set diffs; seed 2 n=200000: 0 mismatches, 0 shadow-set diffs
+  pc7        hash of first 20k updates equal to base in all 8 scenarios: True;  random walk vs base: seed 1 n=200000: 0 mismatches, 0 shadow-set diffs; seed 2 n=200000: 0 mismatches, 0 shadow-set diffs
+  pc8        hash of first 20k updates equal to base in all 8 scenarios: True;  random walk vs base: seed 1 n=200000: 0 mismatches, 0 shadow-set diffs; seed 2 n=200000: 0 mismatches, 0 shadow-set diffs
+  pc11       hash of first 20k updates equal to base in all 8 scenarios: True;  random walk vs base: seed 1 n=200000: 0 mismatches, 0 shadow-set diffs; seed 2 n=200000: 0 mismatches, 0 shadow-set diffs
+  q2         hash of first 20k updates equal to base in all 8 scenarios: True;  random walk vs base: seed 1 n=200000: 0 mismatches, 0 shadow-set diffs; seed 2 n=200000: 0 mismatches, 0 shadow-set diffs
+  pg2        hash of first 20k updates equal to base in all 8 scenarios: True;  random walk vs base: seed 1 n=200000: 0 mismatches, 0 shadow-set diffs; seed 2 n=200000: 0 mismatches, 0 shadow-set diffs
+  pc3        hash of first 20k updates equal to base in all 8 scenarios: True;  random walk vs base: seed 1 n=200000: 0 mismatches, 0 shadow-set diffs; seed 2 n=200000: 0 mismatches, 0 shadow-set diffs
+  pc2        hash of first 20k updates equal to base in all 8 scenarios: True;  random walk vs base: seed 1 n=200000: 0 mismatches, 0 shadow-set diffs; seed 2 n=200000: 0 mismatches, 0 shadow-set diffs
+  items1to5  hash of first 20k updates equal to base in all 8 scenarios: True;  random walk vs base: seed 1 n=200000: 0 mismatches, 0 shadow-set diffs; seed 2 n=200000: 0 mismatches, 0 shadow-set diffs
+  pool       hash of first 20k updates equal to base in all 8 scenarios: True;  random walk vs base: seed 1 n=200000: 0 mismatches, 0 shadow-set diffs; seed 2 n=200000: 0 mismatches, 0 shadow-set diffs
+  all        hash of first 20k updates equal to base in all 8 scenarios: True;  random walk vs base: seed 1 n=200000: 0 mismatches, 0 shadow-set diffs; seed 2 n=200000: 0 mismatches, 0 shadow-set diffs

@@ -1,0 +1,3 @@
+[base] new Physics.Common.Landblock(CellLandblock): allocated 113440 B, retained 73480 B, 17.5 us each (n=400)
+[pg7] new Physics.Common.Landblock(CellLandblock): allocated 73480 B, retained 73264 B, 10.8 us each (n=400)
+[snapshot] new Physics.Common.Landblock(CellLandblock): allocated 113440 B, retained 73480 B, 18.7 us each (n=400)

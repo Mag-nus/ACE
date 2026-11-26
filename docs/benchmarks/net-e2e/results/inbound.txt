@@ -1,0 +1,21 @@
+[env] .NET 10.0.15, 4 cpus, ServerGC=True, latency=Interactive, log=bridge, listeners 127.0.0.1:21110 / 127.0.0.1:21111, sessionMap[1000]
+[env] packetLog.IsEnabled(Debug)=False  log.IsEnabled(Debug)=True
+[env] Timers.PortalYearTicks=309739703  (ushort)=16567
+
+=== (e) INBOUND on the REAL path: new ClientPacket + Unpack + NetworkManager.ProcessPacket(listener, packet, endPoint) + ReleaseBuffer, n=100000 datagrams per run, fresh real session per run ===
+    = ConnectionListener.OnDataReceive lines 119-124 without the socket. 'docs method' = Unpack + VerifyCRC(standalone CryptoSystem) + new ClientMessage per fragment (what NT.6 measured), same datagrams, same run.
+    'queue run' = NetworkManager.InboundMessageQueue.RunActions() cost per dispatched message (world thread; handler body returns at once because session.Player == null).
+datagram                                      size |                  docs method |               REAL full path |          queue run / msg | docs NT.6
+ack-only, cleartext CRC (pure ACK)              24 |     113.4 ns (med     122.9)      736.0 B |     270.3 ns (med     276.4)     1000.0 B |                          | -
+ack-only, encrypted                             24 |     123.3 ns (med     127.6)      736.0 B |     257.5 ns (med     263.9)     1000.0 B |                          |  736 B /  76 ns
+ack-only, encrypted, 40 packets cached          24 |     102.1 ns (med     123.8)      736.0 B |     351.0 ns (med     395.3)     1152.0 B |                          | (736 B /  76 ns)
+one action fragment (64 B GameAction)          100 |     183.4 ns (med     189.2)      824.0 B |     296.8 ns (med     301.9)     1000.0 B |       9.2 ns (med       9.4)        0.0 B |  824 B / 125 ns
+ack + action                                   104 |     199.4 ns (med     211.1)     1104.0 B |     419.3 ns (med     426.4)     1512.0 B |       9.3 ns (med       9.6)        0.0 B | 1104 B / 144 ns
+ack + action, 40 packets cached                104 |     206.5 ns (med     221.5)     1104.0 B |     526.6 ns (med     536.1)     1664.0 B |       9.6 ns (med       9.7)        0.0 B | (1104 B / 144 ns)
+one action fragment (12 B PingRequest)          48 |     178.5 ns (med     184.0)      776.0 B |     286.1 ns (med     291.6)      952.0 B |       9.2 ns (med       9.5)        0.0 B | -
+note: with 0 'cached' the session still holds its one TimeSync packet (sequence 2) in cachedPackets, as a real session does.
+note: every ns figure above includes the measurement bracket itself: 16.5 ns (subtract it for absolute values; it cancels in differences).
+
+real	0m10.348s
+user	0m3.499s
+sys	0m0.404s

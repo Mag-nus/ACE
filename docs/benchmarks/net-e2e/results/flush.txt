@@ -1,0 +1,95 @@
+[env] .NET 10.0.15, 4 cpus, ServerGC=True, latency=Interactive, log=bridge, listeners 127.0.0.1:28242 / 127.0.0.1:28243, sessionMap[1000]
+[env] packetLog.IsEnabled(Debug)=False  log.IsEnabled(Debug)=True
+[env] Timers.PortalYearTicks=309739407  (ushort)=16270
+
+=== (b) FLUSH on the REAL NetworkSession: EnqueueSend + Update() (real SendBundle/FlushPackets/SendPacketRaw/Socket.SendTo), n=20000 per run, 7 runs, client not draining (kernel drops) ===
+    'real total' = EnqueueSend + every Update() call needed to put the scenario on the wire. 'sendto' = the same datagrams sent by a bare
+    Socket.SendTo(byte[],int,SocketFlags,EndPoint) on the same listener socket to the same client, interleaved 1:1 with the real flushes.
+    'COPY' = docs LegacySession (verbatim copy, NullSink) fed the SAME message objects in the same run, measured the docs way (new bundle + Fill + SendBundle + FlushPackets).
+
+--- 1 x 60 B message   [1 Update() call(s) -> 1 datagram(s): 96 B EF 1 frag]   docs NT.3:  858 B / 245 ns
+    REAL EnqueueSend(msgs[])                      45.0 ns (med      46.4)       56.0 B
+    REAL Update() x1 (incl. sendto)             4368.6 ns (med    4595.2)      840.0 B
+    REAL total per scenario (incl. sendto)      4414.6 ns (med    4646.3)      896.0 B
+    bare sendto x1 (in situ)                    3550.8 ns (med    3713.8)       40.0 B
+    REAL total MINUS sendto                      822.4 ns (med     896.3)      856.0 B
+    COPY docs LegacySession + REAL sendto       3974.3 ns (med    4223.7)      896.0 B     (one bundle => same datagrams)
+    REAL-only loop, thread CPU per scenario:        user     771 ns + kernel    3796 ns   (wall    4694 ns)
+    COPY+REAL-sendto-only loop, thread CPU:         user     473 ns + kernel    3556 ns   (wall    4186 ns)
+    bare-sendto-only loop, thread CPU:              user     229 ns + kernel    3602 ns   (wall    3873 ns)
+    COPY docs LegacySession, NullSink (docs)     221.9 ns (med     248.6)      856.0 B
+    => bytes REAL-minus-sendto / COPY = 1.00   ns REAL-minus-sendto / COPY = 3.71   ns REAL total / COPY = 19.9
+
+--- 6 small (60,44,80,52,72,40)   [1 Update() call(s) -> 1 datagram(s): 464 B EF 6 frag]   docs NT.3: 2146 B / 490 ns
+    REAL EnqueueSend(msgs[])                     135.7 ns (med     142.8)      144.0 B
+    REAL Update() x1 (incl. sendto)             5209.7 ns (med    5690.6)     2040.0 B
+    REAL total per scenario (incl. sendto)      5364.8 ns (med    5827.4)     2184.0 B
+    bare sendto x1 (in situ)                    3633.8 ns (med    3926.4)       40.0 B
+    REAL total MINUS sendto                     1643.9 ns (med    1731.0)     2144.0 B
+    COPY docs LegacySession + REAL sendto       4784.5 ns (med    4966.8)     2184.0 B     (one bundle => same datagrams)
+    REAL-only loop, thread CPU per scenario:        user    1285 ns + kernel    3849 ns   (wall    5313 ns)
+    COPY+REAL-sendto-only loop, thread CPU:         user     703 ns + kernel    3722 ns   (wall    4628 ns)
+    bare-sendto-only loop, thread CPU:              user     108 ns + kernel    3753 ns   (wall    3866 ns)
+    COPY docs LegacySession, NullSink (docs)     569.3 ns (med     620.6)     2144.0 B
+    => bytes REAL-minus-sendto / COPY = 1.00   ns REAL-minus-sendto / COPY = 2.89   ns REAL total / COPY = 9.4
+
+--- ack + echo only   [1 Update() call(s) -> 1 datagram(s): 32 B EAe]   docs NT.3:  482 B / 123 ns
+    REAL EnqueueSend(msgs[])                      17.2 ns (med      17.3)        0.0 B
+    REAL Update() x1 (incl. sendto)             4545.0 ns (med    4675.7)      520.0 B
+    REAL total per scenario (incl. sendto)      4562.3 ns (med    4693.0)      520.0 B
+    bare sendto x1 (in situ)                    3700.9 ns (med    3811.3)       40.0 B
+    REAL total MINUS sendto                      841.3 ns (med     892.7)      480.0 B
+    COPY docs LegacySession + REAL sendto       4051.2 ns (med    4141.9)      520.0 B     (one bundle => same datagrams)
+    REAL-only loop, thread CPU per scenario:        user     824 ns + kernel    3679 ns   (wall    4545 ns)
+    COPY+REAL-sendto-only loop, thread CPU:         user     532 ns + kernel    3612 ns   (wall    4222 ns)
+    bare-sendto-only loop, thread CPU:              user     155 ns + kernel    3755 ns   (wall    3994 ns)
+    COPY docs LegacySession, NullSink (docs)     129.9 ns (med     158.3)      480.0 B
+    => bytes REAL-minus-sendto / COPY = 1.00   ns REAL-minus-sendto / COPY = 6.48   ns REAL total / COPY = 35.1
+
+--- ack + echo + 3 small (60,48,64)   [2 Update() call(s) -> 2 datagram(s): 32 B EAe | 240 B EF 3 frag]   docs NT.3: 1386 B / 302 ns
+    REAL EnqueueSend(msgs[])                      76.7 ns (med      79.2)       56.0 B
+    REAL Update() x2 (incl. sendto)             9224.3 ns (med    9604.2)     1728.0 B
+    REAL total per scenario (incl. sendto)      9301.0 ns (med    9683.4)     1784.0 B
+    bare sendto x2 (in situ)                    7323.5 ns (med    7714.6)       80.0 B
+    REAL total MINUS sendto                     1762.5 ns (med    1977.9)     1704.0 B
+    COPY docs LegacySession + REAL sendto       4699.0 ns (med    4782.5)     1424.0 B     (one bundle => 1 datagram where the real code sends 2)
+    REAL-only loop, thread CPU per scenario:        user    1755 ns + kernel    7249 ns   (wall    9174 ns)
+    COPY+REAL-sendto-only loop, thread CPU:         user     742 ns + kernel    3560 ns   (wall    4425 ns)
+    bare-sendto-only loop, thread CPU:              user     454 ns + kernel    7216 ns   (wall    7707 ns)
+    COPY docs LegacySession, NullSink (docs)     365.3 ns (med     409.9)     1384.0 B
+    => bytes REAL-minus-sendto / COPY = 1.23   ns REAL-minus-sendto / COPY = 4.82   ns REAL total / COPY = 25.5
+
+--- 1500 B + 3 small (60,92,40)   [1 Update() call(s) -> 4 datagram(s): 484 B EF 1 frag | 484 B EF 1 frag | 484 B EF 1 frag | 432 B EF 4 frag]   docs NT.3: 3938 B / 809 ns
+    REAL EnqueueSend(msgs[])                      95.0 ns (med      97.7)       56.0 B
+    REAL Update() x1 (incl. sendto)            18096.7 ns (med   18601.8)     4040.0 B
+    REAL total per scenario (incl. sendto)     18191.6 ns (med   18698.0)     4096.0 B
+    bare sendto x4 (in situ)                   15141.4 ns (med   15722.4)      160.0 B
+    REAL total MINUS sendto                     2819.6 ns (med    3163.7)     3936.0 B
+    COPY docs LegacySession + REAL sendto      17107.5 ns (med   17706.2)     4096.0 B     (one bundle => same datagrams)
+    REAL-only loop, thread CPU per scenario:        user    2694 ns + kernel   14714 ns   (wall   18366 ns)
+    COPY+REAL-sendto-only loop, thread CPU:         user    2047 ns + kernel   14534 ns   (wall   17978 ns)
+    bare-sendto-only loop, thread CPU:              user     905 ns + kernel   15046 ns   (wall   16947 ns)
+    COPY docs LegacySession, NullSink (docs)    1072.0 ns (med    1081.1)     3936.0 B
+    => bytes REAL-minus-sendto / COPY = 1.00   ns REAL-minus-sendto / COPY = 2.63   ns REAL total / COPY = 17.0
+
+--- pure ack only (2 s timer)   [1 Update() call(s) -> 1 datagram(s): 24 B A]   docs NT.3: (not in docs)
+    REAL EnqueueSend(msgs[])                      17.2 ns (med      18.0)        0.0 B
+    REAL Update() x1 (incl. sendto)             4413.1 ns (med    4602.3)      480.0 B
+    REAL total per scenario (incl. sendto)      4430.3 ns (med    4620.3)      480.0 B
+    bare sendto x1 (in situ)                    3650.7 ns (med    3756.8)       40.0 B
+    REAL total MINUS sendto                      734.0 ns (med     823.8)      440.0 B
+    COPY docs LegacySession + REAL sendto       3856.6 ns (med    4081.8)      480.0 B     (one bundle => same datagrams)
+    REAL-only loop, thread CPU per scenario:        user     726 ns + kernel    3674 ns   (wall    4475 ns)
+    COPY+REAL-sendto-only loop, thread CPU:         user     299 ns + kernel    3706 ns   (wall    4082 ns)
+    bare-sendto-only loop, thread CPU:              user     221 ns + kernel    3806 ns   (wall    4096 ns)
+    COPY docs LegacySession, NullSink (docs)     105.9 ns (med     123.3)      440.0 B
+    => bytes REAL-minus-sendto / COPY = 1.00   ns REAL-minus-sendto / COPY = 6.93   ns REAL total / COPY = 41.8
+
+=== sendto reference on the real S2C listener socket (Socket.SendTo(byte[],int,SocketFlags,EndPoint), the overload NetworkSession uses) ===
+    24 B datagram   client not reading (dropped)    5481.6 ns (med    8987.2)       40.0 B     client drained    4960.1 ns (med    8503.3)       40.0 B
+    96 B datagram   client not reading (dropped)    4090.2 ns (med    6028.8)       40.0 B     client drained    4199.1 ns (med    6243.1)       40.0 B
+   464 B datagram   client not reading (dropped)    3999.1 ns (med    4566.5)       40.0 B     client drained    4587.6 ns (med    5635.1)       40.0 B
+
+real	0m55.456s
+user	0m21.843s
+sys	1m5.785s

@@ -49,6 +49,20 @@ contradicts carry a `[Measured ...]` or `[Pass 6 ...]` pointer. Bugs found along
 way are in `bugs-physics.txt` Section Q and `bugs-network.txt` Section F. The
 benchmark code is in [benchmarks/](benchmarks/README.md).
 
+**Review of the measured deep dive (2026-11-25).** A second, independent pass checked
+those two sections against the source and re-measured them on the real classes:
+- `perf-physics.txt` Section R: the per-object tick loop measured (R.1), the global
+  landblock lock measured under threads and its fix made safe (R.2), and real
+  physics updates run end to end with every proposed fix (R.4).
+- `perf-network.txt` Section H: Section G re-measured on the real session classes
+  (H.A, H.B), the Linux send-cost finding (H.1), and the inbound action path on
+  the world thread (H.I, findings IN.*).
+
+Where the review disagrees with the first pass, the finding carries a
+`[Pass 7 ...]` or `[Review ...]` pointer, and R.C / H.B list the corrections. R.E and
+H.E are the current priority lists. New bugs are in `bugs-network.txt` F.5-F.6 and
+`bugs-worldobjects.txt` W.16-W.17.
+
 ---
 
 ## Highest-value fixes
@@ -148,8 +162,8 @@ intermittent.
 ## If your goal is CPU / allocation / GC reduction
 
 For physics and networking, start with the *measured* priority lists:
-- `perf-physics.txt` Q.E
-- `perf-network.txt` G.E
+- `perf-physics.txt` R.E (which revises Q.E)
+- `perf-network.txt` H.E (which revises G.E)
 
 They supersede the reasoned rankings where the two disagree. Otherwise, start with
 **[cpu-gc-plan.txt](cpu-gc-plan.txt)** — a cross-cutting execution plan

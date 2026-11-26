@@ -39,6 +39,10 @@ E.1  TickPhysics walks EVERY object in the landblock, every frame
      FIX: maintain a `LinkedList<WorldObject> physicsActive`, mirroring the
      existing sortedCreaturesByNextTick design, driven by
      PhysicsObj.set_active() and IsAnimating transitions.
+     [MEASURED 2026-11-25, perf-physics.txt R.1: 3-5 ns per object per tick
+     when few are loaded, 25 ns at 100,000 objects and 43-53 ns at 300,000 -
+     about 0.15 and 0.8 CPU-seconds per second at 60 Hz. R.1 also lists the
+     wake-up sources an active list has to cover.]
 
 E.2  Object add/remove on the landblock is O(n) five times over
      Landblock.cs:633-684, and InsertWorldObjectIntoSorted* at :686-786

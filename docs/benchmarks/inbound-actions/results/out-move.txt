@@ -1,0 +1,19 @@
+payload sizes (fragment body incl. F7B1 header): MoveToState=68 B, AutonomousPosition=56 B, IdentifyObject=16 B, QueryHealth=16 B, Ping=12 B
+
+=== G. reference units (same run) ===
+  new ClientMessage(byte[]) only                                                120 B        11 ns 
+  new GameMessageUpdatePosition(player)   [reference unit]                      464 B       130 ns 
+
+=== H. parse only ===
+  AutonomousPosition parse (ClientMessage + hdr + Position + 4 u16 + byte)      208 B        47 ns 
+  MoveToState parse (ClientMessage + hdr + new MoveToState)                     384 B        63 ns 
+
+=== I. ClientMessage + real dispatch + real handler on a real Player (2 other players known and in range) ===
+  PingRequest                                                                   664 B       116 ns 
+  AutonomousPosition                                                            240 B        76 ns 
+  MoveToState (run forward)                                                    1424 B       845 ns 
+  MoveToState (stop, hold key = Run)                                           1416 B       844 ns 
+  QueryHealth (monster)                                                         840 B       332 ns 
+  QueryItemMana (equipped item)                                                1480 B       780 ns 
+  QueryItemMana (item in main pack)                                             696 B       207 ns 
+  IdentifyObject (monster, same target)                                        4800 B      2834 ns 

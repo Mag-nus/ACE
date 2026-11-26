@@ -1,0 +1,62 @@
+assessment sets: int=122 i64=3 bool=11 float=15 str=17 did=8 iid=0
+scene: landblock objects=44 (creatures incl. players=43), 8 adjacents x 20 creatures; examiner main pack=68 entries (7 side packs x 20), equipped=16; corpse items=12; known objects=43
+   [monster] biota: int=20 i64=0 bool=3 float=23 str=1 did=9 iid=0 spells=4 ench=0
+   [monster] sent:  int=4 i64=0 bool=0 float=2 str=0 did=0 iid(built, never written)=0 spellbook=0 flags=[IntStatsTable, FloatStatsTable, CreatureProfile]  message=144 bytes
+   [player] biota: int=132 i64=4 bool=6 float=23 str=7 did=14 iid=3 spells=0 ench=60
+   [player] sent:  int=15 i64=0 bool=0 float=1 str=1 did=6 iid(built, never written)=0 spellbook=0 flags=[IntStatsTable, FloatStatsTable, StringStatsTable, CreatureProfile, DidStatsTable, ArmorLevels]  message=344 bytes
+   [loot weapon] biota: int=37 i64=0 bool=3 float=11 str=3 did=8 iid=2 spells=8 ench=0
+   [loot weapon] sent:  int=19 i64=0 bool=2 float=3 str=2 did=0 iid(built, never written)=0 spellbook=8 flags=[IntStatsTable, BoolStatsTable, FloatStatsTable, StringStatsTable, SpellBook, WeaponProfile]  message=408 bytes
+   [loot armor] biota: int=34 i64=0 bool=3 float=13 str=2 did=8 iid=2 spells=8 ench=0
+   [loot armor] sent:  int=18 i64=0 bool=2 float=1 str=1 did=0 iid(built, never written)=0 spellbook=8 flags=[IntStatsTable, BoolStatsTable, FloatStatsTable, StringStatsTable, SpellBook, ArmorProfile]  message=328 bytes
+   [worn armor+8 banes] biota: int=35 i64=0 bool=3 float=13 str=2 did=8 iid=3 spells=6 ench=8
+   [worn armor+8 banes] sent:  int=18 i64=0 bool=2 float=1 str=1 did=0 iid(built, never written)=0 spellbook=13 flags=[IntStatsTable, BoolStatsTable, FloatStatsTable, StringStatsTable, SpellBook, ArmorProfile, ArmorEnchantmentBitfield]  message=352 bytes
+   [corpse] biota: int=10 i64=0 bool=3 float=3 str=2 did=3 iid=2 spells=0 ench=0
+   [corpse] sent:  int=2 i64=0 bool=0 float=0 str=1 did=0 iid(built, never written)=0 spellbook=0 flags=[IntStatsTable, StringStatsTable]  message=80 bytes
+
+=== A. new GameEventIdentifyObjectResponse(session, wo, success) : AppraiseInfo build + Write + GameEvent header (REAL code) ===
+  monster (success) : full message                                             3720 B      2162 ns 
+      of which AppraiseInfo ctor                                               2624 B      1757 ns 
+          of which the 7 GetAllProperty*Where copies                           2320 B       654 ns 
+      of which Write(AppraiseInfo) (6 SortedDictionary)                         712 B       385 ns 
+  player, 16 equipped, 60 enchantments : full message                         14952 B     11159 ns 
+      of which AppraiseInfo ctor                                              11744 B     10168 ns 
+          of which the 7 GetAllProperty*Where copies                           3504 B      1835 ns 
+      of which Write(AppraiseInfo) (6 SortedDictionary)                        2288 B       839 ns 
+  loot weapon, 8 spells : full message                                         8520 B      3235 ns 
+      of which AppraiseInfo ctor                                               4936 B      2011 ns 
+          of which the 7 GetAllProperty*Where copies                           3864 B       946 ns 
+      of which Write(AppraiseInfo) (6 SortedDictionary)                        2664 B       984 ns 
+  loot armor, 8 spells : full message                                          8024 B      2830 ns 
+      of which AppraiseInfo ctor                                               4848 B      5187 ns 
+          of which the 7 GetAllProperty*Where copies                           3072 B       867 ns 
+      of which Write(AppraiseInfo) (6 SortedDictionary)                        2256 B       783 ns 
+  worn armor, 6 spells + 8 banes : full message                               13392 B      7118 ns 
+      of which AppraiseInfo ctor                                              10216 B      2851 ns 
+          of which the 7 GetAllProperty*Where copies                           3072 B      1690 ns 
+      of which Write(AppraiseInfo) (6 SortedDictionary)                        2256 B       844 ns 
+  corpse : full message                                                        4360 B      1396 ns 
+      of which AppraiseInfo ctor                                               3400 B      1119 ns 
+          of which the 7 GetAllProperty*Where copies                           2736 B       585 ns 
+      of which Write(AppraiseInfo) (6 SortedDictionary)                         576 B       146 ns 
+  misc stackable : full message                                                3016 B       874 ns 
+      of which AppraiseInfo ctor                                               2392 B       747 ns 
+          of which the 7 GetAllProperty*Where copies                           2072 B       393 ns 
+      of which Write(AppraiseInfo) (6 SortedDictionary)                         240 B        56 ns 
+  monster (assessment FAILED) : full message                                   3720 B      1465 ns 
+  not found : empty response                                                    536 B        54 ns 
+
+=== B. Player.HandleActionIdentifyObject(guid) end to end, incl. FindObject, Examine, EnqueueSend, OnAppraisal (REAL code) ===
+    (alternating two targets = the Examine path every time; 'same' = the repeat path at Player.cs:281)
+  monster, alternating 2 monsters                                              5152 B      3716 ns reply=144 B
+  monster, same target repeatedly                                              4960 B      3177 ns reply=144 B
+  player, alternating 2 players                                               16576 B     13060 ns reply=344 B
+  player, same target repeatedly                                              16192 B     12029 ns reply=344 B
+  self                                                                        15440 B     11134 ns reply=344 B
+  loot weapon in own MAIN pack (first lookup hits)                             8656 B      3369 ns reply=408 B
+  loot weapon in own 7th SIDE pack                                             9632 B      4290 ns reply=408 B
+  own equipped armor with banes                                               14632 B      5227 ns reply=352 B
+  loot weapon/armor inside the open corpse                                     9536 B      4325 ns reply=408 B
+  corpse itself                                                                5600 B      2604 ns reply=80 B
+  weapon wielded by another player                                            10000 B      4851 ns reply=408 B
+  STALE guid (object gone): full FindObject miss, empty reply                  3728 B      3365 ns reply=28 B
+  guid 0 (deselect)                                                               0 B        24 ns reply=-1 B

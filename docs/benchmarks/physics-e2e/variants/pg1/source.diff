@@ -1,0 +1,12 @@
+diff -ru a/Source/ACE.Server/Physics/Common/LandCell.cs b/Source/ACE.Server/Physics/Common/LandCell.cs
+--- a/Source/ACE.Server/Physics/Common/LandCell.cs	2026-09-22 08:50:21.000000000 -0500
++++ b/Source/ACE.Server/Physics/Common/LandCell.cs	2026-11-25 09:45:36.195638384 -0600
+@@ -83,6 +83,8 @@
+         {
+             if (cellArray.AddedOutside) return;
+ 
++            cellArray.AddedOutside = true;
++
+             if (numSphere != 0)
+             {
+                 foreach (var sphere in spheres)

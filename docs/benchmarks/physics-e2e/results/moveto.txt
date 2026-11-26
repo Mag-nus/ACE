@@ -1,0 +1,4 @@
+a-moveto       a  creature with a MoveToPosition in progress (MoveToManager.UseTime live), flat, one cell
+   [base] per update_object (dt 0.2000 s):    5189.0 B (reps 5189.0..5189.0; first rep 5189.0)   time best     1415 ns  median     1425 ns   n=84000x9   hash20k=8B00AC7656D1EF77
+a              a  creature, flat, inside one cell
+   [base] per update_object (dt 0.2000 s):    5424.0 B (reps 5424.0..5424.0; first rep 5424.0)   time best      740 ns  median      752 ns   n=162000x9   hash20k=6A20662AF1E61B9B

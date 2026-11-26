@@ -1,0 +1,10 @@
+place [base] n=1500 in 60x60 m, 6 rounds (same hash every round: True): placed 1500, pushed off the requested spot 584 (mean shift 0.70 m), hash=300D90EA79BD883D; last round: 72512 B and 56.0 us per enter_world
+place [pg1] n=1500 in 60x60 m, 6 rounds (same hash every round: True): placed 1500, pushed off the requested spot 584 (mean shift 0.70 m), hash=300D90EA79BD883D; last round: 72512 B and 53.4 us per enter_world
+place [q2] n=1500 in 60x60 m, 6 rounds (same hash every round: True): placed 1500, pushed off the requested spot 584 (mean shift 0.70 m), hash=300D90EA79BD883D; last round: 72131 B and 54.2 us per enter_world
+place [pg2] n=1500 in 60x60 m, 6 rounds (same hash every round: True): placed 1500, pushed off the requested spot 584 (mean shift 0.70 m), hash=300D90EA79BD883D; last round: 31095 B and 45.5 us per enter_world
+place [pc3] n=1500 in 60x60 m, 6 rounds (same hash every round: True): placed 1500, pushed off the requested spot 584 (mean shift 0.70 m), hash=300D90EA79BD883D; last round: 72416 B and 54.8 us per enter_world
+place [pc2] n=1500 in 60x60 m, 6 rounds (same hash every round: True): placed 1500, pushed off the requested spot 584 (mean shift 0.70 m), hash=300D90EA79BD883D; last round: 72114 B and 56.4 us per enter_world
+place [pc2naive] n=1500 in 60x60 m, 6 rounds (same hash every round: True): placed 1500, pushed off the requested spot 604 (mean shift 1.34 m), hash=8FEFEE000C09F2CC; last round: 68707 B and 42.4 us per enter_world
+place [items1to5] n=1500 in 60x60 m, 6 rounds (same hash every round: True): placed 1500, pushed off the requested spot 584 (mean shift 0.70 m), hash=300D90EA79BD883D; last round: 30220 B and 45.1 us per enter_world
+place [pool] n=1500 in 60x60 m, 6 rounds (same hash every round: True): placed 1500, pushed off the requested spot 584 (mean shift 0.70 m), hash=300D90EA79BD883D; last round: 71169 B and 54.9 us per enter_world
+place [all] n=1500 in 60x60 m, 6 rounds (same hash every round: True): placed 1500, pushed off the requested spot 584 (mean shift 0.70 m), hash=300D90EA79BD883D; last round: 28987 B and 28.2 us per enter_world

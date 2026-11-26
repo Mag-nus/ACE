@@ -7,6 +7,8 @@ Companion document: bugs-network.txt
 
 Sections 0-F are UNPROFILED: static reading of call paths, costs reasoned.
 Section G (2026-11-25) is MEASURED; G.C corrects several earlier findings.
+Section H (2026-11-25) re-measures Section G on the real classes, corrects
+it (H.B), and adds the inbound action path (H.I).
 
 CALL-FREQUENCY MODEL
   NetworkManager.DoSessionWork   ~1000Hz (WorldManager outer loop)
@@ -300,6 +302,8 @@ E.1  Structure/AppraiseInfo.cs (866 lines) - built only from Player.cs:273,
      285, 293, 345, i.e. a player-initiated Assess. Its 7 dictionary copies,
      SortedDictionary rebuilds (line 800) and PackableHashTable writes are
      per-click, not per-tick.
+     [Review: NOT cold with identify-everything plugins; measured at 5-17 KB
+     and 3-13 us per request - see H.I.]
 E.2  InboundMessageManager.DefineMessageHandlers / DefineActionHandlers - full
      assembly reflection scan, but once at startup.
 E.3  Extensions.BuildPacketString and the StringBuilder blocks in
@@ -346,7 +350,10 @@ SECTION G - MEASURED DEEP DIVE (2026-11-25)
 ================================================================================
 ================================================================================
 
-Pass 2, against Claude1 @ 867315772 (upstream master through #4553). Unlike
+Pass 2, against Claude1 @ 867315772 (upstream master through #4553).
+[Review: the binary measured was in fact an older 2026-11-23 build (before
+#4544 and #4553); the transport code is unchanged, and Section H's flush
+figures were re-run on a current build with the same results.] Unlike
 Sections 0-F, every cost here was MEASURED, either on the real ACE.Server.dll
 (Release, .NET 10.0.15, Linux, 4-vCPU VM) or on a verbatim copy of the code
 where the real type needed a database or dat files. Each finding says which.
@@ -415,6 +422,7 @@ NT.1 [HIGH] Idle session tick: 182 ns per session per tick; a dirty-group mask
      one-bundle-per-5-ms behaviour. Not verified: Harmony mods patching
      Update/TickOutbound.
      Confidence: VERIFIED (prototype measured; concurrency argument reasoned).
+     [Review: real figures and the loop rate are in H.B; see also H.2.]
 
 NT.2 [HIGH] The receive loop allocates 527 B per datagram; a dedicated blocking
      receive thread allocates 0 B and used the least CPU
@@ -443,6 +451,8 @@ NT.2 [HIGH] The receive loop allocates 527 B per datagram; a dedicated blocking
      ClientPacket, IPEndPoint) is public; add a SocketAddress overload and keep
      the old one.
      Confidence: allocation VERIFIED; the CPU ordering VERIFIED on Linux only.
+     [Review: validation verified; on Linux this also removes ~7 us of CPU per
+     packet SENT - see H.1. Use the blocking form, not ReceiveFromAsync.]
 
 NT.3 [HIGH for allocation and retention, MEDIUM for CPU] Serialise each
      outbound packet once into an exact-size wire byte[], and cache that
@@ -503,6 +513,8 @@ NT.3 [HIGH for allocation and retention, MEDIUM for CPU] Serialise each
      Harmony-patchable by name; ServerPacket and Packet.Fragments stay public.
      Not verified: mods reflecting on cachedPackets.
      Confidence: VERIFIED (byte parity and measurement).
+     [Review: bytes confirmed on the real path; times understated 3-7x, and
+     the "ack + echo + 3 small" scenario cannot occur - see H.B.]
 
 NT.4 [MEDIUM, trivial] SendTo with an EndPoint allocates 40 B per packet
      NetworkSession.cs:805
@@ -561,6 +573,7 @@ NT.6 [MEDIUM] Inbound parse allocates 736-1104 B per datagram
      BEHAVIOUR NOTE: ReadBytes silently returns a short array for a truncated
      final fragment, whereas V2 rejects it. The CRC fails either way.
      Confidence: VERIFIED.
+     [Review: the whole real path allocates 1000-1512 B per datagram - see H.B.]
 
 NT.7 [MEDIUM when the cache is large] Acknowledge by walking the sequence
      range, not by scanning the dictionary
@@ -585,6 +598,8 @@ NT.7 [MEDIUM when the cache is large] Acknowledge by walking the sequence
      Not verified: how large K is in production; that depends on the retail
      client's ack interval.
      Confidence: VERIFIED.
+     [Review: the clamp must be to CurrentValue, not lastSentSequence + 1 -
+     see H.B.]
 
 NT.8 [LOW-MEDIUM] Inbound dispatch allocates a closure, an Action and an
      ActionEventDelegate per message
@@ -594,6 +609,7 @@ NT.8 [LOW-MEDIUM] Inbound dispatch allocates a closure, an Action and an
      entry, even for unknown opcodes and wrong-state messages. A sealed
      InboundMessageAction : ActionEventBase holding (info, message, session),
      with the same Act() body, costs 65 B / 31 ns. Confidence: VERIFIED.
+     [Review: 144 B, not 161 B; plus a 32 B closure per datagram - see H.4.]
 
 NT.9 [MEDIUM, world-thread time] The sendto syscall dominates outbound CPU and
      runs on the world loop's critical path
@@ -607,6 +623,8 @@ NT.9 [MEDIUM, world-thread time] The sendto syscall dominates outbound CPU and
      the handoff cost was not measured. On a send error, Terminate would run on
      the sender thread, and Terminate's cross-thread safety was not audited.
      Confidence: cost VERIFIED; benefit PLAUSIBLE.
+     [Review: on Linux the real cost is ~10 us of process CPU per send - see
+     H.1.]
 
 NT.10 [LOW] Hash32 is scalar
      ACE.Common/Cryptography/Hash32.cs
@@ -678,6 +696,7 @@ NM.1 [HIGH] Fellowship vital fan-out recomputes the sender's three MaxValues
      Not verified: production rates, how often FellowshipPanelOpen is true,
      and the full GetMaxValue path end to end (it needs dats).
      Confidence: trace and per-query cost VERIFIED.
+     [Review: severity rests on assumed rates; treat as MEDIUM - see H.B.]
 
 NM.2 [MEDIUM, zero risk] 46 GameEvent types declare a capacity that excludes
      the 16-byte GameEvent header
@@ -729,6 +748,7 @@ NM.3 [MEDIUM] GameMessageUpdatePosition: 512 B and 4 locked sequence lookups
      nothing in the server reads but mods may. Either keep the field and fill
      it lazily, or apply only the sequence fix (320 B, no API change).
      Confidence: VERIFIED.
+     [Review: small next to the per-recipient transport cost - see H.B.]
 
 NM.4 [MEDIUM] The sequence lookup (lock + Dictionary) costs more than the
      byte[] it returns
@@ -789,6 +809,8 @@ NM.6 [MEDIUM] Strings: a process-wide encoding lock, an intermediate byte[]
          failure would be permanent.
        - Truncation above 65535 characters is unchanged.
      Confidence: VERIFIED.
+     [Review: the lock costs ~30-60 ns per string; the value is the
+     allocation saving - see H.B.]
 
 NM.7 [LOW] Pad and Align allocate even when the pad is 0
      `new byte[0]` allocates 24 B. Measured: Pad(0) 24 B; Align at a 4-byte
@@ -902,6 +924,8 @@ P.0a OVERSTATED. Parallel.ForEach over the sparse 1000-slot array costs about
      core and 1.5-2 MB/s at 1 kHz. It is not "the single largest CPU win"; the
      real per-tick cost is the per-session idle body (NT.1). With DOP=1 (the
      shipped multiplier on small machines), Parallel.ForEach runs inline anyway.
+     [Review: holds only at DOP 1. At DOP > 1 the dispatch doubles idle CPU -
+     see H.2.]
 
 P.0b CORRECT but small: ~2 us + 48 B per call, against 0.19 us for a plain
      loop. About 2 ms per second.
@@ -1061,6 +1085,528 @@ NOT VERIFIED anywhere in Section G:
   - real creature and player CreateObject sizes;
   - whether any code writes to a GameMessage after EnqueueSend;
   - Harmony mods patching the methods named above.
+
+================================================================================
+================================================================================
+SECTION H - REVIEW OF SECTION G ON THE REAL CLASSES, AND THE INBOUND PATH
+            (2026-11-25)
+================================================================================
+================================================================================
+
+A second, independent pass over Section G, against Claude1 @ 0dfa403e0. It did
+three things:
+
+  1. Checked every file:line reference in Section G mechanically (72 references;
+     all resolve to the code they describe).
+  2. Re-measured Section G's transport numbers on the REAL Session,
+     NetworkSession, NetworkManager and ConnectionListener classes, with real
+     loopback sockets, the server's own GC settings (Server GC, concurrent,
+     DATAS) and the real logging bridge. Section G measured most of them on
+     verbatim COPIES of the code.
+  3. Examined and measured the inbound action path on the world thread, which
+     Section G did not cover.
+
+Method notes:
+  - Allocation figures are exact. Timings were taken on a shared 4-vCPU VM, so
+    use them as ratios within one run.
+  - Everything here is Linux. Windows was not measured.
+  - session.Player is null in the transport harness (no database or dats), so
+    nothing that needs a Player ran there. The inbound harness builds a Player
+    by reflection over synthetic biotas; object sizes are synthetic.
+  - Rates "at 1000 players" are still ASSUMPTIONS.
+
+Benchmark code: docs/benchmarks/net-e2e (H.*), docs/benchmarks/inbound-actions
+(IN.*) and docs/benchmarks/socket-checks. See docs/benchmarks/README.md.
+
+
+--- H.A WHAT HELD UP -----------------------------------------------------------
+
+  - NT.3 allocation per flush is byte-exact on the real path once the 40 B per
+    SendTo (NT.4) is added: 896 / 2184 / 520 / 4096 B real, against
+    858 / 2146 / 482 / 3938 B.
+  - NT.1 idle tick: 177 ns on the real Session.TickOutbound (201 ns when
+    cycling 1000 sessions), against 182 ns on the copy.
+  - NT.4 (40 B per SendTo), NT.5 (32 B params array), and retention per cached
+    packet (336-1152 B real, excluding the dictionary's bucket table).
+  - NT.7's measured costs (within noise, except K = 2400, which is 24% slower
+    on the real session).
+  - NT.2's validation design. Section G only measured SocketAddress.Equals
+    between two SERIALISED addresses. Checked here: an address filled in by
+    ReceiveFrom(Span, SocketFlags, SocketAddress) does compare equal to the
+    sender's IPEndPoint.Serialize(), and unequal after a packet from another
+    sender (IPv4 socket, Linux).
+
+
+--- H.B CORRECTIONS TO SECTION G -----------------------------------------------
+
+NT.3 TIME IS UNDERSTATED 3-7x. The copy was accurate about itself, but it
+     lacked the Update() group scan, the log checks, and the effect of running
+     between system calls. Per flush:
+                                 Section G     real, sendto removed   real, total
+         1 x 60 B                 245 ns          0.82 us              4.4 us
+         6 small                  490 ns          1.64 us              5.4 us
+         ack + echo only          123 ns          0.84 us              4.6 us
+         1500 B + 3 small         809 ns          2.82 us             18.2 us
+     ("sendto removed" is a paired subtraction; read it as within ~20%.)
+     The prototype's time ratios therefore do not carry over to the real path;
+     its allocation and retention figures do.
+
+NT.3 SCENARIO "ack + echo + 3 small" CANNOT HAPPEN. No message type uses group
+     0, so optional headers never share a packet with fragments. On the real
+     path it is two datagrams (32 B and 240 B) from two Update() calls at
+     least 5 ms apart: 1784 B and 9.3 us, retaining 1008 B in two cached
+     packets. See H.3.
+
+NT.9 IS UNDERSTATED ON LINUX. "~2.5 us per packet" is the cost on a plain
+     socket. On the real listener socket a send costs about 10 us of process
+     CPU. See H.1.
+
+NT.1 RATE AND SIZE.
+     - The main loop does not reach ~1000 iterations/s. With Thread.Sleep(1)
+       it ran at 626-705/s on this VM (Sleep(1) took ~1.4 ms).
+     - Real DoSessionWork with 1000 idle sessions: 200 us per call at DOP 1.
+       In the loop shape that is about 13% of a core on the world thread when
+       purely idle.
+     - With the real 2 s ack and 20 s time-sync timers running, it is 17.4% of
+       a core on the world thread plus about 9.6% on other threads (H.1).
+     NT.1's fix is unaffected.
+
+P.0a / G.C. G.C called P.0a overstated. That holds only at DOP 1. At DOP > 1
+     the parallel dispatch itself is expensive. See H.2.
+
+NT.6 UNDERSTATES THE REAL INBOUND PATH. Section G measured parse + CRC +
+     ClientMessage. The whole real path (ClientPacket + Unpack +
+     NetworkManager.ProcessPacket + dispatch enqueue) per datagram:
+                                  Section G        real path        via the receive loop
+         ack-only, encrypted      736 B /  76 ns   1000 B / 258 ns   1263 B
+         one action fragment      824 B / 125 ns   1000 B / 297 ns   1527 B
+         ack + action            1104 B / 144 ns   1512 B / 419 ns   2039 B
+     With 40 packets cached, an ack adds ~150 B (AcknowledgeSequence).
+     Receive-side CPU through the real loop is 9.6-11.1 us per datagram.
+     "Roughly 9 MB/s at ~10k datagrams/s" becomes 12.6-20 MB/s.
+     Allocation by type for one action fragment (1000 B): 3 MemoryStreams
+     192 B, 2 BinaryReaders 112 B, ClientPacket 88 B, payload byte[] 85 B,
+     PacketHeaderOptional 72 B, the dispatch closure + Action +
+     ActionEventDelegate 148 B, and a 32 B closure that Section G missed (H.4).
+
+NT.8  The dispatch allocates 144 B per message (48 closure + 64 Action + 32
+     ActionEventDelegate), not 161 B. NM.12's figure was right.
+
+NT.7 SAFETY NEEDS ONE MORE CONDITION. "Sequences are contiguous" is true for a
+     well-behaved client, but not in general:
+       - A pure ack never increments the sequence. FlushPackets reuses
+         CurrentValue for it, and the TryAdd fails while that key is live.
+         (Any bundle that also carries echo or time-sync does increment.)
+       - If the client acks CurrentValue + 1, the cache empties past
+         CurrentValue, and the next pure ack IS cached under CurrentValue. That
+         key is below where a "walk from the lowest key" pointer would be.
+         Observed in 1,847 of 30,000 random steps when acks of
+         CurrentValue + 1 were allowed; never when acks were at most the last
+         sequence sent.
+       - Section G's clamp to lastSentSequence + 1 permits exactly this case.
+     FIX: clamp the ack to CurrentValue, or do not cache pure acks. Neither was
+     tested. Not known: whether the retail client ever acks last + 1.
+     NT.7 remains LOW in practice: at K = 40 the real call is 316 ns / 400 B.
+
+NM.6 THE ENCODING LOCK IS REAL BUT SMALL. Section G leads with the
+     process-wide lock in Encoding.GetEncoding(1252). The measured cost is
+     29 ns per lookup uncontended and ~63 ns under 4-thread contention. At an
+     assumed 20,000 strings/s that is about 1 ms of CPU per second. The value
+     of NM.6 is its allocation saving (520 -> 224 B per SystemChat), not the
+     lock.
+
+NM.1 SEVERITY. HIGH rests on the assumed vital-change rate and on
+     FellowshipPanelOpen being common. By the same arithmetic 50 active
+     fellowships cost about 80 ms of CPU per second. Treat it as MEDIUM; the
+     fix is still cheap and local.
+
+NM.3 IN CONTEXT. A broadcast's cost is dominated by the per-recipient
+     transport path, not by building the message. Measured on the real path:
+     848-928 B and ~5.1 us per recipient (about 4 us of it sendto), against
+     512 B and ~0.3 us once per broadcast for UpdatePosition. At 100
+     recipients construction is under 1% of the bytes. NM.3's 272 B saving is
+     per broadcast, so NT.3 matters far more for crowded areas.
+
+
+--- H.1-H.6 NEW TRANSPORT FINDINGS ---------------------------------------------
+
+H.1  [HIGH on Linux] Every send on a socket with a pending async receive wakes
+     the runtime's epoll thread and the thread pool: about 4x the CPU per send
+     NetworkSession.cs:805 (SendTo on the listener socket);
+     ConnectionListener.cs:79 (BeginReceiveFrom keeps that socket registered
+     with the async engine)
+
+     Measured, process CPU per Socket.SendTo of a 24 B datagram, by how the
+     SAME socket is being received on:
+                                                   tight loop     loop with Sleep(1),
+                                                   per send       ~2,700 sends/s
+         plain socket, nothing receiving            2.6 us         28 ms CPU/s
+         dedicated thread blocked in the
+           synchronous ReceiveFrom (NT.2)           2.7 us         29 ms CPU/s
+         BeginReceiveFrom pending (today)          10.1 us        154 ms CPU/s
+         ReceiveFromAsync pending                  12.5 us        181 ms CPU/s
+     The real S2C ConnectionListener socket measured the same as the third row
+     in a second harness (10.3-10.6 us per send; 150-187 ms CPU/s).
+     MECHANISM: strace shows epoll_wait returning EPOLLOUT for the listener
+     socket on these sends (2,386 events for about 3,000 sends). The epoll
+     thread then wakes thread-pool workers, which ran tens of thousands of
+     times per second and spin before sleeping.
+     CONSEQUENCES:
+       - NT.9's send cost on Linux is ~10 us of process CPU per packet, not
+         2.5 us. At an assumed 35k packets/s that is about a third of a core,
+         most of it on threads other than the sender.
+       - 1000 idle in-world sessions send 572 ack / time-sync datagrams per
+         second (H.3). In the idle loop shape that alone adds 120 ms of CPU
+         per second.
+     FIX: NT.2's dedicated blocking receive thread. A socket that never starts
+     an async operation is never registered with epoll, and its sends cost the
+     same as on a plain socket (second row). This is a larger saving than
+     NT.2's own 527 B per datagram.
+     DO NOT use ReceiveFromAsync, which design-socket-listener-modernisation.txt
+     proposes as M3: it measured worse than today's APM receive.
+     DIAGNOSTICS, not recommendations: DOTNET_SYSTEM_NET_SOCKETS_INLINE_COMPLETIONS=1
+     took the loop-shape cost from 186.7 to 30.1 ms/s, and
+     DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=0 to 85.5 ms/s.
+     Linux only. Windows uses a different mechanism (IOCP) and was not
+     measured; the size of the effect will also vary by machine.
+     Confidence: VERIFIED on Linux (two independent harnesses, plus strace).
+
+H.2  [MEDIUM] Ticking sessions with Parallel.ForEach at DOP > 1 doubles the idle
+     CPU
+     NetworkManager.cs:362
+     Loop of DoSessionWork(); Thread.Sleep(1); with 1000 real idle sessions:
+                                          DOP 1                 DOP 4
+         process CPU, timers pushed out   149.5 ms/s            298.8 ms/s
+           of which on the world thread   144.0 ms/s            126.3 ms/s
+         process CPU, real timers         269.8 ms/s            352.9 ms/s
+         per DoSessionWork call (tight)   199.9 us              55.3 us
+     DOP 4 shortens the call, but it wakes pool workers ~630 times a second and
+     they spin: 172 ms/s of extra CPU to save 18 ms/s on the world thread.
+     FIX: tick sessions with a plain serial loop. After NT.1 an idle session
+     costs ~12 ns, so 1000 sessions are ~12 us per call and parallel dispatch
+     can only lose. Go parallel only when many sessions have bundles to flush
+     (for example, above a count of dirty sessions).
+     This reinstates the second half of P.0a's original fix ("fall back to a
+     serial loop"). Not measured: the break-even point under real flush load.
+     Confidence: VERIFIED (measured on the real DoSessionWork).
+
+H.3  [LOW-MEDIUM, behaviour] One bundle per ~6 ms per session, lowest group
+     first: observed on the wire
+     NetworkSession.cs:223/234/251. Filed as bugs-network.txt F.2.
+       - With three groups queued at t = 0 and Update() every 1 ms: Database
+         (group 5) left at call 0, UI (9) at call 6, Smartbox (10, movement)
+         at call 12. Order is by group index, not enqueue order.
+       - Ack, echo and time-sync are set only on group 0's bundle, and no
+         message type uses group 0. They therefore always travel as their own
+         tiny datagram and take a whole window: with an echo pending and the
+         ack due, group 0 left at call 0 and the three data groups at 6, 12
+         and 18.
+       - Acks never piggyback on data. Each in-world session sends a pure-ack
+         datagram every 2 s (480 B allocated, plus the send): 572 datagrams/s
+         for 1000 idle sessions, counting time-sync.
+       - Starvation: with a UI message enqueued every 1 ms, one Smartbox
+         message waited 305 ms. Real UI traffic is burstier than that, so
+         expect delays of one or two windows, not starvation.
+     OPTIONS (design decisions; not verified against the client):
+       - flush every ready group in the same Update(), as separate packets as
+         today. Same packet count, no waiting.
+       - let the ack / time-sync / echo headers ride on the next data packet of
+         any group (WriteOptionalHeaders already runs for every bundle).
+         Fewer packets and fewer sends.
+
+H.4  [LOW] NetworkManager.ProcessPacket allocates a closure for every datagram
+     NetworkManager.cs:45-100
+     The LINQ query in the ConnectResponse branch captures the `endPoint`
+     parameter (and connectResponse), so the 32 B closure is allocated at
+     method entry for EVERY datagram, on both ports. FIX: move the
+     ConnectResponse branch into its own method. Confidence: VERIFIED
+     (allocation sampled by type).
+
+H.5  [LOW-MEDIUM] A quarter of a flush's bytes is List and Queue growth
+     NetworkSession.cs:834-951; NetworkBundle.cs
+     Allocation by type for the "6 small messages" flush (2184 B, sampled):
+         byte[] payload copies + SendTo's 40 B           541 B   24.8%
+         MessageFragment[] (fragments, removeList)       285 B   13.1%
+         MessageFragment                                 235 B   10.8%
+         ServerPacketFragment                            195 B    8.9%
+         PacketFragmentHeader                            191 B    8.7%
+         GameMessage[] (the bundle's Queue growing)      147 B    6.7%
+         PacketFragment[] (packet.Fragments growing)     144 B    6.6%
+         List, ServerPacket, RemoveAll predicate, ...    rest
+     Growth arrays total ~576 B, 26% of the flush. NT.3 removes all of it. As a
+     small independent step, size `fragments` from the bundle's message count
+     and reuse `removeList` (P.10).
+     Confidence: VERIFIED.
+
+H.6  Not in Section G: a pure-ack flush costs 480 B and 4.4 us on the real
+     path (0.73 us with sendto removed), every 2 s per in-world session.
+
+
+--- H.I INBOUND ACTIONS ON THE WORLD THREAD ------------------------------------
+
+Every client message is executed on the single world thread
+(InboundMessageManager.cs:89 -> NetworkManager.InboundMessageQueue ->
+WorldManager.UpdateWorld). Nothing rate-limits inbound actions: the only
+RateLimiter instances are the DDD queue and /passwd (Session.cs:81-84).
+
+E.1 above classes appraisal as cold ("per click"). With Decal plugins that
+identify items and creatures automatically, it is one of the most frequent
+inbound actions, and it is the most expensive common one.
+
+Measured through the real handlers. Test objects are synthetic biotas: a
+monster (20 int / 23 float properties), a player (132 int, 60 enchantments, 16
+equipped items), a loot weapon (37 int, 8 spells); the examiner carries 60
+loose items and 7 side packs of 20.
+
+COST PER CALL, whole handler (add 144 B / ~0.1 us for the dispatch, NT.8):
+    IdentifyObject, unknown guid, 1,000-object area     18.6 KB   ~29 us
+    IdentifyObject, a player                            16.6 KB   12.9 us
+    Talk / emote / spell words, 500 known creatures     28.3 KB    9.4 us
+    IdentifyObject, own enchanted armour                14.6 KB    5.2 us
+    IdentifyObject, item wielded by another player      10.0 KB    4.8 us
+    IdentifyObject, loot item in a corpse                9.5 KB    4.3 us
+    IdentifyObject, a monster                            5.2 KB    3.7 us
+    Talk / emote / spell words, 50 known creatures       3.1 KB    1.0 us
+    MoveToState                                          1.4 KB    0.85 us
+    QueryItemMana, equipped item                         1.5 KB    0.78 us
+    QueryHealth                                          0.84 KB   0.33 us
+    PingRequest                                          0.66 KB   0.12 us
+    AutonomousPosition                                   0.24 KB   0.08 us
+An appraisal reply is 80-408 B on the wire. Repeating the same target still
+rebuilds everything (Player.cs:281-286), and so does a failed assessment
+(AppraiseInfo.cs:334 is an empty `if (!Success)`).
+Not measured (they need dats): CastSpell, melee, TurbineChat, GetAndWield,
+UseItem, ChangeCombatMode, StackableMerge, PutItemInContainer.
+
+IN.1 [MEDIUM] Every FindObject for something outside the main pack first walks
+     all side packs with LINQ + ToList
+     Container.cs:274
+         var sideContainers = Inventory.Values.Where(i => i.WeenieType == WeenieType.Container).ToList();
+     Called first by Player.FindObject (Player_Inventory.cs:515), which has 69
+     call sites: every appraisal, Use, pickup or QueryItemMana of a landscape,
+     corpse or equipped object.
+     Measured: a miss costs 784 B / 0.41 us (60 loose items + 7 packs). Finding
+     a monster in the current landblock costs 832 B / 0.62 us, against 48 B /
+     9 ns for the landblock lookup alone.
+     FIX: a plain foreach with the same WeenieType test and recursion: 0 B on a
+     miss, 0.49 -> 0.31 us, identical results for miss, side-pack hit and
+     main-pack hit. Signature unchanged.
+     Not verified: whether any caller runs off the owning thread.
+     Confidence: VERIFIED (measured, parity checked).
+
+IN.2 [MEDIUM] The seven GetAllProperty*Where copies use LINQ over IDictionary,
+     and the instance-id copy can never contain anything
+     WorldObject_Properties.cs:536-758 (e.g. :673); AppraiseInfo.cs:352-358
+         foreach (var kvp in Biota.PropertiesInt.Where(r => keys.Contains((ushort)r.Key)))
+     Once per appraisal, and at login. Each copy allocates a closure, a
+     delegate, an iterator, a boxed enumerator and a growing Dictionary, under
+     its own read lock.
+     Measured per appraisal: 2,320 B (monster) to 3,864 B (loot weapon), 0.6-1.8 us.
+     AssessmentProperties.PropertiesInstanceId has no members at runtime, so
+     that copy (120-464 B) is pure waste.
+     FIX: foreach + if, downcasting the IDictionary to Dictionary for the
+     struct enumerator, with a fallback branch:
+         monster       2,320 B / 1.05 us  ->  1,000 B / 0.29 us
+         player        3,504 B / 1.84 us  ->  1,832 B / 0.69 us
+         loot weapon   3,864 B / 0.95 us  ->  2,424 B / 0.46 us
+     Results identical for all 7 types on 5 objects; enumeration stays inside
+     the same read lock; signatures unchanged. Keep AppraiseInfo.PropertiesIID
+     non-null (public field).
+     Confidence: VERIFIED.
+
+IN.3 [MEDIUM] Each property table is re-sorted through a new SortedDictionary,
+     and the comparer boxes
+     AppraiseInfo.cs:796-872 (six overloads); HashComparer.cs:52
+         var properties = new SortedDictionary<PropertyInt, int>(_properties, PropertyIntComparer);
+     One tree node per entry, and Enum.CompareTo boxes twice per bucket tie.
+     Measured per appraisal: 576 B (corpse) to 2,664 B (loot weapon). A full
+     122-entry int table costs 20,432 B / 5.9 us.
+     FIX: copy to an ArrayPool buffer and sort with a cached Comparison on
+     (key % buckets, key). Byte-identical output on 5 objects and the
+     122-entry table: 2,664 -> 168 B (weapon), 2,288 -> 80 B (player),
+     20,432 -> 0 B; time -35% to -65%. Use Span.Sort(Comparison); the IComparer
+     overload allocates 88 B per call.
+     The same pattern appears 9 times in GameEventPlayerDescription and once in
+     each of 8 other files (not measured).
+     Confidence: VERIFIED.
+
+IN.4 [MEDIUM where players appraise players, LOW otherwise] ArmorLevel rebuilds
+     an enum flag list 9 times and scans the equipment 9 times
+     ArmorLevel.cs:75-77; BodyPart.cs:181
+         Enum.GetValues(typeof(CoverageMask)).Cast<CoverageMask>().Where(...).ToList()
+     Every successful appraisal of a player or non-attackable creature
+     (AppraiseInfo.cs:574). Measured: 4,576 B / 3.4 us with 16 items equipped.
+     FIX (a): replace the flag list with `(ClothingPriority & mask) != 0`:
+     1,928 B / 2.4 us, identical values. CoverageMask members are all single
+     bits and Unknown is never in a body-part mask, so the test is exactly
+     equivalent.
+     FIX (b): one pass over EquippedObjects: 0 B / 0.6 us. It stops calling the
+     public GetArmorLevel / GetArmorClothing, which a Harmony mod could patch;
+     (a) does not.
+     Confidence: VERIFIED.
+
+IN.5 [LOW-MEDIUM] Attribute highlight and colour masks evaluate ModifierType
+     twice per stat; for a player that is 15 Vitae lookups
+     CreatureProfile.cs:69-70; AttributeMask.cs; CreatureVital.cs:184
+     Measured: new CreatureProfile(player) 2,880 B / 4.5 us (a monster: 0 B /
+     0.55 us). FIX: read ModifierType once per stat and derive both masks:
+     1,152 B / 1.74 us, identical masks. Add a combined helper; keep the two
+     public methods. The root cost is the uncached Vitae lookup
+     (perf-worldobjects.txt Q.1). Confidence: VERIFIED.
+
+IN.6 [HIGH as a client-triggerable cost, MEDIUM in normal play] A guid the
+     server cannot find costs O(objects in 9 landblocks + known objects)
+     Player_Inventory.cs:587 -> Landblock.cs:1080; Player_Inventory.cs:615 ->
+     Player_Tracking.cs:46
+         result = CurrentLandblock?.GetWieldedObject(objectGuid);
+             var creatures = worldObjects.Values.OfType<Creature>();   // this landblock + 8 adjacents
+         result = GetKnownObjects().FirstOrDefault(o => o.Guid == objectGuid);
+             // lock + Where + Select + ToList of every known object
+     Reached by IdentifyObject (Player.cs:268), ForceObjectDescSend
+     (ControlHandler.cs:12) and the cast-spell fallback (Player_Magic.cs:250).
+     It happens whenever a plugin asks about an item after its corpse closed,
+     a monster that just died, or an item someone else looted. Any client can
+     send arbitrary guids.
+     Measured FindObject miss (each adjacent holds a quarter of the count):
+         objects in the landblock   known objects    bytes      time
+                 0                        5          1,816 B    1.0 us
+                50                       53          2,904 B    2.5 us
+               200                      203          5,304 B    6.2 us
+               500                      503         10,104 B   14.1 us
+             1,000                    1,003         18,104 B   29.2 us
+     FIX 1: use the keyed ObjectMaint.GetKnownObject(guid) (ObjectMaint.cs:97)
+     for the known-objects stage: 0 B / ~20 ns, against 8,328 B / 3.7-6.9 us at
+     503 known. This relies on KnownObjects key == PhysicsObj.ID ==
+     Guid.Full. AddKnownObject and set_object_guid were checked; not every
+     writer of PhysicsObj.ID or WeenieObj was audited.
+     FIX 2: GetWieldedObject has no index. A plain foreach with `is Creature`
+     removes the 792 B; a per-player budget for this one stage bounds the
+     rest.
+     Confidence: measurement VERIFIED; fix 1 PLAUSIBLE.
+
+IN.7 [MEDIUM-HIGH] IdentifyObject has no rate limit, and the existing check
+     saves no work
+     Player.cs:281-296
+     The 5-second check only skips the skill re-roll; the full response is
+     still built and sent. The "continued success" branch rebuilds everything
+     too.
+     AMPLIFICATION: the request body is 16 bytes (52 B alone in a datagram).
+     A player target costs 16.6 KB of garbage and 12.9 us of world thread; an
+     unknown guid in a 1,000-object area ~18.6 KB and ~29 us.
+     At an ASSUMED 1000 players, 30% running an ID-heavy plugin at 2
+     requests/s: about 600 requests/s, 2.7 ms/s of world thread and 5 MB/s of
+     garbage - more allocation than the whole MoveToState stream.
+     FIX: do IN.1-IN.6 first; they halve the cost with no behaviour change
+     (loot item ~9.5 -> ~4.8 KB, player ~16.6 -> ~6.2 KB; summed from the
+     measured parts, not measured whole). Then consider a per-player budget
+     that DEFERS excess requests (a small de-duplicated queue drained a few per
+     tick), default off and configurable.
+     Not verified: how plugins react to delayed replies, so no specific limit
+     is recommended.
+     NOTE: the show_aura_buff server option raises a wielded-weapon appraisal
+     from 10.0 KB to 54.7 KB (AppraiseInfo.cs:511 builds a `new Spell` per
+     wielder enchantment).
+     Confidence: cost VERIFIED; limiter design PLAUSIBLE.
+
+IN.8 [MEDIUM] Every say, emote and SPELL CAST walks all known creatures,
+     allocating per creature in range
+     Player_Magic.cs:602 (`OnTalk(spellWords);`, unconditional, also for weapon
+     spells and empty words); Player.cs:858; ObjectMaint.cs:735;
+     EmoteManager.cs:1513-1517
+     OnTalk materialises every known creature (Select + OfType + ToList under
+     the static lock) and calls EmoteManager.OnHearChat on each one in range.
+     The lambdas in GetEmoteSet capture its parameters, so a 48 B closure is
+     allocated before the `PropertiesEmote == null` return.
+     Measured, no creature having emotes: 53 known 3,112 B / 1.0 us; 503 known
+     28,312 B / 9.4 us.
+     FIX: move the `PropertiesEmote == null` test in front of the closure (a
+     wrapper, or copy the parameters to locals after it), and filter on that
+     and distance in one pass instead of materialising the list (a new,
+     additive ObjectMaint method).
+     Skipping OnTalk for weapon spells or empty words is cheaper still, but it
+     changes what NPCs "hear".
+     Confidence: VERIFIED.
+
+IN.9 [LOW-MEDIUM] ChangeCombatMode rescans equipment before its own guard, and
+     one scan is dead
+     Player_Combat.cs:744 (CheckWeaponCollision runs before the NextUseTime
+     check at :766); Creature_Combat.cs:138
+         var combatStance = GetCombatStance();   // only use is in a commented-out block
+     Bots toggle combat mode around every fight. Not measured (needs the
+     MotionTable dat). FIX: delete the dead read.
+     Confidence: dead read VERIFIED; total cost PLAUSIBLE.
+
+IN.10 [LOW-MEDIUM] MoveToState computes the run rate before knowing whether it
+     is needed
+     MovementData.cs:99
+         var speed = holdKey == HoldKey.Run ? creature.GetRunRate() : 1.0f;
+     Used only in the forward and sidestep branches (:113, :126). GetRunRate is
+     192 B and ~0.3 us of a 1,424 B / 0.85 us handler. FIX: compute it lazily
+     in the two branches.
+     Not verified: whether the retail client sets HoldKey.Run on stop and
+     turn-only packets, which decides how often this saves anything.
+     Confidence: PLAUSIBLE.
+
+IN.11 [LOW] Smaller items
+     - Player.cs:452 `GetInventoryItem(itemGuid) ?? GetEquippedItem(itemGuid)`
+       (QueryItemMana): an equipped item costs 1,480 B / 0.78 us against
+       696 B / 0.2 us. Swap the operands, or IN.1 removes most of it.
+     - Player.cs:431 (QueryHealth): two WorldObjectInfo (two WeakReferences) per
+       call, with no same-target early-out. 840 B / 0.33 us.
+     - AppraiseInfo.cs:480-488 reads SpellDID and ProcSpell three times each.
+     - GameEventIdentifyObjectResponse declares no initial capacity, so a 408 B
+       reply grows its stream 256 -> 512.
+     - Player.cs:954 and :957: Jump makes two separate EnqueueBroadcast calls.
+     - GameActionSetSingleCharacterOption.cs:27 and :31 broadcast an ObjDesc
+       without checking that the value changed.
+     - AllegianceProfile.cs:32 `profile.Node.Monarch.TotalFollowers` recurses
+       over the whole allegiance per AllegianceUpdateRequest
+       (AllegianceNode.cs:29-38).
+     All VERIFIED by reading; the first two also measured.
+
+Client-triggerable defects found on this path are filed as bugs:
+bugs-network.txt F.5 (a database query per GetServerVersion message, with no
+access check) and F.6 (a Console.WriteLine per BookPageData request), and
+bugs-worldobjects.txt W.16 and W.17.
+
+LOOKS EXPENSIVE BUT IS FINE (measured)
+  - AutonomousPosition: 240 B / 76 ns. SetRequestedLocation is two property
+    stores; the physics runs on the tick.
+  - Landblock.GetObject miss across 9 landblocks: 0 B / 54 ns.
+  - The resist / armour / weapon mask helpers: memoised, 4 ns.
+  - The 13 rating getters in AddRatings: 120 B / 1.1 us for a player.
+  - CreatureProfile for a monster: 0 B / 0.55 us.
+  - InboundMessageQueue.RunActions itself: 9 ns and 0 B per message.
+  - CheckMonsters is not on the inbound path (Player_Tick.cs:496,
+    Player_Location.cs:762 only).
+
+CONFIRMED FROM OTHER REPORTS: Dictionary<ObjectGuid, ...> lookups box 24 B per
+successful lookup on .NET 10, because ObjectGuid lacks IEquatable<ObjectGuid>
+(perf-entity-shared.txt E.4, perf-entity-server.txt E.11). The JIT does not
+elide it.
+
+
+--- H.E PRIORITY, REVISED ------------------------------------------------------
+
+G.E's order mostly stands. Changes:
+  - NT.2 moves up, to directly after the trivial items: on Linux it removes
+    ~7 us of CPU per packet SENT (H.1), not just 527 B per datagram received.
+    Use the blocking-thread form, not ReceiveFromAsync.
+  - Add H.2 (serial session tick) with NT.1; together they take idle session
+    ticking from ~0.15-0.30 of a core at 1000 sessions to about 1%.
+  - Add IN.1, IN.2, IN.3 (local, parity-checked, signatures unchanged) next
+    to NM.2 / NM.6: about half of every appraisal's allocation.
+  - Add IN.6 fix 1 and bugs-network F.5 as cheap protection against
+    client-triggered world-thread cost.
+  - NT.3's CPU case is weaker than stated (the real managed flush is 3-7x the
+    copy's time, so the prototype's ratios do not transfer); its allocation
+    and retention case is confirmed.
+  - NT.7 stays last, and needs the clamp to CurrentValue.
+
+NOT VERIFIED in Section H: production rates and object sizes; Windows; the
+retail client's ack behaviour and its acceptance of piggybacked headers or
+multi-group flushes; plugin behaviour under an appraisal limiter; the
+break-even point for parallel session ticking under load.
 
 ================================================================================
 END OF REPORT

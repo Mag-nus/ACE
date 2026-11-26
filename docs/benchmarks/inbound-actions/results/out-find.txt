@@ -1,0 +1,32 @@
+=== C. Player.FindObject(guid, Everywhere) by where the object is (scene: 43 creatures in landblock, 8 adjacents x 20) ===
+scene: landblock objects=44 (creatures incl. players=43), 8 adjacents x 20 creatures; examiner main pack=68 entries (7 side packs x 20), equipped=16; corpse items=12; known objects=43
+  self                                                                           24 B         5 ns 
+  item in own main pack                                                          48 B        11 ns 
+  item in own 7th side pack                                                     744 B       686 ns 
+  own equipped item                                                             832 B       598 ns 
+  monster in current landblock                                                  832 B       629 ns 
+  item in the open corpse                                                       856 B       698 ns 
+  item wielded by another player                                               1032 B       783 ns 
+  stale guid (miss everywhere)                                                 2744 B      2710 ns (null)
+  stale guid, LocationsICanMove (inventory handlers)                            920 B       726 ns (null)
+  monster, SearchLocations.Landblock only                                        48 B         9 ns 
+
+=== D. Container.GetInventoryItem(guid) MISS (paid first by every FindObject for anything not in the main pack) ===
+  main pack 10 loose + 0 side packs x 0                                          88 B        30 ns 
+  main pack 60 loose + 7 side packs x 20                                        784 B       409 ns 
+  main pack 95 loose + 7 side packs x 24                                        784 B       506 ns 
+  main pack 95 loose + 8 side packs x 24                                        880 B       608 ns 
+
+=== E. stale-guid FindObject(Everywhere) vs. landblock population and known objects ===
+    (objects = creatures in the current landblock; each of 8 adjacents holds objects/4; known = ObjMaint.KnownObjects)
+  objects=   0 adjacents=8x  0 known=   5                                      1816 B      1046 ns 
+  objects=  50 adjacents=8x 12 known=  53                                      2904 B      2490 ns 
+  objects= 200 adjacents=8x 50 known= 203                                      5304 B      6391 ns 
+  objects= 500 adjacents=8x125 known= 503                                     10104 B     14343 ns 
+  objects=1000 adjacents=8x250 known=1003                                     18104 B     29414 ns 
+
+=== F. the two O(N) stages on their own (objects=500, adjacents 8x125) ===
+  Landblock.GetWieldedObject(guid) miss (walks every object in 9 landblocks)      792 B      6964 ns 
+  Player.GetKnownObjects() (lock + Where + Select + ToList)                    8328 B      6255 ns 
+  GetKnownObjects().FirstOrDefault(o => o.Guid == guid) miss                   8328 B      6807 ns 
+  Landblock.GetObject(guid) miss (9 landblocks x 3 lookups)                       0 B        54 ns 

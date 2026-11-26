@@ -216,6 +216,14 @@ M2. Multiple concurrent receives   [the structural fix for D1]
      ReceiveFrom(Span, SocketFlags, SocketAddress) - not considered here - was
      allocation-free AND the cheapest. In 5b, prefer option 2 (compare
      SocketAddress, 0 B / 2 ns) over option 1 (72 B per datagram).]
+    [REVIEWED 2026-11-25 - the receive mode also decides what every SEND costs
+     on Linux. A socket with a pending async receive (APM today, or
+     ReceiveFromAsync as proposed in M3) is registered with epoll, and each
+     send on it wakes the epoll thread and the thread pool: ~10-12.5 us of
+     process CPU per send, against ~2.7 us when the receive side is a thread
+     blocked in the synchronous ReceiveFrom. M3 as written would make sends
+     slightly WORSE than today. See perf-network.txt H.1. Linux only; Windows
+     not measured.]
 
 M3. ReceiveFromAsync returning ValueTask instead of APM
     Removes the IAsyncResult and delegate allocation per operation. Modern

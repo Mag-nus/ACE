@@ -1,0 +1,24 @@
+=== X1 (IN.5). ObjectsKnownByMe stage: list-and-scan (real, Player_Inventory.cs:615) vs the existing keyed ObjectMaint.GetKnownObject ===
+  known=53: same object on hit: True, both null on miss: True
+    real, miss                                                                 1128 B       700 ns 
+    keyed, miss                                                                   0 B       758 ns 
+    keyed, hit                                                                    0 B        18 ns 
+  known=503: same object on hit: True, both null on miss: True
+    real, miss                                                                 8329 B      3705 ns 
+    keyed, miss                                                                   0 B        19 ns 
+    keyed, hit                                                                    0 B        19 ns 
+
+=== X3 (IN.8). Player.OnTalk(message): runs on every say, emote AND spell cast (Player_Magic.cs:602) ===
+    known=  53 (all creatures, none with emotes): OnTalk("Zojak Quafeth")      3112 B      1027 ns 
+    known=  53: ObjMaint.GetKnownObjectsValuesAsCreature() alone                616 B       399 ns 
+    known= 503 (all creatures, none with emotes): OnTalk("Zojak Quafeth")     28312 B      9409 ns 
+    known= 503: ObjMaint.GetKnownObjectsValuesAsCreature() alone               4216 B      2996 ns 
+
+=== X4. small pieces ===
+    Player.GetRunRate() (MovementData.cs:99 evaluates it for every MoveToState with HoldKey.Run)      192 B       674 ns 
+    new WorldObjectInfo(creature) (QueryHealth allocates two per call)           24 B        45 ns 
+    Creature.GetCreatureSkill(AssessCreature).Current + target Deception.Current (Examine)      192 B       348 ns 
+
+=== X2. server option show_aura_buff (default false): appraising a weapon wielded by a player with 60 enchantments ===
+    show_aura_buff=false (default)                                             9960 B      5618 ns 
+    show_aura_buff=true                                                       54720 B     13375 ns 

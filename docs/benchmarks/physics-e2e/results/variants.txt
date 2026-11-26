@@ -1,0 +1,189 @@
+walk seed=1 n=200000 [base] obstacles=1499: hash=155634CD2600A219  final cell=44240005 origin=<9.060577, 105.109215, 32.477966>
+   distinct cells 385, cell changes 7017, landblock changes 836, updates with a live collision record 10135, with Sliding set 2016, not moving although driven 88; 8.57 us/update (untimed mode, incl. bookkeeping)
+   trajectory written to tmp/walk-base-s1.bin
+walk seed=2 n=200000 [base] obstacles=1499: hash=E21C5E089FEC760B  final cell=42230014 origin=<65.15242, 83.47815, 22.79279>
+   distinct cells 396, cell changes 7167, landblock changes 666, updates with a live collision record 9899, with Sliding set 2033, not moving although driven 17; 7.04 us/update (untimed mode, incl. bookkeeping)
+   trajectory written to tmp/walk-base-s2.bin
+=== variant base
+a              [base] per update_object (dt 0.2000 s):    4880.0 B (reps 4880.0..4880.0; first rep 4880.0)   time best     1336 ns  median     1343 ns   n=89000x9   hash20k=8B00AC7656D1EF77
+a-edge         [base] per update_object (dt 0.2000 s):    5104.0 B (reps 5104.0..5104.0; first rep 5104.0)   time best     1936 ns  median     1956 ns   n=61000x9   hash20k=7C86FFEF13920E07
+b-diag         [base] per update_object (dt 0.2000 s):    5063.5 B (reps 5063.5..5063.5; first rep 5063.5)   time best     1691 ns  median     1696 ns   n=69000x9   hash20k=957EFF75519C4D02
+d              [base] per update_object (dt 0.2000 s):    5552.0 B (reps 5552.0..5552.0; first rep 5552.0)   time best     2293 ns  median     2312 ns   n=52000x9   hash20k=CB0B616DFA2E99EC
+e              [base] per update_object (dt 0.2000 s):     448.0 B (reps 448.0..448.0; first rep 448.0)   time best      142 ns  median      144 ns   n=822000x9   hash20k=7C6C8100C243FE85
+f-near-20      [base] per update_object (dt 0.2000 s):   10160.0 B (reps 10160.0..10160.0; first rep 10160.0)   time best     3595 ns  median     3641 ns   n=32000x9   hash20k=8B00AC7656D1EF77
+f-slide-20     [base] per update_object (dt 0.2000 s):   11881.7 B (reps 11881.7..11886.1; first rep 11882.9)   time best     4469 ns  median     4541 ns   n=24000x9   hash20k=88E549F28F33C263
+m              [base] per update_object (dt 0.0334 s):    4000.0 B (reps 4000.0..4000.0; first rep 4000.0)   time best     1737 ns  median     1756 ns   n=69000x9   hash20k=5B06648CCFDCF6C2
+=== variant pg1
+walk seed=1 n=200000 [pg1] obstacles=1499: hash=155634CD2600A219  final cell=44240005 origin=<9.060577, 105.109215, 32.477966>
+   distinct cells 385, cell changes 7017, landblock changes 836, updates with a live collision record 10135, with Sliding set 2016, not moving although driven 88; 6.66 us/update (untimed mode, incl. bookkeeping)
+   compared with tmp/walk-base-s1.bin (200000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+walk seed=2 n=200000 [pg1] obstacles=1499: hash=E21C5E089FEC760B  final cell=42230014 origin=<65.15242, 83.47815, 22.79279>
+   distinct cells 396, cell changes 7167, landblock changes 666, updates with a live collision record 9899, with Sliding set 2033, not moving although driven 17; 6.76 us/update (untimed mode, incl. bookkeeping)
+   compared with tmp/walk-base-s2.bin (200000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+a              [pg1] per update_object (dt 0.2000 s):    4880.0 B (reps 4880.0..4880.0; first rep 4880.0)   time best     1199 ns  median     1210 ns   n=100000x9   hash20k=8B00AC7656D1EF77
+a-edge         [pg1] per update_object (dt 0.2000 s):    5104.0 B (reps 5104.0..5104.0; first rep 5104.0)   time best     1489 ns  median     1507 ns   n=76000x9   hash20k=7C86FFEF13920E07
+b-diag         [pg1] per update_object (dt 0.2000 s):    5063.5 B (reps 5063.5..5063.5; first rep 5063.5)   time best     1354 ns  median     1380 ns   n=87000x9   hash20k=957EFF75519C4D02
+d              [pg1] per update_object (dt 0.2000 s):    5552.0 B (reps 5552.0..5552.0; first rep 5552.0)   time best     1956 ns  median     1973 ns   n=60000x9   hash20k=CB0B616DFA2E99EC
+e              [pg1] per update_object (dt 0.2000 s):     448.0 B (reps 448.0..448.0; first rep 448.0)   time best      141 ns  median      144 ns   n=827000x9   hash20k=7C6C8100C243FE85
+f-near-20      [pg1] per update_object (dt 0.2000 s):   10160.0 B (reps 10160.0..10160.0; first rep 10160.0)   time best     3560 ns  median     3615 ns   n=33000x9   hash20k=8B00AC7656D1EF77
+f-slide-20     [pg1] per update_object (dt 0.2000 s):   11883.4 B (reps 11883.4..11887.4; first rep 11884.6)   time best     4411 ns  median     4424 ns   n=27000x9   hash20k=88E549F28F33C263
+m              [pg1] per update_object (dt 0.0334 s):    4000.0 B (reps 4000.0..4000.0; first rep 4000.0)   time best     1588 ns  median     1603 ns   n=74000x9   hash20k=5B06648CCFDCF6C2
+=== variant pc7
+walk seed=1 n=200000 [pc7] obstacles=1499: hash=155634CD2600A219  final cell=44240005 origin=<9.060577, 105.109215, 32.477966>
+   distinct cells 385, cell changes 7017, landblock changes 836, updates with a live collision record 10135, with Sliding set 2016, not moving although driven 88; 7.05 us/update (untimed mode, incl. bookkeeping)
+   compared with tmp/walk-base-s1.bin (200000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+walk seed=2 n=200000 [pc7] obstacles=1499: hash=E21C5E089FEC760B  final cell=42230014 origin=<65.15242, 83.47815, 22.79279>
+   distinct cells 396, cell changes 7167, landblock changes 666, updates with a live collision record 9899, with Sliding set 2033, not moving although driven 17; 7.08 us/update (untimed mode, incl. bookkeeping)
+   compared with tmp/walk-base-s2.bin (200000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+a              [pc7] per update_object (dt 0.2000 s):    4816.0 B (reps 4816.0..4816.0; first rep 4816.0)   time best     1318 ns  median     1328 ns   n=91000x9   hash20k=8B00AC7656D1EF77
+a-edge         [pc7] per update_object (dt 0.2000 s):    5040.0 B (reps 5040.0..5040.0; first rep 5040.0)   time best     1909 ns  median     1936 ns   n=63000x9   hash20k=7C86FFEF13920E07
+b-diag         [pc7] per update_object (dt 0.2000 s):    4999.5 B (reps 4999.5..4999.5; first rep 4999.5)   time best     1695 ns  median     1715 ns   n=64000x9   hash20k=957EFF75519C4D02
+d              [pc7] per update_object (dt 0.2000 s):    5488.0 B (reps 5488.0..5488.0; first rep 5488.0)   time best     2276 ns  median     2308 ns   n=51000x9   hash20k=CB0B616DFA2E99EC
+e              [pc7] per update_object (dt 0.2000 s):     448.0 B (reps 448.0..448.0; first rep 448.0)   time best      144 ns  median      145 ns   n=838000x9   hash20k=7C6C8100C243FE85
+f-near-20      [pc7] per update_object (dt 0.2000 s):   10096.0 B (reps 10096.0..10096.0; first rep 10096.0)   time best     3501 ns  median     3556 ns   n=33000x9   hash20k=8B00AC7656D1EF77
+f-slide-20     [pc7] per update_object (dt 0.2000 s):   11882.4 B (reps 11882.4..11886.3; first rep 11883.5)   time best     4503 ns  median     4541 ns   n=26000x9   hash20k=88E549F28F33C263
+m              [pc7] per update_object (dt 0.0334 s):    3968.0 B (reps 3968.0..3968.0; first rep 3968.0)   time best     1920 ns  median     1927 ns   n=62000x9   hash20k=5B06648CCFDCF6C2
+=== variant pc8
+walk seed=1 n=200000 [pc8] obstacles=1499: hash=155634CD2600A219  final cell=44240005 origin=<9.060577, 105.109215, 32.477966>
+   distinct cells 385, cell changes 7017, landblock changes 836, updates with a live collision record 10135, with Sliding set 2016, not moving although driven 88; 6.96 us/update (untimed mode, incl. bookkeeping)
+   compared with tmp/walk-base-s1.bin (200000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+walk seed=2 n=200000 [pc8] obstacles=1499: hash=E21C5E089FEC760B  final cell=42230014 origin=<65.15242, 83.47815, 22.79279>
+   distinct cells 396, cell changes 7167, landblock changes 666, updates with a live collision record 9899, with Sliding set 2033, not moving although driven 17; 7.06 us/update (untimed mode, incl. bookkeeping)
+   compared with tmp/walk-base-s2.bin (200000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+a              [pc8] per update_object (dt 0.2000 s):    4720.0 B (reps 4720.0..4720.0; first rep 4720.0)   time best     1319 ns  median     1334 ns   n=91000x9   hash20k=8B00AC7656D1EF77
+a-edge         [pc8] per update_object (dt 0.2000 s):    4784.0 B (reps 4784.0..4784.0; first rep 4784.0)   time best     1864 ns  median     1890 ns   n=64000x9   hash20k=7C86FFEF13920E07
+b-diag         [pc8] per update_object (dt 0.2000 s):    4843.5 B (reps 4843.5..4843.5; first rep 4843.5)   time best     1653 ns  median     1667 ns   n=72000x9   hash20k=957EFF75519C4D02
+d              [pc8] per update_object (dt 0.2000 s):    5072.0 B (reps 5072.0..5072.0; first rep 5072.0)   time best     2179 ns  median     2199 ns   n=54000x9   hash20k=CB0B616DFA2E99EC
+e              [pc8] per update_object (dt 0.2000 s):     448.0 B (reps 448.0..448.0; first rep 448.0)   time best      138 ns  median      142 ns   n=840000x9   hash20k=7C6C8100C243FE85
+f-near-20      [pc8] per update_object (dt 0.2000 s):   10000.0 B (reps 10000.0..10000.0; first rep 10000.0)   time best     3533 ns  median     3558 ns   n=33000x9   hash20k=8B00AC7656D1EF77
+f-slide-20     [pc8] per update_object (dt 0.2000 s):   11722.8 B (reps 11722.8..11725.9; first rep 11723.6)   time best     4430 ns  median     4457 ns   n=27000x9   hash20k=88E549F28F33C263
+m              [pc8] per update_object (dt 0.0334 s):    3412.3 B (reps 3412.3..3412.3; first rep 3412.3)   time best     1627 ns  median     1633 ns   n=73000x9   hash20k=5B06648CCFDCF6C2
+=== variant pc11
+walk seed=1 n=200000 [pc11] obstacles=1499: hash=155634CD2600A219  final cell=44240005 origin=<9.060577, 105.109215, 32.477966>
+   distinct cells 385, cell changes 7017, landblock changes 836, updates with a live collision record 10135, with Sliding set 2016, not moving although driven 88; 7.88 us/update (untimed mode, incl. bookkeeping)
+   compared with tmp/walk-base-s1.bin (200000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+walk seed=2 n=200000 [pc11] obstacles=1499: hash=E21C5E089FEC760B  final cell=42230014 origin=<65.15242, 83.47815, 22.79279>
+   distinct cells 396, cell changes 7167, landblock changes 666, updates with a live collision record 9899, with Sliding set 2033, not moving although driven 17; 6.90 us/update (untimed mode, incl. bookkeeping)
+   compared with tmp/walk-base-s2.bin (200000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+a              [pc11] per update_object (dt 0.2000 s):    4880.0 B (reps 4880.0..4880.0; first rep 4880.0)   time best     1264 ns  median     1273 ns   n=95000x9   hash20k=8B00AC7656D1EF77
+a-edge         [pc11] per update_object (dt 0.2000 s):    5104.0 B (reps 5104.0..5104.0; first rep 5104.0)   time best     1886 ns  median     1903 ns   n=64000x9   hash20k=7C86FFEF13920E07
+b-diag         [pc11] per update_object (dt 0.2000 s):    5063.5 B (reps 5063.5..5063.5; first rep 5063.5)   time best     1581 ns  median     1593 ns   n=75000x9   hash20k=957EFF75519C4D02
+d              [pc11] per update_object (dt 0.2000 s):    5552.0 B (reps 5552.0..5552.0; first rep 5552.0)   time best     2219 ns  median     2228 ns   n=54000x9   hash20k=CB0B616DFA2E99EC
+e              [pc11] per update_object (dt 0.2000 s):     448.0 B (reps 448.0..448.0; first rep 448.0)   time best       70 ns  median       71 ns   n=1621000x9   hash20k=7C6C8100C243FE85
+f-near-20      [pc11] per update_object (dt 0.2000 s):   10160.0 B (reps 10160.0..10160.0; first rep 10160.0)   time best     3531 ns  median     3561 ns   n=33000x9   hash20k=8B00AC7656D1EF77
+f-slide-20     [pc11] per update_object (dt 0.2000 s):   11883.3 B (reps 11883.3..11886.4; first rep 11883.4)   time best     4386 ns  median     4436 ns   n=27000x9   hash20k=88E549F28F33C263
+m              [pc11] per update_object (dt 0.0334 s):    4048.0 B (reps 4048.0..4048.0; first rep 4048.0)   time best     1711 ns  median     1724 ns   n=71000x9   hash20k=5B06648CCFDCF6C2
+=== variant q2
+walk seed=1 n=200000 [q2] obstacles=1499: hash=155634CD2600A219  final cell=44240005 origin=<9.060577, 105.109215, 32.477966>
+   distinct cells 385, cell changes 7017, landblock changes 836, updates with a live collision record 10135, with Sliding set 2016, not moving although driven 88; 7.56 us/update (untimed mode, incl. bookkeeping)
+   compared with tmp/walk-base-s1.bin (200000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+walk seed=2 n=200000 [q2] obstacles=1499: hash=E21C5E089FEC760B  final cell=42230014 origin=<65.15242, 83.47815, 22.79279>
+   distinct cells 396, cell changes 7167, landblock changes 666, updates with a live collision record 9899, with Sliding set 2033, not moving although driven 17; 6.55 us/update (untimed mode, incl. bookkeeping)
+   compared with tmp/walk-base-s2.bin (200000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+a              [q2] per update_object (dt 0.2000 s):    4656.0 B (reps 4656.0..4656.0; first rep 4656.0)   time best     1220 ns  median     1233 ns   n=96000x9   hash20k=8B00AC7656D1EF77
+a-edge         [q2] per update_object (dt 0.2000 s):    4720.0 B (reps 4720.0..4720.0; first rep 4720.0)   time best     1790 ns  median     1805 ns   n=66000x9   hash20k=7C86FFEF13920E07
+b-diag         [q2] per update_object (dt 0.2000 s):    4779.5 B (reps 4779.5..4779.5; first rep 4779.5)   time best     1538 ns  median     1545 ns   n=76000x9   hash20k=957EFF75519C4D02
+d              [q2] per update_object (dt 0.2000 s):    5008.0 B (reps 5008.0..5008.0; first rep 5008.0)   time best     2119 ns  median     2140 ns   n=55000x9   hash20k=CB0B616DFA2E99EC
+e              [q2] per update_object (dt 0.2000 s):     448.0 B (reps 448.0..448.0; first rep 448.0)   time best       72 ns  median       73 ns   n=1596000x9   hash20k=7C6C8100C243FE85
+f-near-20      [q2] per update_object (dt 0.2000 s):    9936.0 B (reps 9936.0..9936.0; first rep 9936.0)   time best     3511 ns  median     3558 ns   n=33000x9   hash20k=8B00AC7656D1EF77
+f-slide-20     [q2] per update_object (dt 0.2000 s):   11722.8 B (reps 11722.8..11725.9; first rep 11723.6)   time best     4373 ns  median     4501 ns   n=27000x9   hash20k=88E549F28F33C263
+m              [q2] per update_object (dt 0.0334 s):    3428.3 B (reps 3428.3..3428.3; first rep 3428.3)   time best     1603 ns  median     1612 ns   n=73000x9   hash20k=5B06648CCFDCF6C2
+=== variant pg2
+walk seed=1 n=200000 [pg2] obstacles=1499: hash=155634CD2600A219  final cell=44240005 origin=<9.060577, 105.109215, 32.477966>
+   distinct cells 385, cell changes 7017, landblock changes 836, updates with a live collision record 10135, with Sliding set 2016, not moving although driven 88; 7.08 us/update (untimed mode, incl. bookkeeping)
+   compared with tmp/walk-base-s1.bin (200000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+walk seed=2 n=200000 [pg2] obstacles=1499: hash=E21C5E089FEC760B  final cell=42230014 origin=<65.15242, 83.47815, 22.79279>
+   distinct cells 396, cell changes 7167, landblock changes 666, updates with a live collision record 9899, with Sliding set 2033, not moving although driven 17; 5.87 us/update (untimed mode, incl. bookkeeping)
+   compared with tmp/walk-base-s2.bin (200000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+a              [pg2] per update_object (dt 0.2000 s):    4880.0 B (reps 4880.0..4880.0; first rep 4880.0)   time best     1349 ns  median     1361 ns   n=88000x9   hash20k=8B00AC7656D1EF77
+a-edge         [pg2] per update_object (dt 0.2000 s):    5104.0 B (reps 5104.0..5104.0; first rep 5104.0)   time best     2026 ns  median     2062 ns   n=62000x9   hash20k=7C86FFEF13920E07
+b-diag         [pg2] per update_object (dt 0.2000 s):    5063.5 B (reps 5063.5..5063.5; first rep 5063.5)   time best     1719 ns  median     1757 ns   n=63000x9   hash20k=957EFF75519C4D02
+d              [pg2] per update_object (dt 0.2000 s):    5552.0 B (reps 5552.0..5552.0; first rep 5552.0)   time best     2315 ns  median     2343 ns   n=46000x9   hash20k=CB0B616DFA2E99EC
+e              [pg2] per update_object (dt 0.2000 s):     448.0 B (reps 448.0..448.0; first rep 448.0)   time best      143 ns  median      144 ns   n=822000x9   hash20k=7C6C8100C243FE85
+f-near-20      [pg2] per update_object (dt 0.2000 s):    6480.0 B (reps 6480.0..6480.0; first rep 6480.0)   time best     2187 ns  median     2213 ns   n=54000x9   hash20k=8B00AC7656D1EF77
+f-slide-20     [pg2] per update_object (dt 0.2000 s):    7160.8 B (reps 7160.8..7162.5; first rep 7161.8)   time best     2632 ns  median     2648 ns   n=43000x9   hash20k=88E549F28F33C263
+m              [pg2] per update_object (dt 0.0334 s):    4000.0 B (reps 4000.0..4000.0; first rep 4000.0)   time best     1764 ns  median     1835 ns   n=68000x9   hash20k=5B06648CCFDCF6C2
+=== variant pc3
+walk seed=1 n=200000 [pc3] obstacles=1499: hash=155634CD2600A219  final cell=44240005 origin=<9.060577, 105.109215, 32.477966>
+   distinct cells 385, cell changes 7017, landblock changes 836, updates with a live collision record 10135, with Sliding set 2016, not moving although driven 88; 7.17 us/update (untimed mode, incl. bookkeeping)
+   compared with tmp/walk-base-s1.bin (200000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+walk seed=2 n=200000 [pc3] obstacles=1499: hash=E21C5E089FEC760B  final cell=42230014 origin=<65.15242, 83.47815, 22.79279>
+   distinct cells 396, cell changes 7167, landblock changes 666, updates with a live collision record 9899, with Sliding set 2033, not moving although driven 17; 7.07 us/update (untimed mode, incl. bookkeeping)
+   compared with tmp/walk-base-s2.bin (200000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+a              [pc3] per update_object (dt 0.2000 s):    4432.0 B (reps 4432.0..4432.0; first rep 4432.0)   time best     1290 ns  median     1303 ns   n=92000x9   hash20k=8B00AC7656D1EF77
+a-edge         [pc3] per update_object (dt 0.2000 s):    4656.0 B (reps 4656.0..4656.0; first rep 4656.0)   time best     1889 ns  median     1911 ns   n=64000x9   hash20k=7C86FFEF13920E07
+b-diag         [pc3] per update_object (dt 0.2000 s):    4615.5 B (reps 4615.5..4615.5; first rep 4615.5)   time best     1648 ns  median     1673 ns   n=72000x9   hash20k=957EFF75519C4D02
+d              [pc3] per update_object (dt 0.2000 s):    5104.0 B (reps 5104.0..5104.0; first rep 5104.0)   time best     2224 ns  median     2240 ns   n=54000x9   hash20k=CB0B616DFA2E99EC
+e              [pc3] per update_object (dt 0.2000 s):       0.0 B (reps 0.0..0.0; first rep 0.0)   time best      103 ns  median      103 ns   n=1138000x9   hash20k=7C6C8100C243FE85
+f-near-20      [pc3] per update_object (dt 0.2000 s):    9712.0 B (reps 9712.0..9712.0; first rep 9712.0)   time best     3613 ns  median     3653 ns   n=33000x9   hash20k=8B00AC7656D1EF77
+f-slide-20     [pc3] per update_object (dt 0.2000 s):   11433.7 B (reps 11433.7..11437.8; first rep 11435.6)   time best     4481 ns  median     4507 ns   n=25000x9   hash20k=88E549F28F33C263
+m              [pc3] per update_object (dt 0.0334 s):    3776.0 B (reps 3776.0..3776.0; first rep 3776.0)   time best     1807 ns  median     1824 ns   n=67000x9   hash20k=5B06648CCFDCF6C2
+=== variant pc2
+walk seed=1 n=200000 [pc2] obstacles=1499: hash=155634CD2600A219  final cell=44240005 origin=<9.060577, 105.109215, 32.477966>
+   distinct cells 385, cell changes 7017, landblock changes 836, updates with a live collision record 10135, with Sliding set 2016, not moving although driven 88; 7.01 us/update (untimed mode, incl. bookkeeping)
+   compared with tmp/walk-base-s1.bin (200000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+walk seed=2 n=200000 [pc2] obstacles=1499: hash=E21C5E089FEC760B  final cell=42230014 origin=<65.15242, 83.47815, 22.79279>
+   distinct cells 396, cell changes 7167, landblock changes 666, updates with a live collision record 9899, with Sliding set 2033, not moving although driven 17; 7.47 us/update (untimed mode, incl. bookkeeping)
+   compared with tmp/walk-base-s2.bin (200000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+a              [pc2] per update_object (dt 0.2000 s):    4400.0 B (reps 4400.0..4400.0; first rep 4400.0)   time best     1259 ns  median     1278 ns   n=93000x9   hash20k=8B00AC7656D1EF77
+a-edge         [pc2] per update_object (dt 0.2000 s):    4624.0 B (reps 4624.0..4624.0; first rep 4624.0)   time best     1898 ns  median     1911 ns   n=63000x9   hash20k=7C86FFEF13920E07
+b-diag         [pc2] per update_object (dt 0.2000 s):    4583.5 B (reps 4583.5..4583.5; first rep 4583.5)   time best     1671 ns  median     1685 ns   n=71000x9   hash20k=957EFF75519C4D02
+d              [pc2] per update_object (dt 0.2000 s):    4912.0 B (reps 4912.0..4912.0; first rep 4912.0)   time best     2317 ns  median     2333 ns   n=51000x9   hash20k=CB0B616DFA2E99EC
+e              [pc2] per update_object (dt 0.2000 s):     448.0 B (reps 448.0..448.0; first rep 448.0)   time best      142 ns  median      143 ns   n=838000x9   hash20k=7C6C8100C243FE85
+f-near-20      [pc2] per update_object (dt 0.2000 s):    9680.0 B (reps 9680.0..9680.0; first rep 9680.0)   time best     3518 ns  median     3558 ns   n=33000x9   hash20k=8B00AC7656D1EF77
+f-slide-20     [pc2] per update_object (dt 0.2000 s):   11403.1 B (reps 11403.1..11406.0; first rep 11403.4)   time best     4467 ns  median     4528 ns   n=26000x9   hash20k=88E549F28F33C263
+m              [pc2] per update_object (dt 0.0334 s):    2800.0 B (reps 2800.0..2800.0; first rep 2800.0)   time best     1660 ns  median     1680 ns   n=65000x9   hash20k=5B06648CCFDCF6C2
+=== variant items1to5
+walk seed=1 n=200000 [items1to5] obstacles=1499: hash=155634CD2600A219  final cell=44240005 origin=<9.060577, 105.109215, 32.477966>
+   distinct cells 385, cell changes 7017, landblock changes 836, updates with a live collision record 10135, with Sliding set 2016, not moving although driven 88; 6.75 us/update (untimed mode, incl. bookkeeping)
+   compared with tmp/walk-base-s1.bin (200000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+walk seed=2 n=200000 [items1to5] obstacles=1499: hash=E21C5E089FEC760B  final cell=42230014 origin=<65.15242, 83.47815, 22.79279>
+   distinct cells 396, cell changes 7167, landblock changes 666, updates with a live collision record 9899, with Sliding set 2033, not moving although driven 17; 6.27 us/update (untimed mode, incl. bookkeeping)
+   compared with tmp/walk-base-s2.bin (200000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+a              [items1to5] per update_object (dt 0.2000 s):    3728.0 B (reps 3728.0..3728.0; first rep 3728.0)   time best     1006 ns  median     1019 ns   n=118000x9   hash20k=8B00AC7656D1EF77
+a-edge         [items1to5] per update_object (dt 0.2000 s):    3792.0 B (reps 3792.0..3792.0; first rep 3792.0)   time best     1291 ns  median     1304 ns   n=91000x9   hash20k=7C86FFEF13920E07
+b-diag         [items1to5] per update_object (dt 0.2000 s):    3851.5 B (reps 3851.5..3851.5; first rep 3851.5)   time best     1161 ns  median     1175 ns   n=103000x9   hash20k=957EFF75519C4D02
+d              [items1to5] per update_object (dt 0.2000 s):    3920.0 B (reps 3920.0..3920.0; first rep 3920.0)   time best     1644 ns  median     1661 ns   n=71000x9   hash20k=CB0B616DFA2E99EC
+e              [items1to5] per update_object (dt 0.2000 s):       0.0 B (reps 0.0..0.0; first rep 0.0)   time best       45 ns  median       46 ns   n=2612000x9   hash20k=7C6C8100C243FE85
+f-near-20      [items1to5] per update_object (dt 0.2000 s):    5328.0 B (reps 5328.0..5328.0; first rep 5328.0)   time best     1810 ns  median     1821 ns   n=64000x9   hash20k=8B00AC7656D1EF77
+f-slide-20     [items1to5] per update_object (dt 0.2000 s):    6073.1 B (reps 6073.1..6075.1; first rep 6074.5)   time best     2270 ns  median     2296 ns   n=52000x9   hash20k=88E549F28F33C263
+m              [items1to5] per update_object (dt 0.0334 s):    2004.3 B (reps 2004.3..2004.3; first rep 2004.3)   time best     1381 ns  median     1398 ns   n=85000x9   hash20k=5B06648CCFDCF6C2
+=== variant pool
+walk seed=1 n=200000 [pool] obstacles=1499: hash=155634CD2600A219  final cell=44240005 origin=<9.060577, 105.109215, 32.477966>
+   distinct cells 385, cell changes 7017, landblock changes 836, updates with a live collision record 10135, with Sliding set 2016, not moving although driven 88; 6.95 us/update (untimed mode, incl. bookkeeping)
+   compared with tmp/walk-base-s1.bin (200000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+walk seed=2 n=200000 [pool] obstacles=1499: hash=E21C5E089FEC760B  final cell=42230014 origin=<65.15242, 83.47815, 22.79279>
+   distinct cells 396, cell changes 7167, landblock changes 666, updates with a live collision record 9899, with Sliding set 2033, not moving although driven 17; 7.10 us/update (untimed mode, incl. bookkeeping)
+   compared with tmp/walk-base-s2.bin (200000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+a              [pool] per update_object (dt 0.2000 s):    2416.0 B (reps 2416.0..2416.0; first rep 2416.0)   time best     1130 ns  median     1138 ns   n=103000x9   hash20k=8B00AC7656D1EF77
+a-edge         [pool] per update_object (dt 0.2000 s):    2640.0 B (reps 2640.0..2640.0; first rep 2640.0)   time best     1750 ns  median     1775 ns   n=66000x9   hash20k=7C86FFEF13920E07
+b-diag         [pool] per update_object (dt 0.2000 s):    2537.5 B (reps 2537.5..2537.5; first rep 2537.5)   time best     1485 ns  median     1498 ns   n=78000x9   hash20k=957EFF75519C4D02
+d              [pool] per update_object (dt 0.2000 s):    3088.0 B (reps 3088.0..3088.0; first rep 3088.0)   time best     2156 ns  median     2165 ns   n=55000x9   hash20k=CB0B616DFA2E99EC
+e              [pool] per update_object (dt 0.2000 s):     448.0 B (reps 448.0..448.0; first rep 448.0)   time best      141 ns  median      143 ns   n=838000x9   hash20k=7C6C8100C243FE85
+f-near-20      [pool] per update_object (dt 0.2000 s):    7472.0 B (reps 7472.0..7472.0; first rep 7472.0)   time best     3428 ns  median     3467 ns   n=35000x9   hash20k=8B00AC7656D1EF77
+f-slide-20     [pool] per update_object (dt 0.2000 s):    9147.2 B (reps 9147.2..9150.7; first rep 9147.6)   time best     4415 ns  median     4495 ns   n=27000x9   hash20k=88E549F28F33C263
+m              [pool] per update_object (dt 0.0334 s):    2768.0 B (reps 2768.0..2768.0; first rep 2768.0)   time best     1688 ns  median     1699 ns   n=69000x9   hash20k=5B06648CCFDCF6C2
+=== variant all
+walk seed=1 n=200000 [all] obstacles=1499: hash=155634CD2600A219  final cell=44240005 origin=<9.060577, 105.109215, 32.477966>
+   distinct cells 385, cell changes 7017, landblock changes 836, updates with a live collision record 10135, with Sliding set 2016, not moving although driven 88; 6.27 us/update (untimed mode, incl. bookkeeping)
+   compared with tmp/walk-base-s1.bin (200000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+walk seed=2 n=200000 [all] obstacles=1499: hash=E21C5E089FEC760B  final cell=42230014 origin=<65.15242, 83.47815, 22.79279>
+   distinct cells 396, cell changes 7167, landblock changes 666, updates with a live collision record 9899, with Sliding set 2033, not moving although driven 17; 5.67 us/update (untimed mode, incl. bookkeeping)
+   compared with tmp/walk-base-s2.bin (200000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+a              [all] per update_object (dt 0.2000 s):    1264.0 B (reps 1264.0..1264.0; first rep 1264.0)   time best      830 ns  median      846 ns   n=145000x9   hash20k=8B00AC7656D1EF77
+a-edge         [all] per update_object (dt 0.2000 s):    1328.0 B (reps 1328.0..1328.0; first rep 1328.0)   time best     1117 ns  median     1131 ns   n=105000x9   hash20k=7C86FFEF13920E07
+b-diag         [all] per update_object (dt 0.2000 s):    1325.5 B (reps 1325.5..1325.5; first rep 1325.5)   time best      987 ns  median      994 ns   n=120000x9   hash20k=957EFF75519C4D02
+d              [all] per update_object (dt 0.2000 s):    1456.0 B (reps 1456.0..1456.0; first rep 1456.0)   time best     1458 ns  median     1471 ns   n=73000x9   hash20k=CB0B616DFA2E99EC
+e              [all] per update_object (dt 0.2000 s):       0.0 B (reps 0.0..0.0; first rep 0.0)   time best       46 ns  median       46 ns   n=2607000x9   hash20k=7C6C8100C243FE85
+f-near-20      [all] per update_object (dt 0.2000 s):    2864.0 B (reps 2864.0..2864.0; first rep 2864.0)   time best     1611 ns  median     1624 ns   n=72000x9   hash20k=8B00AC7656D1EF77
+f-slide-20     [all] per update_object (dt 0.2000 s):    3561.2 B (reps 3561.2..3562.8; first rep 3561.3)   time best     2081 ns  median     2087 ns   n=57000x9   hash20k=88E549F28F33C263
+m              [all] per update_object (dt 0.0334 s):     772.3 B (reps 772.3..772.3; first rep 772.3)   time best     1268 ns  median     1274 ns   n=94000x9   hash20k=5B06648CCFDCF6C2
+=== variant base
+a              [base] per update_object (dt 0.2000 s):    4880.0 B (reps 4880.0..4880.0; first rep 4880.0)   time best     1311 ns  median     1337 ns   n=89000x9   hash20k=8B00AC7656D1EF77
+a-edge         [base] per update_object (dt 0.2000 s):    5104.0 B (reps 5104.0..5104.0; first rep 5104.0)   time best     1924 ns  median     1937 ns   n=62000x9   hash20k=7C86FFEF13920E07
+b-diag         [base] per update_object (dt 0.2000 s):    5063.5 B (reps 5063.5..5063.5; first rep 5063.5)   time best     1684 ns  median     1714 ns   n=69000x9   hash20k=957EFF75519C4D02
+d              [base] per update_object (dt 0.2000 s):    5552.0 B (reps 5552.0..5552.0; first rep 5552.0)   time best     2393 ns  median     2418 ns   n=49000x9   hash20k=CB0B616DFA2E99EC
+e              [base] per update_object (dt 0.2000 s):     448.0 B (reps 448.0..448.0; first rep 448.0)   time best      142 ns  median      143 ns   n=845000x9   hash20k=7C6C8100C243FE85
+f-near-20      [base] per update_object (dt 0.2000 s):   10160.0 B (reps 10160.0..10160.0; first rep 10160.0)   time best     3661 ns  median     3706 ns   n=32000x9   hash20k=8B00AC7656D1EF77
+f-slide-20     [base] per update_object (dt 0.2000 s):   11882.6 B (reps 11882.6..11886.0; first rep 11883.4)   time best     4504 ns  median     4633 ns   n=27000x9   hash20k=88E549F28F33C263
+m              [base] per update_object (dt 0.0334 s):    4000.0 B (reps 4000.0..4000.0; first rep 4000.0)   time best     1737 ns  median     1747 ns   n=65000x9   hash20k=5B06648CCFDCF6C2

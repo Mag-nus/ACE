@@ -261,6 +261,32 @@ W.15  DeleteObject destroys the object even when removal from its owner failed
      so the two can never disagree.
 
 
+W.16 Use on an unknown object while trading throws NullReferenceException
+     [VERIFIED by reading, 2026-11-25]
+     Player_Use.cs:186-197
+         var item = FindObject(itemGuid, SearchLocations.MyInventory | SearchLocations.MyEquippedItems | SearchLocations.Landblock);
+
+         if (IsTrading && item.IsBeingTradedOrContainsItemBeingTraded(ItemsInTradeWindow))
+         ...
+         if (item != null)
+     The trade check dereferences `item` before the null check below it.
+     FAILURE: while a trade window is open, a Use request for a guid the server
+     cannot find (an item that was just picked up or destroyed, or any guid a
+     client chooses) throws. The exception is caught at
+     InboundMessageManager.cs:140 and logged as two errors per request, so the
+     player gets no UseDone and the log can be flooded.
+     FIX: move the null check above the trade check.
+
+W.17 Appraising a creature adds a Deception skill to it   [VERIFIED by reading]
+     Player.cs:319; Creature_Skills.cs:19-36
+         int difficulty = (int)creature.GetCreatureSkill(Skill.Deception).Current;
+     GetCreatureSkill defaults to add: true, so the first appraisal of any
+     creature without Deception calls Biota.GetOrAddSkill on the TARGET, sets
+     its SAC to Untrained and sets ChangesDetected = true. Harmless for
+     ordinary monsters (they are not saved), but it mutates another object's
+     biota from a read-only action, and it would mark a persisted creature
+     dirty. FIX: pass add: false and treat a missing skill as 0.
+
 
 SECTION D - INVESTIGATED, NOT A BUG
 ================================================================================

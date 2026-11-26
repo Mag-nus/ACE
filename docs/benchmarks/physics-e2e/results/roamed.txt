@@ -1,0 +1,6 @@
+a              a  creature, flat, inside one cell  [ShadowObjects dictionary entries: 1, live: 1]
+   [base] per update_object (dt 0.2000 s):    4880.0 B (reps 4880.0..4880.0; first rep 4880.0)   time best     1312 ns  median     1319 ns   n=91000x9   hash20k=8B00AC7656D1EF77
+a-roamed       a  creature, flat, one cell, after touring 256 cells  (ShadowObjects.Count=256)  [ShadowObjects dictionary entries: 256, live: 1]
+   [base] per update_object (dt 0.2000 s):    4880.0 B (reps 4880.0..4880.0; first rep 4880.0)   time best     1609 ns  median     1618 ns   n=72000x9   hash20k=64806AE3BF920B27
+d-hills        d3 creature, rolling hills, 90 m diagonal  [ShadowObjects dictionary entries: 34, live: 1]
+   [base] per update_object (dt 0.2000 s):    5613.7 B (reps 5613.7..5613.7; first rep 5613.7)   time best     2473 ns  median     2485 ns   n=48000x9   hash20k=3E3D787CA501DC1A

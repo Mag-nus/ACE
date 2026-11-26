@@ -1,0 +1,15 @@
+walk seed=3 n=1000000 [base] obstacles=1499: hash=94F51F9744A8B9F5  final cell=4224001E origin=<92.57729, 135.73914, 38.448044>
+   distinct cells 470, cell changes 35607, landblock changes 3804, updates with a live collision record 49796, with Sliding set 10050, not moving although driven 261; 5.45 us/update (untimed mode, incl. bookkeeping)
+   trajectory written to tmp/walk-base-s3.bin
+walk seed=3 n=1000000 [pg1] obstacles=1499: hash=94F51F9744A8B9F5  final cell=4224001E origin=<92.57729, 135.73914, 38.448044>
+   compared with tmp/walk-base-s3.bin (1000000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+walk seed=3 n=1000000 [pg2] obstacles=1499: hash=94F51F9744A8B9F5  final cell=4224001E origin=<92.57729, 135.73914, 38.448044>
+   compared with tmp/walk-base-s3.bin (1000000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+walk seed=3 n=1000000 [items1to5] obstacles=1499: hash=94F51F9744A8B9F5  final cell=4224001E origin=<92.57729, 135.73914, 38.448044>
+   compared with tmp/walk-base-s3.bin (1000000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+walk seed=3 n=1000000 [pool] obstacles=1499: hash=94F51F9744A8B9F5  final cell=4224001E origin=<92.57729, 135.73914, 38.448044>
+   compared with tmp/walk-base-s3.bin (1000000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+walk seed=3 n=1000000 [all] obstacles=1499: hash=94F51F9744A8B9F5  final cell=4224001E origin=<92.57729, 135.73914, 38.448044>
+   compared with tmp/walk-base-s3.bin (1000000 updates): position/cell/orientation/state mismatches 0 (first at -1); updates with identical position but a different shadow-cell set 0
+NEGATIVE CONTROL  walk seed=1 n=200000 [pc2naive] obstacles=1499: hash=384785FA678C69EB  final cell=4324003D origin=<187.3025, 98.82951, 30.91749>
+NEGATIVE CONTROL     compared with tmp/walk-base-s1.bin (200000 updates): position/cell/orientation/state mismatches 161621 (first at 38379); updates with identical position but a different shadow-cell set 0

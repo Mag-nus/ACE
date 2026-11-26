@@ -1,0 +1,14 @@
+diff -ru a/Source/ACE.Server/Physics/CylSphere.cs b/Source/ACE.Server/Physics/CylSphere.cs
+--- a/Source/ACE.Server/Physics/CylSphere.cs	2026-09-22 08:50:21.000000000 -0500
++++ b/Source/ACE.Server/Physics/CylSphere.cs	2026-11-25 09:46:07.467996135 -0600
+@@ -345,7 +345,9 @@
+         {
+             var path = transition.SpherePath;
+ 
+-            path.CacheLocalSpaceSphere(pos, 1.0f);
++            path.LocalSpacePos.ObjCellID = pos.ObjCellID;
++            path.LocalSpacePos.Frame.Origin = pos.Frame.Origin;
++            path.LocalSpacePos.Frame.Orientation = pos.Frame.Orientation;
+             var global_cylsphere = new CylSphere(LowPoint, Height, Radius, scale);
+             global_cylsphere.LowPoint = path.CheckPos.LocalToGlobal(pos, global_cylsphere.LowPoint);
+ 

@@ -1,0 +1,21 @@
+[env] .NET 10.0.15, 4 cpus, ServerGC=True, latency=Interactive, log=bridge, listeners 127.0.0.1:20038 / 127.0.0.1:20039, sessionMap[1000]
+[env] packetLog.IsEnabled(Debug)=False  log.IsEnabled(Debug)=True
+[env] Timers.PortalYearTicks=309739854  (ushort)=16717
+
+=== (5) SYSTEMIC: loop { NetworkManager.DoSessionWork(); Thread.Sleep(1); } with 1000 real idle in-world sessions, 5 s per row ===
+variant                                      dop   iter/s  CPU ms per wall s    user  kernel  us in DSW/iter  alloc KB/s  S2C pkts/s  gen0
+baseline: Thread.Sleep(1) only                 0      705               24.1    17.7     6.4             0.5         0.0           0     0
+      threads: [dotnet#138949: 15.5 ms/s, 706 runs/s]  [asyncForwarder#138962: 2.1 ms/s, 96 runs/s]
+pure idle (ack/timesync timers pushed out)     1      626              149.5   114.9    34.6           207.9      1008.9           0     0
+      threads: [dotnet#138949: 144.0 ms/s, 627 runs/s]  [.NET Tiered Com#138981: 3.7 ms/s, 1 runs/s]  [asyncForwarder#138962: 1.9 ms/s, 97 runs/s]
+pure idle (ack/timesync timers pushed out)     4      628              298.8   210.5    88.2           189.7      1254.4           0     0
+      threads: [dotnet#138949: 126.3 ms/s, 952 runs/s]  [.NET TP Worker#138967: 76.4 ms/s, 32390 runs/s]  [.NET TP Worker#138966: 33.7 ms/s, 12774 runs/s]  [.NET TP Worker#138964: 32.2 ms/s, 17234 runs/s]  [.NET TP Worker#139005: 24.0 ms/s, 8223 runs/s]  [.NET Tiered Com#138981: 3.8 ms/s, 5 runs/s]
+natural (2 s acks, 20 s timesync, 5 s prune)   1      625              269.8   182.0    87.8           255.9      1277.2         572     0
+      threads: [dotnet#138949: 173.6 ms/s, 868 runs/s]  [.NET TP Worker#139005: 41.0 ms/s, 19131 runs/s]  [.NET TP Worker#138967: 25.9 ms/s, 11664 runs/s]  [.NET TP Worker#138964: 16.6 ms/s, 7521 runs/s]  [.NET Sockets#138963: 10.1 ms/s, 504 runs/s]  [asyncForwarder#138962: 2.1 ms/s, 96 runs/s]
+natural (2 s acks, 20 s timesync, 5 s prune)   4      628              352.9   178.2   174.7           196.4      1548.5         572     0
+      threads: [dotnet#138949: 131.7 ms/s, 1043 runs/s]  [.NET TP Worker#139005: 56.3 ms/s, 21350 runs/s]  [.NET TP Worker#138964: 44.8 ms/s, 17381 runs/s]  [.NET TP Worker#138967: 43.6 ms/s, 15739 runs/s]  [.NET TP Worker#138966: 36.9 ms/s, 12480 runs/s]  [.NET TP Worker#139013: 33.6 ms/s, 12279 runs/s]
+tight loop, no sleep, dop=1, pure idle: 4939 DoSessionWork/s = 202.5 us per call
+
+real	0m33.353s
+user	0m6.295s
+sys	0m2.486s

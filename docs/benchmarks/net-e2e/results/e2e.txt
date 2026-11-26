@@ -1,0 +1,15 @@
+[env] .NET 10.0.15, 4 cpus, ServerGC=True, latency=Interactive, log=bridge, listeners 127.0.0.1:38072 / 127.0.0.1:38073, sessionMap[1000]
+[env] packetLog.IsEnabled(Debug)=False  log.IsEnabled(Debug)=True
+[env] Timers.PortalYearTicks=309739828  (ushort)=16691
+
+=== (e2) INBOUND END TO END through the REAL ConnectionListener receive loop (real UDP datagrams to the real C2S port), n=100000 per run ===
+    receive-side bytes = GC.GetTotalAllocatedBytes(all threads) minus the sender thread's own; receive-side CPU = process CPU minus the sender thread's CPU.
+    The sender keeps at most 32 datagrams in flight (the real path needs them in order) and drains InboundMessageQueue as the world thread would.
+datagram                                  size |  recv-side B/dgram  recv-side CPU us/dgram  wall us/dgram |  sender B/dgram  sender CPU us/dgram
+ack-only, encrypted                         24 |             1263.1                   11.06           5.19 |            40.0                 4.92
+one action fragment (64 B)                 100 |             1526.6                    9.61           5.54 |            40.0                 5.26
+ack + action                               104 |             2038.9                   10.28           5.52 |            40.0                 5.19
+
+real	0m9.743s
+user	0m6.728s
+sys	0m15.311s

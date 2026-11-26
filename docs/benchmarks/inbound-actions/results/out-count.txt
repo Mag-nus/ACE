@@ -1,0 +1,22 @@
+=== K. Biota lock acquisitions per appraisal (steady state; 57 lock-taking extension methods instrumented with Harmony) ===
+  AppraiseInfo: monster                                        32 locks = 7 table copies + 25 single-property reads + 0 other
+       GetProperty(PropertyInt) x18, GetProperty(PropertyBool) x2, GetProperty(PropertyInstanceId) x2, GetProperty(PropertyFloat) x2, GetProperty(PropertyDataId) x1
+  AppraiseInfo: player (16 equipped)                          232 locks = 7 table copies + 210 single-property reads + 15 other
+       GetProperty(PropertyInt) x204, GetEnchantmentBySpell x15, GetProperty(PropertyInstanceId) x2, GetProperty(PropertyFloat) x2, GetProperty(PropertyDataId) x1, GetProperty(PropertyBool) x1
+  AppraiseInfo: loot weapon                                    53 locks = 7 table copies + 44 single-property reads + 2 other
+       GetProperty(PropertyInt) x21, GetProperty(PropertyFloat) x11, GetProperty(PropertyDataId) x6, GetProperty(PropertyString) x3, GetProperty(PropertyInstanceId) x2, GetKnownSpellsIdsWhere x1, GetProperty(PropertyBool) x1, GetEnchantmentsTopLayer x1
+  AppraiseInfo: loot armor                                     37 locks = 7 table copies + 28 single-property reads + 2 other
+       GetProperty(PropertyFloat) x10, GetProperty(PropertyDataId) x6, GetProperty(PropertyInt) x6, GetProperty(PropertyString) x3, GetProperty(PropertyInstanceId) x2, GetKnownSpellsIdsWhere x1, GetProperty(PropertyBool) x1, GetEnchantmentsTopLayer x1
+  AppraiseInfo: worn armor with banes                          38 locks = 7 table copies + 29 single-property reads + 2 other
+       GetProperty(PropertyFloat) x10, GetProperty(PropertyInt) x7, GetProperty(PropertyDataId) x6, GetProperty(PropertyString) x3, GetProperty(PropertyInstanceId) x2, GetKnownSpellsIdsWhere x1, GetProperty(PropertyBool) x1, GetEnchantmentsTopLayer x1
+  AppraiseInfo: corpse                                         24 locks = 7 table copies + 16 single-property reads + 1 other
+       GetProperty(PropertyInt) x6, GetProperty(PropertyDataId) x5, GetProperty(PropertyInstanceId) x2, GetProperty(PropertyFloat) x2, GetKnownSpellsIdsWhere x1, GetProperty(PropertyBool) x1
+  -- whole handler (FindObject + Examine + response + OnAppraisal); two targets alternated so Examine runs --
+  HandleActionIdentifyObject: monster                          45 locks = 7 table copies + 35 single-property reads + 3 other
+       GetProperty(PropertyInt) x28, GetEnchantmentsTopLayerByStatModType(EnchantmentTypeFlags) x2, GetProperty(PropertyBool) x2, GetProperty(PropertyInstanceId) x2, GetProperty(PropertyFloat) x2, GetEnchantmentBySpell x1, GetProperty(PropertyDataId) x1
+  HandleActionIdentifyObject: player                          254 locks = 7 table copies + 226 single-property reads + 21 other
+       GetProperty(PropertyInt) x220, GetEnchantmentBySpell x17, GetEnchantmentsTopLayerByStatModType(EnchantmentTypeFlags) x4, GetProperty(PropertyInstanceId) x2, GetProperty(PropertyFloat) x2, GetProperty(PropertyDataId) x1, GetProperty(PropertyBool) x1
+  HandleActionIdentifyObject: item in open corpse              64 locks = 7 table copies + 45 single-property reads + 12 other
+       GetProperty(PropertyInt) x22, GetProperty(PropertyFloat) x11, GetEnchantmentsTopLayerByStatModType(EnchantmentTypeFlags) x10, GetProperty(PropertyDataId) x6, GetProperty(PropertyString) x3, GetProperty(PropertyInstanceId) x2, GetKnownSpellsIdsWhere x1, GetProperty(PropertyBool) x1, GetEnchantmentsTopLayer x1
+  HandleActionIdentifyObject: stale guid                        7 locks = 7 table copies + 0 single-property reads + 0 other
+       

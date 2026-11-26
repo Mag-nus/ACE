@@ -1,0 +1,15 @@
+[env] .NET 10.0.15, 4 cpus, ServerGC=True, latency=Interactive, log=bridge, listeners 127.0.0.1:31420 / 127.0.0.1:31421, sessionMap[1000]
+[env] packetLog.IsEnabled(Debug)=False  log.IsEnabled(Debug)=True
+[env] Timers.PortalYearTicks=309739261  (ushort)=16125
+
+=== SENDTO cost by socket and loop shape (bare Socket.SendTo(byte[],int,SocketFlags,EndPoint), 24 B datagram, one destination client that never reads) ===
+  tight loop:
+    plain blocking UDP socket (never used async)                       2602 ns wall/send      2745 ns process CPU/send   40.0 B   threads: [dotnet#134959: 999.6 ms/s, 117 runs/s]  [.NET Tiered Com#134974: 56.9 ms/s, 33 runs/s]  [.NET Server GC#134969: 1.7 ms/s, 8 runs/s]  [asyncForwarder#134975: 0.6 ms/s, 96 runs/s]
+    REAL S2C ConnectionListener socket (BeginReceiveFrom pending)      5690 ns wall/send      4153 ns process CPU/send   40.0 B   threads: [dotnet#134959: 647.5 ms/s, 11229 runs/s]  [.NET Sockets#134976: 70.0 ms/s, 29709 runs/s]  [.NET Tiered Com#134974: 11.0 ms/s, 43 runs/s]  [asyncForwarder#134975: 1.0 ms/s, 95 runs/s]
+  main-loop shape: loop { K x SendTo; Thread.Sleep(1); } for 2 s:
+    socket                                                           K  iter/s  pkts/s  CPU ms per wall s  wall us per send   threads (CPU ms per wall s)
+    (no send: Sleep(1) only)                                         0     688       0               22.7               0.0   [.NET Tiered Com#134974: 15.8 ms/s, 14 runs/s]  [dotnet#134959: 6.1 ms/s, 696 runs/s]  [asyncForwarder#134975: 1.0 ms/s, 94 runs/s]  [.NET Server GC#134969: 0.2 ms/s, 1 runs/s]
+    plain blocking UDP socket (never used async)                     1     617     617               17.8              11.3   [dotnet#134959: 12.2 ms/s, 629 runs/s]  [.NET Tiered Com#134974: 4.9 ms/s, 3 runs/s]  [asyncForwarder#134975: 0.9 ms/s, 94 runs/s]
+    REAL S2C ConnectionListener socket (BeginReceiveFrom pending)    1     662     662               30.1              25.3   [dotnet#134959: 23.5 ms/s, 1138 runs/s]  [.NET Sockets#134976: 3.6 ms/s, 658 runs/s]  [.NET Tiered Com#134974: 2.2 ms/s, 4 runs/s]  [asyncForwarder#134975: 1.3 ms/s, 96 runs/s]
+    plain blocking UDP socket (never used async)                     4     679    2715               32.7               4.8   [dotnet#134959: 29.0 ms/s, 679 runs/s]  [asyncForwarder#134975: 2.3 ms/s, 96 runs/s]  [.NET Tiered Com#134974: 1.7 ms/s, 1 runs/s]
+    REAL S2C ConnectionListener socket (BeginReceiveFrom pending)    4     672    2690               57.4               8.4   [dotnet#134959: 37.1 ms/s, 1251 runs/s]  [.NET Sockets#134976: 10.6 ms/s, 1110 runs/s]  [.NET Tiered Com#134974: 7.5 ms/s, 1 runs/s]  [asyncForwarder#134975: 2.2 ms/s, 96 runs/s]

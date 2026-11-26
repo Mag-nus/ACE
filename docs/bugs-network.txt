@@ -369,14 +369,25 @@ F.1  NetworkSession.Update can run on two threads for one session
      calling Update. Any buffer-reuse change (perf-network.txt NT.3) must
      survive this path until it is fixed.
 
-F.2  Only one group's bundle is sent per 5 ms window per session
-     [PLAUSIBLE - read, not observed]
+F.2  Only one group's bundle is sent per ~6 ms window per session, lowest
+     group first   [OBSERVED on the real NetworkSession, 2026-11-25]
      NetworkSession.cs:223/234/251
      nextSend is per session, but the loop runs over 12 groups. After the
      lowest-index group with data sends, nextSend moves 5 ms ahead, and every
-     later group waits. Under sustained traffic, UIQueue (9) can delay
-     SmartboxQueue (10, movement). perf-network.txt NT.1 deliberately keeps
-     this behaviour; changing it is a separate decision.
+     later group waits for another window.
+     Observed with Update() called every 1 ms and three groups queued at t = 0:
+     Database (group 5) left at call 0, UI (9) at call 6, Smartbox (10,
+     movement) at call 12. Order is by group index, not enqueue order.
+       - Ack, echo and time-sync are set only on group 0's bundle, and no
+         message type uses group 0, so they always go as their own datagram
+         and take a whole window ahead of all game data.
+       - STARVATION: with one UI message enqueued every 1 ms, a Smartbox
+         message waited 305 ms. Real UI traffic is burstier, so expect movement
+         updates to be delayed one or two windows behind UI traffic, not
+         starved.
+     perf-network.txt NT.1 deliberately keeps this behaviour; H.3 there lists
+     the options. Changing it is a separate decision, and client acceptance of
+     the alternatives is not verified.
 
 F.3  ProcessDDDQueue's rate limiter is static and shared by every session
      [VERIFIED by reading]
@@ -388,8 +399,41 @@ F.3  ProcessDDDQueue's rate limiter is static and shared by every session
 F.4  The NT.7 acknowledgement walk depends on I.9's client-supplied ack
      I.9 is harmless today, because the ack only filters a scan. If
      AcknowledgeSequence becomes a sequence walk (perf-network.txt NT.7), an
-     unclamped ack of 0xFFFFFFFF becomes a 4-billion-step loop. The clamp to
-     lastSentSequence + 1 is part of that change, not optional.
+     unclamped ack of 0xFFFFFFFF becomes a 4-billion-step loop. A clamp is
+     part of that change, not optional - and it must be to the CURRENT
+     sequence, not current + 1. Observed on the real session: when a client
+     acks CurrentValue + 1 the cache empties past CurrentValue, and the next
+     pure-ack packet (which reuses CurrentValue without incrementing it) is
+     then cached BELOW where a walk-from-lowest pointer would be. Alternatively
+     do not cache pure acks. See perf-network.txt H.B.
+
+F.5  GetServerVersion runs a database query on the world thread for any
+     logged-in client, with no access check, cache or limit
+     [VERIFIED by reading; not measured - no database on the test machine]
+     Network/Handlers/GetServerVersionHandler.cs:10-21;
+     ServerBuildInfo_Static.cs:17; ACE.Database/WorldDatabase.cs:578-585
+
+         [GameMessage(GameMessageOpcode.GetServerVersion, SessionState.WorldConnected)]
+         ...
+         var msg = ServerBuildInfo.GetVersionInfo();
+             var databaseVersion = DatabaseManager.World.GetVersion();   // new WorldDbContext + query
+
+     The handler's own comment says the retail client only forwards @version
+     for admin accounts, but the server does not check. Every such message
+     opens a WorldDbContext and runs a query synchronously on the world
+     thread, which stalls every player for the round trip.
+     FAILURE: any in-world client can send this opcode in a loop and hold the
+     world thread on the database.
+     FIX: gate on session.AccessLevel, and cache the version string (the
+     database version does not change while the server runs).
+
+F.6  A Console.WriteLine per BookPageData request   [VERIFIED by reading]
+     Network/GameAction/Actions/GameActionBookPageData.cs:13
+         Console.WriteLine($"0xAE - BookPageData({bookGuid:X8}, {pageNum}) - unused?");
+     Unconditional, on the world thread, for a client-supplied message.
+     Console output is synchronised and slow, so this is a cheap way to flood
+     the console and slow the world thread. FIX: delete the line, or log at
+     Debug.
 
 ================================================================================
 END OF REPORT

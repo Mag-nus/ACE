@@ -1,0 +1,79 @@
+=== P1 (IN.2). the 7 GetAllProperty*Where copies: real vs no-LINQ vs no-LINQ + presize; 'skip IID' drops the copy that is never written ===
+  [monster] results identical: True
+    real (WorldObject_Properties.cs:536-758)                                   2320 B      1041 ns 
+      of which GetAllPropertyInstanceIdWhere (result never written)             120 B        18 ns 
+    proto: foreach + if                                                        1000 B       372 ns 
+    proto: foreach + if, counted presize                                        888 B       515 ns 
+    proto: foreach + if, counted presize, IID skipped                           888 B       490 ns 
+  [player] results identical: True
+    real (WorldObject_Properties.cs:536-758)                                   3504 B      1827 ns 
+      of which GetAllPropertyInstanceIdWhere (result never written)             288 B        56 ns 
+    proto: foreach + if                                                        1832 B       710 ns 
+    proto: foreach + if, counted presize                                       1416 B      1591 ns 
+    proto: foreach + if, counted presize, IID skipped                          1416 B      1440 ns 
+  [loot weapon] results identical: True
+    real (WorldObject_Properties.cs:536-758)                                   3864 B       946 ns 
+      of which GetAllPropertyInstanceIdWhere (result never written)             288 B        45 ns 
+    proto: foreach + if                                                        2424 B       805 ns 
+    proto: foreach + if, counted presize                                       1448 B      2644 ns 
+    proto: foreach + if, counted presize, IID skipped                          1448 B      1242 ns 
+  [worn armor] results identical: True
+    real (WorldObject_Properties.cs:536-758)                                   3072 B      1363 ns 
+      of which GetAllPropertyInstanceIdWhere (result never written)             288 B        52 ns 
+    proto: foreach + if                                                        1632 B       950 ns 
+    proto: foreach + if, counted presize                                       1328 B       848 ns 
+    proto: foreach + if, counted presize, IID skipped                          1328 B       638 ns 
+  [corpse] results identical: True
+    real (WorldObject_Properties.cs:536-758)                                   2736 B       597 ns 
+      of which GetAllPropertyInstanceIdWhere (result never written)             464 B        72 ns 
+    proto: foreach + if                                                         912 B       229 ns 
+    proto: foreach + if, counted presize                                        912 B       304 ns 
+    proto: foreach + if, counted presize, IID skipped                           912 B       279 ns 
+
+=== P2 (IN.3). the 6 PackableHashTable writes: SortedDictionary (real) vs pooled array + struct comparer ===
+  [monster] 64 bytes, byte-identical: True   (entries: int=4 float=2 str=0 did=0 bool=0)
+    real                                                                        712 B       169 ns 
+    proto                                                                         0 B        92 ns 
+  [player] 224 bytes, byte-identical: True   (entries: int=15 float=1 str=1 did=6 bool=0)
+    real                                                                       2288 B       759 ns 
+    proto                                                                        80 B       457 ns 
+  [loot weapon] 284 bytes, byte-identical: True   (entries: int=19 float=3 str=2 did=0 bool=2)
+    real                                                                       2664 B       949 ns 
+    proto                                                                       168 B       569 ns 
+  [worn armor] 232 bytes, byte-identical: True   (entries: int=18 float=1 str=1 did=0 bool=2)
+    real                                                                       2256 B      1201 ns 
+    proto                                                                        88 B       905 ns 
+  [corpse] 52 bytes, byte-identical: True   (entries: int=2 float=0 str=1 did=0 bool=0)
+    real                                                                        576 B       949 ns 
+    proto                                                                        80 B      1097 ns 
+  [122-entry int table] byte-identical: True
+    real                                                                      20432 B     14968 ns 
+    proto                                                                         0 B      1975 ns 
+
+=== P3 (IN.1). Container.GetInventoryItem: real vs foreach (no Where/ToList) ===
+  same item and container for miss / side pack / main pack: True   (60 loose + 7 packs x 20)
+    real, miss                                                                  784 B       498 ns 
+    proto, miss                                                                   0 B       314 ns 
+    real, item in 7th side pack                                                 720 B       462 ns 
+    proto, item in 7th side pack                                                 24 B       369 ns 
+
+=== P5 (IN.4). appraising a PLAYER: where the non-copy cost goes, and ArmorLevel prototypes ===
+  ArmorLevel values identical: mask version True, one-pass version True   (530,1060,1590,1060,1060,530,1060,1060,530; 16 equipped, 11 clothing)
+    new CreatureProfile(player, true)                                          2880 B      4651 ns 
+  attribute masks identical (one ModifierType read per stat instead of two): True   (highlights=Strength, Endurance, Quickness, Coordination, Focus, Self, Health, Stamina, Mana, colors=Strength, Endurance, Quickness, Coordination, Focus, Self, Health, Stamina, Mana)
+      of which AttributeMaskHelper.GetAttributeHighlights + GetAttributeColors     2304 B      3454 ns 
+      proto: both masks from one ModifierType read per stat                    1152 B      1744 ns 
+      one Health.MaxValue (player: includes the Vitae lookup, perf-worldobjects Q.1)      192 B       166 ns 
+      same on the monster                                                         0 B        37 ns 
+    new CreatureProfile(monster, true)  [for comparison]                          0 B       553 ns 
+    ResistMaskHelper.GetHighlightMask + GetColorMask                              0 B         4 ns 
+    13 rating getters + GetEquippedWeapon/Wand + GetHeritageBonus (AddRatings inputs)      120 B      1104 ns 
+    new ArmorLevel(player)  [real: 9 x BodyParts.GetFlags + Where + ToList + Any]     4576 B      3439 ns 
+    BodyParts.GetFlags(coverage) x 9 alone                                     2592 B       836 ns 
+    proto (a): mask test, same shape                                           1928 B      2389 ns 
+    proto (b): one pass over EquippedObjects                                      0 B       601 ns 
+
+=== P4. ObjectGuid as dictionary key (confirms perf-entity-shared E.4 by measurement) ===
+    Dictionary<ObjectGuid,WorldObject>.TryGetValue hit                           24 B         5 ns 
+    Dictionary<ObjectGuid,WorldObject>.TryGetValue miss                           0 B         2 ns 
+    Dictionary<uint,WorldObject>.TryGetValue hit                                  0 B         3 ns 

@@ -256,6 +256,35 @@ NONE of this is profiled, and the solution has SEVEN test files across ~330,000
 lines with ZERO benchmark infrastructure (no BenchmarkDotNet, no timing
 harness). That is now the binding constraint, not the accuracy of the analysis.
 
+[UPDATE 2026-11-25. Physics and networking now have measurements and harnesses:
+ docs/benchmarks/, perf-physics.txt Sections Q-R and perf-network.txt Sections
+ G-H. They change this plan's order in four places:
+   - The global landblock lock (perf-physics.txt P.1) is measured: total
+     throughput FALLS as threads are added. Its fix as first written is
+     unsafe; use perf-physics.txt R.2. With PG.1 this is the top physics item.
+   - The per-object physics tick loop (perf-entity-server.txt E.1) is
+     measured at up to ~0.8 CPU-seconds per second at 300,000 loaded objects
+     (perf-physics.txt R.1). Count objects on a live server to place it.
+   - On Linux, the receive mode of the UDP socket decides what every SEND
+     costs: ~10 us of process CPU with today's async receive, ~2.7 us with a
+     blocking receive thread (perf-network.txt H.1).
+   - Appraisal requests are not cold: 5-17 KB and 3-13 us each on the world
+     thread, with no rate limit (perf-network.txt H.I).
+ Still unmeasured: everything outside physics and networking, and all
+ production rates.]
+
+[GC CONFIGURATION - an untested experiment, not a finding. ACE.Server.csproj
+ sets Server GC, concurrent GC, RetainVM and GarbageCollectionAdaptationMode = 1
+ (DATAS). DATAS sizes the gen0 budget to the application's live data instead
+ of for throughput, which favours memory footprint. Microsoft's guidance is to
+ turn it off if throughput drops. This server's garbage is mostly per-tick
+ gen0 (README.md, "Where to reduce GC pressure"), so fewer and larger gen0
+ collections may cost less in total. To test: run with
+ DOTNET_GCDynamicAdaptationMode=0 (or set the csproj property to 0) and
+ compare "% time in GC", gen0 count and pause times in dotnet-counters under
+ real load, against memory use. Do this before spending effort on reducing
+ allocation VOLUME, since it changes what a megabyte of garbage costs.]
+
 Tier 1 is safe to apply without measurement - the items are individually small,
 locally verifiable, and several are already verified.
 

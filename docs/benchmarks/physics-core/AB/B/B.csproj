@@ -7,7 +7,7 @@
     <Reference Include="$(StructAceServer)" Private="true" />
   </ItemGroup>
   <PropertyGroup>
-    <AceBin Condition="'$(AceBin)' == ''">$(MSBuildThisFileDirectory)../../../../../Source/ACE.Server/bin/x64/Release/net10.0</AceBin>
+    <AceBin Condition="'$(AceBin)' == ''">$(MSBuildThisFileDirectory)../../../../../Source/ACE.Server/bin/Release/net10.0</AceBin>
   </PropertyGroup>
   <!-- StructAceServer: ACE.Server.dll built from a copy of Source with ../../aframe-struct/aframe-struct.patch applied. Pass /p:StructAceServer=... -->
 </Project>

@@ -1,0 +1,92 @@
+diff -ru a/Source/ACE.Server/Physics/Common/Position.cs b/Source/ACE.Server/Physics/Common/Position.cs
+--- a/Source/ACE.Server/Physics/Common/Position.cs	2026-09-22 08:52:25.000000000 -0500
++++ b/Source/ACE.Server/Physics/Common/Position.cs	2026-11-25 09:46:18.103987038 -0600
+@@ -61,6 +61,13 @@
+             Frame = new AFrame();
+         }
+ 
++        public void CopyFrom(Position p)
++        {
++            ObjCellID = p.ObjCellID;
++            Frame.Origin = p.Frame.Origin;
++            Frame.Orientation = p.Frame.Orientation;
++        }
++
+         public Vector3 LocalToLocal(Position pos, Vector3 offset)
+         {
+             var cellOffset = pos.Frame.LocalToGlobal(offset);
+diff -ru a/Source/ACE.Server/Physics/SpherePath.cs b/Source/ACE.Server/Physics/SpherePath.cs
+--- a/Source/ACE.Server/Physics/SpherePath.cs	2024-03-12 21:37:50.000000000 -0500
++++ b/Source/ACE.Server/Physics/SpherePath.cs	2026-11-25 09:46:18.104010217 -0600
+@@ -256,7 +256,10 @@
+ 
+         public void RestoreCheckPos()
+         {
+-            CheckPos = new Position(BackupCheckPos);
++            if (ReferenceEquals(CheckPos, CurPos) || ReferenceEquals(CheckPos, BackupCheckPos))
++                CheckPos = new Position(BackupCheckPos);
++            else
++                CheckPos.CopyFrom(BackupCheckPos);
+             CheckCell = BackupCell;
+             CellArrayValid = false;
+             CacheGlobalSphere(null);
+@@ -265,12 +268,15 @@
+         public void SaveCheckPos()
+         {
+             BackupCell = CheckCell;
+-            BackupCheckPos = new Position(CheckPos);
++            BackupCheckPos.CopyFrom(CheckPos);
+         }
+ 
+         public void SetCheckPos(Position position, ObjCell cell)
+         {
+-            CheckPos = new Position(position);
++            if (ReferenceEquals(CheckPos, CurPos) || ReferenceEquals(CheckPos, position))
++                CheckPos = new Position(position);
++            else
++                CheckPos.CopyFrom(position);
+             CheckCell = cell;
+             CellArrayValid = false;
+             CacheGlobalSphere(null);
+@@ -280,7 +286,7 @@
+         {
+             Collide = true;
+             BackupCell = CheckCell;
+-            BackupCheckPos = new Position(CheckPos);
++            BackupCheckPos.CopyFrom(CheckPos);
+             StepUpNormal = new Vector3(collisionNormal.X, collisionNormal.Y, collisionNormal.Z);
+             WalkInterp = 1.0f;
+         }
+diff -ru a/Source/ACE.Server/Physics/Transition.cs b/Source/ACE.Server/Physics/Transition.cs
+--- a/Source/ACE.Server/Physics/Transition.cs	2026-09-22 08:52:25.000000000 -0500
++++ b/Source/ACE.Server/Physics/Transition.cs	2026-11-25 09:46:18.104048107 -0600
+@@ -208,7 +208,7 @@
+             if (!ObjectInfo.State.HasFlag(ObjectInfoState.OnWalkable) || SpherePath.CheckWalkables())
+                 return true;
+ 
+-            SpherePath.BackupCheckPos = new Position(SpherePath.CheckPos);
++            SpherePath.BackupCheckPos.CopyFrom(SpherePath.CheckPos);
+             SpherePath.BackupCell = SpherePath.CheckCell;
+ 
+             var stepHeight = ObjectInfo.StepDownHeight;
+@@ -761,7 +761,7 @@
+ 
+             SpherePath.WalkableAllowance = zLandingValue;
+             SpherePath.BackupCell = SpherePath.CheckCell;
+-            SpherePath.BackupCheckPos = new Position(SpherePath.CheckPos);
++            SpherePath.BackupCheckPos.CopyFrom(SpherePath.CheckPos);
+ 
+             var stepDown = StepDown(stepDownHeight, zLandingValue);
+ 
+@@ -1081,7 +1081,10 @@
+ 
+         public void SetCurrentCheckPos()
+         {
+-            SpherePath.CurPos = new Position(SpherePath.CheckPos);
++            if (ReferenceEquals(SpherePath.CurPos, SpherePath.CheckPos))
++                SpherePath.CurPos = new Position(SpherePath.CheckPos);
++            else
++                SpherePath.CurPos.CopyFrom(SpherePath.CheckPos);
+             SpherePath.CurCell = SpherePath.CheckCell;
+             SpherePath.CacheGlobalCurrCenter();
+ 

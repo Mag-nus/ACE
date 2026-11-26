@@ -1,0 +1,53 @@
+diff -ru a/Source/ACE.Server/Physics/Transition.cs b/Source/ACE.Server/Physics/Transition.cs
+--- a/Source/ACE.Server/Physics/Transition.cs	2026-09-22 08:52:25.000000000 -0500
++++ b/Source/ACE.Server/Physics/Transition.cs	2026-11-25 09:46:28.801190375 -0600
+@@ -687,9 +687,48 @@
+         /// Initializes a new default transition
+         /// </summary>
+         /// <returns></returns>
++        [System.ThreadStatic] private static Transition pooledTransition;
++
+         public static Transition MakeTransition()
+         {
+-            return new Transition();
++            var t = pooledTransition;
++            if (t == null)
++                return pooledTransition = new Transition();
++            t.Reset();
++            return t;
++        }
++
++        private static void ResetPos(Position p) { p.ObjCellID = 0; p.Frame.Origin = Vector3.Zero; p.Frame.Orientation = Quaternion.Identity; }
++
++        // verbatim from docs/benchmarks/physics-core/Bench/TransitionPoolProto.cs
++        public void Reset()
++        {
++            var t = this;
++            var oi = t.ObjectInfo;
++            oi.Object = null; oi.State = 0; oi.Scale = 0; oi.StepUpHeight = 0; oi.StepDownHeight = 0;
++            oi.Ethereal = false; oi.StepDown = false; oi.TargetID = 0;
++
++            var ci = t.CollisionInfo;
++            ci.LastKnownContactPlaneValid = false; ci.LastKnownContactPlane = default; ci.LastKnownContactPlaneIsWater = false;
++            ci.ContactPlaneValid = false; ci.ContactPlane = default; ci.ContactPlaneCellID = 0; ci.LastKnownContactPlaneCellID = 0;
++            ci.ContactPlaneIsWater = false; ci.SlidingNormalValid = false; ci.SlidingNormal = default; ci.CollisionNormalValid = false;
++            ci.CollisionNormal = default; ci.AdjustOffset = default; ci.NumCollideObject = 0; ci.CollideObject.Clear();
++            ci.LastCollidedObject = null; ci.CollidedWithEnvironment = false; ci.FramesStationaryFall = 0; ci.VerifiedRestrictions = false;
++
++            var ca = t.CellArray;
++            ca.AddedOutside = false; ca.LoadCells = false; ca.Cells.Clear(); ca.NumCells = 0;
++
++            var sp = t.SpherePath;
++            sp.NumSphere = 0; sp.LocalSphere.Clear(); sp.LocalLowPoint = default; sp.GlobalSphere.Clear(); sp.GlobalLowPoint = default;
++            sp.LocalSpaceSphere.Clear(); sp.LocalSpaceLowPoint = default; sp.LocalSpaceCurrCenter.Clear(); sp.GlobalCurrCenter.Clear();
++            ResetPos(sp.LocalSpacePos); sp.LocalSpaceZ = default; sp.BeginCell = null; sp.BeginPos = null; sp.EndPos = null; sp.CurCell = null;
++            sp.CurPos = new Position(); sp.CheckPos = new Position(); sp.BackupCheckPos = new Position();
++            sp.GlobalOffset = default; sp.StepUp = false; sp.StepUpNormal = default; sp.Collide = false; sp.CheckCell = null;
++            sp.InsertType = 0; sp.StepDown = false; sp.Backup = 0; sp.BackupCell = null; sp.ObstructionEthereal = false;
++            sp.HitsInteriorCell = false; sp.BuildingCheck = false; sp.WalkableAllowance = 0; sp.WalkInterp = 0; sp.StepDownAmt = 0;
++            sp.WalkableCheckPos = new Sphere(); sp.Walkable = null; sp.CheckWalkable = false; sp.WalkableUp = default; sp.WalkablePos = null;
++            sp.WalkableScale = 0; sp.CellArrayValid = false; sp.NegStepUp = false; sp.NegCollisionNormal = default; sp.NegPolyHit = false;
++            sp.PlacementAllowsSliding = true;
+         }
+ 
+         public TransitionState PlacementInsert()

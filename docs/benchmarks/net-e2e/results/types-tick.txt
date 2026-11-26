@@ -1,0 +1,57 @@
+[env] .NET 10.0.15, 4 cpus, ServerGC=True, latency=Interactive, log=bridge, listeners 127.0.0.1:39902 / 127.0.0.1:39903, sessionMap[1000]
+[env] packetLog.IsEnabled(Debug)=False  log.IsEnabled(Debug)=True
+[env] Timers.PortalYearTicks=309739612  (ushort)=16475
+[types] sampler=tick: keywords 0x1 at Verbose (GCAllocationTick only)
+
+=== (3) ALLOCATION BREAKDOWN BY TYPE on the real path (runtime allocation events, measuring thread only) ===
+
+--- flush '6 small messages' (EnqueueSend(msgs[]) + real Update()), 1,200,000 flushes
+    exact: 2,620,800,312 B over 1,200,000 flush = 2184.0 B/flush   (events: 24872 total, 24586 on the measuring thread 137652; other threads: 137672x284, 137676x1, 137663x1)
+    GCAllocationTick (share by AllocationAmount64): 24586 events, covering 2,620,660,080 B = 100.0% of the exact total
+        share    B/flush  obj size  type
+        24.9%      543.5    40-104  System.Byte[]
+        13.3%      290.2     56-88  ACE.Server.Network.MessageFragment[]
+        11.0%      241.1        40  ACE.Server.Network.MessageFragment
+         8.8%      192.0        32  ACE.Server.Network.PacketFragmentHeader
+         8.5%      185.8        32  ACE.Server.Network.ServerPacketFragment
+         6.7%      145.6     56-88  ACE.Server.Network.PacketFragment[]
+         6.5%      142.0     56-88  ACE.Server.Network.GameMessages.GameMessage[]
+         3.2%       69.7        64  ACE.Server.Network.ServerPacket
+         3.1%       68.3        64  System.Predicate`1[ACE.Server.Network.MessageFragment]
+         2.9%       64.4        32  System.Collections.Generic.List`1[ACE.Server.Network.MessageFragment]
+         2.1%       45.6        40  ACE.Server.Network.NetworkBundle
+         1.9%       41.1        40  Node[System.UInt32,ACE.Server.Network.ServerPacket]
+         1.6%       35.6        40  ACE.Server.Network.PacketHeader
+         1.6%       34.9        40  System.Collections.Generic.Queue`1[ACE.Server.Network.GameMessages.GameMessage]
+         1.4%       30.5        32  System.Collections.Generic.List`1[ACE.Server.Network.PacketFragment]
+         1.3%       27.9        32  ACE.Server.Network.ServerPacket[]
+         1.2%       25.9        24  <>c__DisplayClass66_0
+    AllocationSampled (random per-byte sampling, share by sample count): no events
+
+--- inbound 'one action fragment' (64 B GameAction): new ClientPacket + Unpack + NetworkManager.ProcessPacket + ReleaseBuffer, plus InboundMessageQueue.RunActions every 16; 2,000,000 datagrams
+    exact: 2,000,000,000 B over 2,000,000 dgram = 1000.0 B/dgram   (events: 18977 total, 18770 on the measuring thread 137652; other threads: 137672x207)
+    GCAllocationTick (share by AllocationAmount64): 18770 events, covering 2,000,931,808 B = 100.0% of the exact total
+        share    B/dgram  obj size  type
+        21.9%      218.9        64  System.IO.MemoryStream
+        13.5%      135.4        56  System.IO.BinaryReader
+        12.4%      124.4        88  System.Byte[]
+         9.4%       93.8        64  System.Action
+         8.1%       80.8        88  ACE.Server.Network.ClientPacket
+         7.5%       75.5        48  <>c__DisplayClass10_0
+         6.9%       68.9        40  ACE.Server.Network.ClientMessage
+         6.4%       64.4        72  ACE.Server.Network.PacketHeaderOptional
+         3.4%       34.3        56  ACE.Server.Network.PacketFragment[]
+         3.1%       31.2        32  ACE.Server.Network.PacketFragmentHeader
+         3.1%       31.0        32  ACE.Server.Network.ClientPacketFragment
+         2.9%       29.4        40  ACE.Server.Network.PacketHeader
+         0.5%        5.0        32  <>c__DisplayClass7_0
+         0.5%        4.7        32  System.Collections.Generic.List`1[ACE.Server.Network.PacketFragment]
+         0.2%        2.1        40  System.IO.BinaryWriter
+         0.0%        0.2        32  ACE.Server.Entity.Actions.ActionEventDelegate
+    AllocationSampled (random per-byte sampling, share by sample count): no events
+
+    runtime events seen by the listener (all threads, whole run): GCJoin_V2 x60856, GCAllocationTick_V4 x53338, GCMarkWithType x12110, GCDynamicEvent x3211, GCPerHeapHistory_V3 x1753, GCCreateSegment_V1 x1661, GCFreeSegment_V1 x1652, GCSuspendEEBegin_V1 x972, GCRestartEEBegin_V1 x972, GCRestartEEEnd_V1 x972, GCSuspendEEEnd_V1 x972, GCHeapStats_V2 x969, GCStart_V2 x969, GCGlobalHeapHistory_V4 x969, GCEnd_V1 x969, GCTriggered x960, PinObjectAtGCTime x959, FinalizeObject x93, GCFitBucketInfo x54, GCFinalizersBegin_V1 x19, GCFinalizersEnd_V1 x19, IncreaseMemoryPressure x10, GCCreateConcurrentThread_V1 x4
+
+real	0m14.867s
+user	0m7.099s
+sys	0m12.386s

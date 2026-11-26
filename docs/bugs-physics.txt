@@ -888,6 +888,10 @@ Q.1  BBox.LocalToGlobal / LocalToLocal return a box that does not contain the
      0 B, against 67.5 ns and 40 B.
      CAVEAT: behaviour change. Boxes get larger, so objects register in more
      cells. Validate, and check retail-client parity (not done).
+     [Review 2026-11-25: this looks like a direct port, so the retail client
+     probably computes the same too-small boxes for the same objects. Fixing
+     only the server could then make the server block where the client lets
+     the player through. Treat as LOW until checked against the client.]
 
 Q.2  Landblock.adjust_scene_obj_height does nothing   [VERIFIED by reading]
      Common/Landblock.cs:105-122; live, called from init_static_objs (:484)
@@ -903,6 +907,10 @@ Q.2  Landblock.adjust_scene_obj_height does nothing   [VERIFIED by reading]
      FIX: assign obj.Position.Frame.Origin = new Vector3(objPos.X, objPos.Y, adjZ).
      CAVEAT: this moves static objects that have been placed unchanged for
      years. Compare positions on a sample of landblocks before shipping.
+     [Review 2026-11-25: this also looks like a direct port, and the retail
+     client may place these objects the way the server does today. Whether
+     the fix changes any real object's height needs dat files, which the test
+     machine does not have. Treat as LOW until checked.]
 
 Q.3  Line-of-sight checks probably ignore every scenery and static dat object
      [VERIFIED by reading; NOT verified at runtime]

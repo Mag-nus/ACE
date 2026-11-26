@@ -1,0 +1,33 @@
+[env] .NET 10.0.15, 4 cpus, ServerGC=True, latency=Interactive, log=bridge, listeners 127.0.0.1:31992 / 127.0.0.1:31993, sessionMap[1000]
+[env] packetLog.IsEnabled(Debug)=False  log.IsEnabled(Debug)=True
+[env] Timers.PortalYearTicks=309739003  (ushort)=15867
+[tick] 1000 real sessions, state=WorldConnected, S2C packets so far 2000 (ConnectRequest + TimeSync each), cached per session 1
+
+=== (a) IDLE TICK, per session, nothing queued, timers quiesced (ack/resync pushed out by accessor) ===
+REAL  Session.TickOutbound, 1000 sessions round-robin              201.4 ns (med     205.1)        0.0 B
+COPY  docs LegacyTickSession.TickOutbound, 1000 round-robin         181.0 ns (med     181.6)        0.0 B
+REAL  Session.TickOutbound, ONE session (cache-hot)                177.2 ns (med     177.9)        0.0 B
+COPY  docs LegacyTickSession.TickOutbound, ONE session             176.5 ns (med     177.7)        0.0 B
+ref   DateTime.UtcNow                                               17.5 ns (med      17.7)        0.0 B
+ref   uncontended lock(obj){}                                        8.4 ns (med       8.4)        0.0 B
+ratio REAL/COPY (round-robin, best) = 1.11   REAL/UtcNow = 11.5   (4 UtcNow + 12 locks = 171 ns)
+check: S2C packets sent during the idle measurement = 0 (must be 0)
+
+=== (a) REAL NetworkManager.DoSessionWork() per CALL, sessions in the real 1000-slot sessionMap ===
+layout                             dop   ns/call best  ns/call med    B/call  ns/session  serial loop ns/call  overhead ns/call
+  10 sessions, low                      1           4100         4138    1576.0       410.0                 1794              2306
+  10 sessions, low                      4           4274         5032    2146.3       427.4                                       
+ 200 sessions, low                      1          38914        39100    1576.0       194.6                36180              2735
+ 200 sessions, low                      4          14504        16052    2170.7        72.5                                       
+1000 sessions, low                      1         199870       200346    1576.8       199.9               195466              4404
+1000 sessions, low                      4          55337        60411    2168.1        55.3                                       
+  10 sessions, spread                   1           3921         4006    1576.0       392.1                 1784              2137
+  10 sessions, spread                   4           3477         3575    2153.9       347.7                                       
+ 200 sessions, spread                   1          38745        38976    1576.0       193.7                36294              2452
+ 200 sessions, spread                   4          13363        14937    2167.5        66.8                                       
+   0 sessions (empty 1000-slot map)       1           2048         2073    1576.0
+check: S2C packets sent during DoSessionWork measurements = 0 (must be 0)
+
+real	1m5.300s
+user	1m2.016s
+sys	0m7.284s

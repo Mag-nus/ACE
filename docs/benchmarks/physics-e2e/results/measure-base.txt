@@ -1,0 +1,120 @@
+a              a  creature, flat, inside one cell
+   [base] per update_object (dt 0.2000 s):    4880.0 B (reps 4880.0..4880.0; first rep 4880.0)   time best     1310 ns  median     1322 ns   n=88000x9   hash20k=8B00AC7656D1EF77
+      no cell change    shadowCells=1  n= 176000  bytes mean   4880.0 (min 4880, median 4880, max 4880)  time median    1300 ns  p10    1100 ns
+a-edge         a2 creature, flat, along a cell edge (2 cells)
+   [base] per update_object (dt 0.2000 s):    5104.0 B (reps 5104.0..5104.0; first rep 5104.0)   time best     1908 ns  median     1925 ns   n=63000x9   hash20k=7C86FFEF13920E07
+      no cell change    shadowCells=2  n= 126000  bytes mean   5104.0 (min 5104, median 5104, max 5104)  time median    1920 ns  p10    1680 ns
+b              b  creature, flat, crossing a cell boundary
+   [base] per update_object (dt 0.2000 s):    4931.5 B (reps 4931.5..4931.5; first rep 4931.5)   time best     1454 ns  median     1469 ns   n=72000x9   hash20k=88974CCFC3F5FDE2
+      no cell change    shadowCells=1  n= 130500  bytes mean   4880.0 (min 4880, median 4880, max 4880)  time median    1390 ns  p10    1170 ns
+      no cell change    shadowCells=2  n=   4500  bytes mean   4992.0 (min 4992, median 4992, max 4992)  time median    1660 ns  p10    1459 ns
+      cell change       shadowCells=1  n=   4500  bytes mean   5592.0 (min 5592, median 5592, max 5592)  time median    2010 ns  p10    1780 ns
+      cell change       shadowCells=2  n=   4500  bytes mean   5704.0 (min 5704, median 5704, max 5704)  time median    2230 ns  p10    1990 ns
+b-diag         b2 creature, flat, diagonal through a cell corner
+   [base] per update_object (dt 0.2000 s):    5063.5 B (reps 5063.5..5063.5; first rep 5063.5)   time best     1717 ns  median     1748 ns   n=69000x9   hash20k=957EFF75519C4D02
+      no cell change    shadowCells=1  n= 120750  bytes mean   4900.9 (min 4880, median 4880, max 5464)  time median    1380 ns  p10    1150 ns
+      no cell change    shadowCells=4  n=   8625  bytes mean   5756.0 (min 5464, median 6048, max 6048)  time median    3380 ns  p10    2310 ns
+      cell change       shadowCells=4  n=   8625  bytes mean   6648.0 (min 6648, median 6648, max 6648)  time median    3970 ns  p10    3720 ns
+c              c  creature, flat, crossing a landblock boundary
+   [base] per update_object (dt 0.2000 s):    4931.5 B (reps 4931.5..4931.5; first rep 4931.5)   time best     1419 ns  median     1446 ns   n=83000x9   hash20k=4428709E5C82A7BE
+      no cell change    shadowCells=1  n= 150437  bytes mean   4880.0 (min 4880, median 4880, max 4880)  time median    1340 ns  p10    1130 ns
+      no cell change    shadowCells=2  n=   5188  bytes mean   4992.0 (min 4992, median 4992, max 4992)  time median    1650 ns  p10    1450 ns
+      landblock change  shadowCells=1  n=   5188  bytes mean   5592.0 (min 5592, median 5592, max 5592)  time median    2040 ns  p10    1810 ns
+      landblock change  shadowCells=2  n=   5187  bytes mean   5704.0 (min 5704, median 5704, max 5704)  time median    2250 ns  p10    2010 ns
+c-diag         c2 creature, flat, diagonal through a landblock corner
+   [base] per update_object (dt 0.2000 s):    5063.5 B (reps 5063.5..5063.5; first rep 5063.5)   time best     1685 ns  median     1706 ns   n=65000x9   hash20k=53A75CB7FE9B1808
+      no cell change    shadowCells=1  n= 113750  bytes mean   4900.9 (min 4880, median 4880, max 5464)  time median    1320 ns  p10    1130 ns
+      no cell change    shadowCells=4  n=   8125  bytes mean   5756.0 (min 5464, median 6048, max 6048)  time median    3510 ns  p10    2340 ns
+      landblock change  shadowCells=4  n=   8125  bytes mean   6648.0 (min 6648, median 6648, max 6648)  time median    4080 ns  p10    3840 ns
+d              d  creature, 9.5 deg slope, inside one cell
+   [base] per update_object (dt 0.2000 s):    5552.0 B (reps 5552.0..5552.0; first rep 5552.0)   time best     2274 ns  median     2287 ns   n=51000x9   hash20k=CB0B616DFA2E99EC
+      no cell change    shadowCells=1  n= 102000  bytes mean   5552.0 (min 5552, median 5552, max 5552)  time median    2240 ns  p10    2000 ns
+d-cross        d2 creature, 9.5 deg slope, crossing a cell boundary
+   [base] per update_object (dt 0.2000 s):    5629.0 B (reps 5629.0..5629.0; first rep 5629.0)   time best     2486 ns  median     2506 ns   n=48000x9   hash20k=0A00DC0BE61E22EF
+      no cell change    shadowCells=1  n=  86794  bytes mean   5554.1 (min 5552, median 5552, max 5824)  time median    2300 ns  p10    2060 ns
+      no cell change    shadowCells=2  n=   3288  bytes mean   5878.4 (min 5824, median 5824, max 6096)  time median    3079 ns  p10    2810 ns
+      cell change       shadowCells=1  n=   2302  bytes mean   6424.0 (min 6424, median 6424, max 6424)  time median    3380 ns  p10    3130 ns
+      cell change       shadowCells=2  n=   3616  bytes mean   6696.0 (min 6696, median 6696, max 6696)  time median    4030 ns  p10    3790 ns
+d-hills        d3 creature, rolling hills, 90 m diagonal
+   [base] per update_object (dt 0.2000 s):    5613.7 B (reps 5613.7..5613.7; first rep 5613.7)   time best     2500 ns  median     2527 ns   n=46000x9   hash20k=3E3D787CA501DC1A
+      no cell change    shadowCells=1  n=  84389  bytes mean   5554.3 (min 5216, median 5552, max 5824)  time median    2320 ns  p10    2040 ns
+      no cell change    shadowCells=2  n=   3566  bytes mean   5940.5 (min 5824, median 5824, max 6096)  time median    3370 ns  p10    2950 ns
+      cell change       shadowCells=1  n=    426  bytes mean   6238.6 (min 6048, median 6424, max 6424)  time median    3200 ns  p10    2850 ns
+      cell change       shadowCells=2  n=   2003  bytes mean   6556.4 (min 6200, median 6696, max 6696)  time median    4180 ns  p10    3470 ns
+      landblock change  shadowCells=1  n=    219  bytes mean   6424.0 (min 6424, median 6424, max 6424)  time median    3620 ns  p10    3360 ns
+      landblock change  shadowCells=2  n=   1397  bytes mean   6696.0 (min 6696, median 6696, max 6696)  time median    4390 ns  p10    4130 ns
+e              e  creature standing still (MovementManager => stays Active)
+   [base] per update_object (dt 0.2000 s):     448.0 B (reps 448.0..448.0; first rep 448.0)   time best      146 ns  median      171 ns   n=409000x9   hash20k=7C6C8100C243FE85
+      no cell change    shadowCells=1  n= 200000  bytes mean    448.0 (min 448, median 448, max 448)  time median     150 ns  p10     150 ns
+e-inactive     e2 object standing still, no MovementManager (goes inactive)
+   [base] per update_object (dt 0.2000 s):       0.0 B (reps 0.0..0.0; first rep 0.0)   time best        9 ns  median        9 ns   n=12418000x9   hash20k=67BD2AF06BF0DF85
+      no cell change    shadowCells=1  n= 200000  bytes mean      0.0 (min 0, median 0, max 0)  time median      20 ns  p10      20 ns
+f-near-0       f  creature passing 0 cylsphere objects in its cell, no contact
+   [base] per update_object (dt 0.2000 s):    4880.0 B (reps 4880.0..4880.0; first rep 4880.0)   time best     1371 ns  median     1390 ns   n=87000x9   hash20k=8B00AC7656D1EF77
+      no cell change    shadowCells=1  n= 174000  bytes mean   4880.0 (min 4880, median 4880, max 4880)  time median    1340 ns  p10    1140 ns
+f-near-5       f  creature passing 5 cylsphere objects in its cell, no contact
+   [base] per update_object (dt 0.2000 s):    6560.0 B (reps 6560.0..6560.0; first rep 6560.0)   time best     2034 ns  median     2046 ns   n=58000x9   hash20k=8B00AC7656D1EF77
+      no cell change    shadowCells=1  n= 116000  bytes mean   6560.0 (min 6560, median 6560, max 6560)  time median    1970 ns  p10    1710 ns
+f-near-20      f  creature passing 20 cylsphere objects in its cell, no contact
+   [base] per update_object (dt 0.2000 s):   10160.0 B (reps 10160.0..10160.0; first rep 10160.0)   time best     3628 ns  median     3673 ns   n=32000x9   hash20k=8B00AC7656D1EF77
+      no cell change    shadowCells=1  n=  64000  bytes mean  10160.0 (min 10160, median 10160, max 10160)  time median    3470 ns  p10    3360 ns
+f-near-50      f  creature passing 50 cylsphere objects in its cell, no contact
+   [base] per update_object (dt 0.2000 s):   17360.0 B (reps 17360.0..17360.0; first rep 17360.0)   time best     6874 ns  median     6960 ns   n=17000x9   hash20k=8B00AC7656D1EF77
+      no cell change    shadowCells=1  n=  34000  bytes mean  17360.0 (min 17360, median 17360, max 17360)  time median    6520 ns  p10    6230 ns
+f-slide-5      f  creature sliding along a wall, 5 cylsphere objects in its cell
+   [base] per update_object (dt 0.2000 s):    7034.1 B (reps 7034.1..7036.1; first rep 7034.4)   time best     2429 ns  median     2498 ns   n=45000x9   hash20k=448BF0E3BD3F46D6
+      no cell change    shadowCells=1  n=  90000  bytes mean   7035.7 (min 6560, median 7088, max 8016)  time median    2379 ns  p10    2080 ns
+f-slide-20     f  creature sliding along a wall, 20 cylsphere objects in its cell
+   [base] per update_object (dt 0.2000 s):   11882.2 B (reps 11882.2..11886.9; first rep 11882.9)   time best     4532 ns  median     4571 ns   n=26000x9   hash20k=88E549F28F33C263
+      no cell change    shadowCells=1  n=  52000  bytes mean  11887.1 (min 10160, median 12048, max 15216)  time median    4460 ns  p10    3600 ns
+f-slide-50     f  creature sliding along a wall, 50 cylsphere objects in its cell
+   [base] per update_object (dt 0.2000 s):   22202.3 B (reps 22202.3..22232.0; first rep 22226.0)   time best     9007 ns  median     9100 ns   n=12000x9   hash20k=88E549F28F33C263
+      no cell change    shadowCells=1  n=  24000  bytes mean  22225.6 (min 17360, median 22848, max 29616)  time median    9090 ns  p10    6760 ns
+m              B  missile r=0.1, 20 m/s, 30 Hz, flat
+   [base] per update_object (dt 0.0334 s):    4000.0 B (reps 4000.0..4000.0; first rep 4000.0)   time best     1703 ns  median     1719 ns   n=45000x9   hash20k=5B06648CCFDCF6C2
+      no cell change    shadowCells=1  n=  83078  bytes mean   3952.0 (min 3952, median 3952, max 3952)  time median    1580 ns  p10    1460 ns
+      no cell change    shadowCells=2  n=   3461  bytes mean   4344.1 (min 4144, median 4544, max 4544)  time median    2260 ns  p10    1830 ns
+      cell change       shadowCells=2  n=   3461  bytes mean   4807.9 (min 4608, median 4608, max 5008)  time median    2340 ns  p10    1980 ns
+m-big          B  missile r=0.3, 20 m/s, 30 Hz, flat
+   [base] per update_object (dt 0.0334 s):    2899.7 B (reps 2899.7..2899.7; first rep 2899.7)   time best     1006 ns  median     1023 ns   n=113000x9   hash20k=FC4264001470469D
+      no cell change    shadowCells=1  n= 184616  bytes mean   2864.0 (min 2864, median 2864, max 2864)  time median     880 ns  p10     830 ns
+      no cell change    shadowCells=2  n=   7692  bytes mean   3096.0 (min 3056, median 3136, max 3136)  time median    1320 ns  p10    1190 ns
+      cell change       shadowCells=2  n=   7692  bytes mean   3560.0 (min 3520, median 3600, max 3600)  time median    1410 ns  p10    1340 ns
+m-big-slow     B  missile r=0.3, 8 m/s (1 step per transition), 30 Hz, flat
+   [base] per update_object (dt 0.0334 s):    2371.7 B (reps 2371.7..2371.7; first rep 2371.7)   time best      631 ns  median      643 ns   n=186000x9   hash20k=B34108FDB7C15CA6
+      no cell change    shadowCells=1  n= 176924  bytes mean   2343.7 (min 2320, median 2320, max 2592)  time median     520 ns  p10     480 ns
+      no cell change    shadowCells=2  n=  15384  bytes mean   2432.0 (min 2432, median 2432, max 2432)  time median     720 ns  p10     680 ns
+      cell change       shadowCells=2  n=   7692  bytes mean   2896.0 (min 2896, median 2896, max 2896)  time median     900 ns  p10     850 ns
+a-free         a  creature (AllowFreeHeading setup), flat, one cell
+   [base] per update_object (dt 0.2000 s):    4880.0 B (reps 4880.0..4880.0; first rep 4880.0)   time best     1348 ns  median     1365 ns   n=88000x9   hash20k=8B00AC7656D1EF77
+      no cell change    shadowCells=1  n= 176000  bytes mean   4880.0 (min 4880, median 4880, max 4880)  time median    1350 ns  p10    1149 ns
+a-anim         a  creature + cyclic 30 fps animation, flat, one cell
+   [base] per update_object (dt 0.2000 s):    5475.2 B (reps 5475.2..5475.2; first rep 5475.2)   time best     1570 ns  median     1579 ns   n=21000x9   hash20k=8B00AC7656D1EF77
+      no cell change    shadowCells=1  n=  42000  bytes mean   5475.2 (min 5408, median 5504, max 5504)  time median    1600 ns  p10    1360 ns
+a-1part        a  creature with 1 part, flat, one cell
+   [base] per update_object (dt 0.2000 s):    4880.0 B (reps 4880.0..4880.0; first rep 4880.0)   time best     1274 ns  median     1300 ns   n=92000x9   hash20k=8B00AC7656D1EF77
+      no cell change    shadowCells=1  n= 184000  bytes mean   4880.0 (min 4880, median 4880, max 4880)  time median    1260 ns  p10    1070 ns
+a-34parts      a  creature with 34 parts, flat, one cell
+   [base] per update_object (dt 0.2000 s):    4880.0 B (reps 4880.0..4880.0; first rep 4880.0)   time best     1353 ns  median     1389 ns   n=86000x9   hash20k=8B00AC7656D1EF77
+      no cell change    shadowCells=1  n= 172000  bytes mean   4880.0 (min 4880, median 4880, max 4880)  time median    1370 ns  p10    1140 ns
+a-fast         a  creature at 7 m/s (2 steps per transition), flat, one cell
+   [base] per update_object (dt 0.2000 s):    5424.0 B (reps 5424.0..5424.0; first rep 5424.0)   time best     1857 ns  median     1897 ns   n=63000x9   hash20k=7F98FCB45B7C6A05
+      no cell change    shadowCells=1  n= 126000  bytes mean   5424.0 (min 5424, median 5424, max 5424)  time median    1840 ns  p10    1600 ns
+a-30hz         a  creature, flat, one cell, dt 1/30
+   [base] per update_object (dt 0.0334 s):    2416.0 B (reps 2416.0..2416.0; first rep 2416.0)   time best      662 ns  median      665 ns   n=183000x9   hash20k=5B266938487B9395
+      no cell change    shadowCells=1  n= 200000  bytes mean   2416.0 (min 2416, median 2416, max 2416)  time median     580 ns  p10     560 ns
+f-sph-near-20  f  creature passing 20 sphere objects in its cell, no contact
+   [base] per update_object (dt 0.2000 s):    4880.0 B (reps 4880.0..4880.0; first rep 4880.0)   time best     2323 ns  median     2347 ns   n=51000x9   hash20k=8B00AC7656D1EF77
+      no cell change    shadowCells=1  n= 102000  bytes mean   4880.0 (min 4880, median 4880, max 4880)  time median    2350 ns  p10    2020 ns
+b-pop-50       b  creature, flat, crossing a cell boundary, 50 other objects in the landblock
+   [base] per update_object (dt 0.2000 s):    4956.5 B (reps 4956.5..4956.5; first rep 4956.5)   time best     1415 ns  median     1441 ns   n=84000x9   hash20k=88974CCFC3F5FDE2
+      no cell change    shadowCells=1  n= 152250  bytes mean   4880.0 (min 4880, median 4880, max 4880)  time median    1340 ns  p10    1110 ns
+      no cell change    shadowCells=2  n=   5250  bytes mean   4992.0 (min 4992, median 4992, max 4992)  time median    1620 ns  p10    1400 ns
+      cell change       shadowCells=1  n=   5250  bytes mean   5992.0 (min 5992, median 5992, max 5992)  time median    2270 ns  p10    2020 ns
+      cell change       shadowCells=2  n=   5250  bytes mean   6104.0 (min 6104, median 6104, max 6104)  time median    2470 ns  p10    2210 ns
+b-pop-200      b  creature, flat, crossing a cell boundary, 200 other objects in the landblock
+   [base] per update_object (dt 0.2000 s):    5031.5 B (reps 5031.5..5031.5; first rep 5031.5)   time best     1490 ns  median     1504 ns   n=78000x9   hash20k=88974CCFC3F5FDE2
+      no cell change    shadowCells=1  n= 141375  bytes mean   4880.0 (min 4880, median 4880, max 4880)  time median    1360 ns  p10    1120 ns
+      no cell change    shadowCells=2  n=   4875  bytes mean   4992.0 (min 4992, median 4992, max 4992)  time median    1620 ns  p10    1400 ns
+      cell change       shadowCells=1  n=   4875  bytes mean   7192.0 (min 7192, median 7192, max 7192)  time median    2960 ns  p10    2740 ns
+      cell change       shadowCells=2  n=   4875  bytes mean   7304.0 (min 7304, median 7304, max 7304)  time median    3140 ns  p10    2940 ns

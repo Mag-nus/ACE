@@ -1,0 +1,9 @@
+srcbuild/
+out/
+tmp/
+acebin-head/
+variants/base/
+variants/*/src/
+variants/*/*.dll
+variants/*/*.pdb
+variants_build.log

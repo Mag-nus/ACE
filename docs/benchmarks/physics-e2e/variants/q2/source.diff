@@ -1,0 +1,78 @@
+diff -ru a/Source/ACE.Server/Physics/Animation/AFrame.cs b/Source/ACE.Server/Physics/Animation/AFrame.cs
+--- a/Source/ACE.Server/Physics/Animation/AFrame.cs	2024-03-12 21:37:50.000000000 -0500
++++ b/Source/ACE.Server/Physics/Animation/AFrame.cs	2026-11-25 09:46:02.190827570 -0600
+@@ -110,7 +110,8 @@
+ 
+         public void GRotate(Vector3 rotation)
+         {
+-            Orientation *= Quaternion.CreateFromYawPitchRoll(rotation.X, rotation.Y, rotation.Z);
++            if (rotation != Vector3.Zero)
++                Orientation *= Quaternion.CreateFromYawPitchRoll(rotation.X, rotation.Y, rotation.Z);
+             Orientation  = Quaternion.Normalize(Orientation);
+         }
+ 
+diff -ru a/Source/ACE.Server/Physics/Common/CellArray.cs b/Source/ACE.Server/Physics/Common/CellArray.cs
+--- a/Source/ACE.Server/Physics/Common/CellArray.cs	2020-11-04 08:30:06.000000000 -0600
++++ b/Source/ACE.Server/Physics/Common/CellArray.cs	2026-11-25 09:46:02.190733922 -0600
+@@ -37,6 +37,16 @@
+             }
+         }
+ 
++        public ObjCell GetCellAt(int index)
++        {
++            foreach (var cell in Cells.Values)
++            {
++                if (index == 0) return cell;
++                index--;
++            }
++            throw new System.ArgumentOutOfRangeException(nameof(index));
++        }
++
+         public void remove_cell(ObjCell cell)
+         {
+             if (Cells.ContainsKey(cell.ID))
+diff -ru a/Source/ACE.Server/Physics/Common/ObjCell.cs b/Source/ACE.Server/Physics/Common/ObjCell.cs
+--- a/Source/ACE.Server/Physics/Common/ObjCell.cs	2026-11-25 02:41:50.000000000 -0600
++++ b/Source/ACE.Server/Physics/Common/ObjCell.cs	2026-11-25 09:46:02.190760261 -0600
+@@ -354,7 +354,7 @@
+             {
+                 for (var i = 0; i < cellArray.Cells.Count; i++)
+                 {
+-                    var cell = cellArray.Cells.Values.ElementAt(i);
++                    var cell = cellArray.GetCellAt(i);
+                     if (cell == null) continue;
+ 
+                     cell.find_transit_cells(position, numSphere, sphere, cellArray, path);
+diff -ru a/Source/ACE.Server/Physics/PhysicsObj.cs b/Source/ACE.Server/Physics/PhysicsObj.cs
+--- a/Source/ACE.Server/Physics/PhysicsObj.cs	2026-11-25 02:42:12.000000000 -0600
++++ b/Source/ACE.Server/Physics/PhysicsObj.cs	2026-11-25 09:46:02.190671803 -0600
+@@ -2495,7 +2495,7 @@
+             for (var i = 0; i < cellArray.Cells.Count; i++)
+             //foreach (var cell in checkCells)
+             {
+-                var cell = cellArray.Cells.Values.ElementAt(i);
++                var cell = cellArray.GetCellAt(i);
+                 if (cell == null) continue;
+ 
+                 PartArray.calc_cross_cells_static(cell, cellArray);
+@@ -3288,7 +3288,7 @@
+ 
+         public void report_collision_end(bool forceEnd)
+         {
+-            if (CollisionTable == null) return;
++            if (CollisionTable == null || CollisionTable.Count == 0) return;
+ 
+             var ends = new List<uint>();
+ 
+diff -ru a/Source/ACE.Server/Physics/Transition.cs b/Source/ACE.Server/Physics/Transition.cs
+--- a/Source/ACE.Server/Physics/Transition.cs	2026-09-22 08:52:25.000000000 -0500
++++ b/Source/ACE.Server/Physics/Transition.cs	2026-11-25 09:46:02.190802451 -0600
+@@ -160,7 +160,7 @@
+ 
+             for (var i = 0; i < CellArray.Cells.Count; i++)
+             {
+-                var cell = CellArray.Cells.Values.ElementAt(i);
++                var cell = CellArray.GetCellAt(i);
+                 if (cell == null || cell.Equals(currCell)) continue;
+ 
+                 var collides = cell.FindCollisions(this);

@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14</LangVersion>
+    <Nullable>disable</Nullable>
+    <Optimize>true</Optimize>
+    <PlatformTarget>x64</PlatformTarget>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>NetE2E</AssemblyName>
+    <RootNamespace>NetE2E</RootNamespace>
+    <!-- Same GC settings as ACE.Server.runtimeconfig.json (Server GC, concurrent, DATAS, RetainVM). Override with DOTNET_gcServer=0. -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <RetainVMGarbageCollection>true</RetainVMGarbageCollection>
+    <GarbageCollectionAdaptationMode>1</GarbageCollectionAdaptationMode>
+    <TieredPGO>true</TieredPGO>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>CS0618;CS8981;CS0162;CS0219;CS0169;CS0649;CS0414;CS8632;MSB3277;MSB3243;CS1701;CS1702</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <AceBin Condition="'$(AceBin)' == ''">$(MSBuildThisFileDirectory)../../../Source/ACE.Server/bin/Release/net10.0</AceBin>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="$(AceBin)/*.dll" Private="true" />
+  </ItemGroup>
+
+</Project>

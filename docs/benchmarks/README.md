@@ -1,13 +1,21 @@
 # Benchmarks for the measured deep dive (2026-11-25)
 
-These are the harnesses behind `perf-physics.txt` Section Q and `perf-network.txt`
-Section G. They are standalone console projects. They are not part of `ACE.sln`
+These are the harnesses behind `perf-physics.txt` Sections Q and R and
+`perf-network.txt` Sections G and H. They are standalone console projects. They are not part of `ACE.sln`
 and are not built by the solution.
 
 ## Building
 
 Each project references a **Release build of ACE.Server** through the MSBuild
-property `AceBin`. By default that is `Source/ACE.Server/bin/x64/Release/net10.0`.
+property `AceBin`. By default that is `Source/ACE.Server/bin/Release/net10.0`,
+which is where a plain `dotnet build` of the project writes.
+
+**Check which build you are measuring.** Visual Studio and solution builds write
+to `Source/ACE.Server/bin/x64/Release/net10.0` instead, so the two folders can
+hold builds of different ages. Sections Q and G were measured against a stale
+build in the `x64` folder by mistake (see `perf-physics.txt` R.C). The hot paths
+had not changed, and the key figures were re-run on a current build, but look at
+the DLL's timestamp before trusting a number.
 
 ```
 cd Source
@@ -20,8 +28,8 @@ dotnet bin/Release/net10.0/<Project>.dll <mode>
 
 To point a project at another build, pass `-p:AceBin=/path/to/bin`.
 
-All numbers in the reports were taken against `Claude1` @ `867315772`, the state
-of upstream master through #4553, while it still used log4net. Some harnesses
+The source tree was `Claude1` @ `867315772` / `0dfa403e0`, the state of upstream
+master through #4553, while it still used log4net. Some harnesses
 reference `log4net.dll` or the log4net bridge. After the Serilog switch (#4558)
 those references, and NT.12's logging measurement, need updating.
 
@@ -49,6 +57,44 @@ those references, and NT.12's logging measurement, need updating.
 | `net-messages/` (Probe) | NM.1-NM.12 | `sizes`, `parts`, `proto`, `caps`, `fanout`, `ench`, `inbound` |
 | `physics-core/Bench` | PC.1-PC.14 | `sizes`, `spherepath`, `physobj`, `aframe`, `coll`, `log`, `lock`, `proto`, `pool`, `collend`, `objsize` (no argument runs all, ~5 min) |
 | `physics-geom/` (GeomBench) | PG.1-PG.12 | `mem`, `math`, `poly`, `cache`, `box`, `setup`, `bsp`, `lookup`, `celllist` |
+
+## Projects added by the review pass (Sections R and H)
+
+| Project | Findings | What it runs |
+|---|---|---|
+| `physics-tickloop/` | R.1 | The real `WorldObject.UpdateObjectPhysics` over 1,000-300,000 stub objects that take the early-outs. No arguments. |
+| `landblock-lock/` | R.2 | The real `LandblockManager.GetLandblock` on 1, 2 and 4 threads, against a read lock and a lock-free read. No arguments. |
+| `physics-e2e/` | R.3, R.4 | Real `PhysicsObj.update_object` end to end on synthetic terrain, with each proposed fix built from a source diff. See below. |
+| `net-e2e/` | H.A-H.6 | The real `Session`, `NetworkSession`, `NetworkManager` and `ConnectionListener` over loopback. Modes: `behave`, `tick`, `systemic`, `sendcost`, `flush`, `retained`, `broadcast`, `inbound`, `e2e`, `ack`, `types`; `./run-all.sh` runs them all. |
+| `inbound-actions/` | IN.1-IN.11 | Real inbound handlers with a Player built by reflection over synthetic biotas. Modes: `appraise`, `find`, `move`, `proto`, `extra`, `count`. |
+| `socket-checks/` | H.1, H.A | Two small standalone programs: send cost by receive mode on the same socket, and whether a received `SocketAddress` equals a serialised endpoint. They need no ACE build. |
+
+`net-e2e/results/`, `inbound-actions/results/` and `physics-e2e/results/` hold the
+outputs of the runs the reports quote.
+
+### physics-e2e
+
+This harness does not use `AceBin`. It builds its own copies of ACE.Server from a
+copy of the repo's `Source/` folder, one per proposed fix:
+
+```
+cd docs/benchmarks/physics-e2e
+./run_all.sh                       # everything, one process at a time, about 25 minutes
+python3 make_variants.py           # only rebuild the variant DLLs (into variants/, from srcbuild/)
+./build.sh                         # only rebuild the run directories (out/<variant>/)
+dotnet out/base/PhysE2E.dll list   # scenario names
+dotnet out/base/PhysE2E.dll measure a
+dotnet out/pg1/PhysE2E.dll measure a
+```
+
+- `variants/<name>/source.diff` is each fix as a source diff. Every one applies to
+  the current tree with `git apply -p1` from the repo root. `items1to5` is
+  Section Q.E items 1-5 together; `q2` is Q.E item 2 (PC.7 + PC.8 + PC.11);
+  `pc2naive` is the deliberately wrong version used as a negative control.
+- `walk --dump` and `walk --compare` run the identical-results check.
+- Count calls with `DOTNET_JitNoInline=1`. A Harmony prefix is bypassed wherever
+  the JIT inlined its target.
+- Set `ACE_SRC` to use a source tree other than `../../../Source`.
 
 ### net-transport
 
