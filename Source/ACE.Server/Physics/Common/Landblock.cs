@@ -577,34 +577,38 @@ namespace ACE.Server.Physics.Common
             get
             {
                 // return cached value
-                if (isDungeon != null)
-                    return isDungeon.Value;
+                if (isDungeon == null)
+                    isDungeon = IsDungeonLandblock(BlockCoord, Height, Info);
 
-                // hack for NW island
-                // did a worldwide analysis for adding watercells into the formula,
-                // but they are inconsistently defined for some of the edges of map unfortunately
-                if (BlockCoord.X < 64 && BlockCoord.Y > 1976)
-                {
-                    //Console.WriteLine($"Allowing {ID:X8}");
-                    isDungeon = false;
-                    return isDungeon.Value;
-                }
-
-                // a dungeon landblock is determined by:
-                // - all heights being 0
-                // - having at least 1 EnvCell (0x100+)
-                // - contains no buildings
-                foreach (var height in Height)
-                {
-                    if (height != 0)
-                    {
-                        isDungeon = false;
-                        return isDungeon.Value;
-                    }
-                }
-                isDungeon = Info != null && Info.NumCells > 0 && Info.Buildings != null && Info.Buildings.Count == 0;
                 return isDungeon.Value;
             }
+        }
+
+        /// <summary>
+        /// The rule behind IsDungeon, from a landblock's dat data alone, without building the landblock
+        /// </summary>
+        /// <param name="blockCoord">LandDefs.blockid_to_lcoord of the landblock</param>
+        /// <param name="height">CellLandblock.Height</param>
+        /// <param name="info">The landblock's LandblockInfo, or null when CellLandblock.HasObjects is false</param>
+        public static bool IsDungeonLandblock(Vector2 blockCoord, List<byte> height, LandblockInfo info)
+        {
+            // hack for NW island
+            // did a worldwide analysis for adding watercells into the formula,
+            // but they are inconsistently defined for some of the edges of map unfortunately
+            if (blockCoord.X < 64 && blockCoord.Y > 1976)
+                return false;
+
+            // a dungeon landblock is determined by:
+            // - all heights being 0
+            // - having at least 1 EnvCell (0x100+)
+            // - contains no buildings
+            foreach (var h in height)
+            {
+                if (h != 0)
+                    return false;
+            }
+
+            return info != null && info.NumCells > 0 && info.Buildings != null && info.Buildings.Count == 0;
         }
 
         private bool? hasDungeon;

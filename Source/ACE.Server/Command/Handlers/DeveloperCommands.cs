@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Runtime;
@@ -2163,30 +2164,38 @@ namespace ACE.Server.Command.Handlers
         }
 
         /// <summary>
-        /// Turns the load test on or off; with no parameter it toggles. See Program.LoadTestOn.
-        /// Turning it on also loads the destination landblock of the portals selected below.
+        /// Turns the load test on or off. See Program.LoadTestOn.
+        /// Turning it on requires a percentage: it loads that share of the dungeon landblocks in the cell dat and of the outdoor landblocks
+        /// LoadTestOutdoorSpacing apart, spread evenly over each list, one landblock per game tick.
         /// Turning it off releases the landblocks it kept loaded, so they can go dormant and unload again.
         /// </summary>
-        [CommandHandler("loadtest", AccessLevel.Developer, CommandHandlerFlag.None, 0, "Turns the load test on or off", "[on|off]")]
+        [CommandHandler("loadtest", AccessLevel.Developer, CommandHandlerFlag.None, 0, "Turns the load test on or off", "on <percent 1-100> | off")]
         public static void HandleLoadTest(Session session, params string[] parameters)
         {
             bool turnOn;
+            var percent = 0;
 
-            if (parameters.Length == 0)
-                turnOn = !Program.LoadTestOn;
-            else if (parameters[0].Equals("on", StringComparison.OrdinalIgnoreCase))
+            if (parameters.Length > 0 && parameters[0].Equals("on", StringComparison.OrdinalIgnoreCase))
+            {
                 turnOn = true;
-            else if (parameters[0].Equals("off", StringComparison.OrdinalIgnoreCase))
+
+                if (parameters.Length < 2 || !int.TryParse(parameters[1], out percent) || percent < 1 || percent > 100)
+                {
+                    CommandHandlerHelper.WriteOutputInfo(session, "Usage: /loadtest on <percent>, where percent is 1 to 100");
+                    return;
+                }
+            }
+            else if (parameters.Length > 0 && parameters[0].Equals("off", StringComparison.OrdinalIgnoreCase))
                 turnOn = false;
             else
             {
-                CommandHandlerHelper.WriteOutputInfo(session, "Usage: /loadtest [on|off]");
+                CommandHandlerHelper.WriteOutputInfo(session, $"Usage: /loadtest on <percent 1-100> | off. The load test is {(Program.LoadTestOn ? "on" : "off")}.");
                 return;
             }
 
             if (turnOn == Program.LoadTestOn)
             {
-                CommandHandlerHelper.WriteOutputInfo(session, $"Load test is already {(turnOn ? "on" : "off")}.");
+                CommandHandlerHelper.WriteOutputInfo(session, turnOn ? "Load test is already on. Turn it off first to change the percentage." : "Load test is already off.");
                 return;
             }
 
@@ -2202,37 +2211,142 @@ namespace ACE.Server.Command.Handlers
 
             Program.LoadTestOn = true;
 
-            var landblockIds = new HashSet<ushort>();
+            CommandHandlerHelper.WriteOutputInfo(session, $"Load test is on at {percent}%. Finding the dungeon and outdoor landblocks in the cell dat...");
 
-            using (var ctx = new WorldDbContext())
+            // the dat scan reads every landblock header, so keep it off the world thread
+            Task.Run(() =>
             {
-                var query = from weenie in ctx.Weenie
-                            join wstr in ctx.WeeniePropertiesString on weenie.ClassId equals wstr.ObjectId
-                            join wpos in ctx.WeeniePropertiesPosition on weenie.ClassId equals wpos.ObjectId
-                            where weenie.Type == (int)WeenieType.Portal && wstr.Type == (int)PropertyString.Name && wpos.PositionType == (int)PositionType.Destination
-                            select new
-                            {
-                                Weenie = weenie,
-                                Name = wstr,
-                                Dest = wpos
-                            };
+                FindLoadTestLandblocks(out var allDungeons, out var allOutdoor);
 
-                var results = query.ToList();
+                var dungeons = TakeEvenlySpread(allDungeons, percent);
+                var outdoor = TakeEvenlySpread(allOutdoor, percent);
 
-                foreach (var result in results)
+                // a fixed order, so repeated runs load the same landblocks in the same order
+                var landblockIds = dungeons.Concat(outdoor).OrderBy(i => i.Raw).ToList();
+
+                if (landblockIds.Count == 0)
                 {
-                    if ((result.Dest.ObjCellId >> 24) == 0x00 || (result.Dest.ObjCellId >> 24) == 0x01)
-                    {
-                        var landblockId = new LandblockId(result.Dest.ObjCellId);
+                    CommandHandlerHelper.WriteOutputInfo(session, "Load test: no landblocks to load.");
+                    return;
+                }
 
-                        // Not permaload: LoadTestOn keeps it loaded, and records it so turning the load test off releases it
-                        if (landblockIds.Add(landblockId.Landblock))
-                            WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(() => LandblockManager.GetLandblock(landblockId, false)));
-                    }
+                CommandHandlerHelper.WriteOutputInfo(session, $"Load test: loading {dungeons.Count:N0} of {allDungeons.Count:N0} dungeon and {outdoor.Count:N0} of {allOutdoor.Count:N0} outdoor landblocks, one per game tick.");
+
+                var pending = new Queue<LandblockId>(landblockIds);
+
+                WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(() => LoadTestLoadNext(session, pending)));
+            });
+        }
+
+        /// <summary>
+        /// Outdoor landblocks are loaded this many landblocks apart in X and in Y.
+        /// Landblocks closer than LandblockGroup.LandblockGroupMinSpacing (4) join the same landblock group.
+        /// Areas grow while the load test runs (monsters crossing into a neighbour load it and its adjacents, and the test keeps them),
+        /// and at 10 apart they sometimes joined, so this leaves room for that growth.
+        /// </summary>
+        private const int LoadTestOutdoorSpacing = 20;
+
+        /// <summary>
+        /// Finds every dungeon landblock in the cell dat (the Physics.Common.Landblock.IsDungeon rule),
+        /// and every landblock at a multiple of LoadTestOutdoorSpacing in X and Y that has land on it (open water is skipped).
+        /// Both lists are sorted by landblock id.
+        /// </summary>
+        private static void FindLoadTestLandblocks(out List<LandblockId> dungeons, out List<LandblockId> outdoor)
+        {
+            dungeons = new List<LandblockId>();
+            outdoor = new List<LandblockId>();
+
+            foreach (var fileId in DatManager.CellDat.AllFiles.Keys)
+            {
+                // CellLandblock files are 0xXXYYFFFF
+                if ((fileId & 0xFFFF) != 0xFFFF)
+                    continue;
+
+                var cellLandblock = ReadFromDatUncached<CellLandblock>(DatManager.CellDat, fileId);
+
+                if (cellLandblock == null)
+                    continue;
+
+                var landblockId = new LandblockId(fileId);
+
+                if (cellLandblock.Height.Any(h => h != 0))
+                {
+                    if (landblockId.LandblockX % LoadTestOutdoorSpacing == 0 && landblockId.LandblockY % LoadTestOutdoorSpacing == 0)
+                        outdoor.Add(landblockId);
+                }
+                else
+                {
+                    // the same LandblockInfo the physics landblock reads (0xXXYYFFFE, only when HasObjects)
+                    var info = cellLandblock.HasObjects ? ReadFromDatUncached<LandblockInfo>(DatManager.CellDat, fileId - 1) : null;
+                    var blockCoord = Physics.Common.LandDefs.blockid_to_lcoord(fileId).Value;
+
+                    if (Physics.Common.Landblock.IsDungeonLandblock(blockCoord, cellLandblock.Height, info))
+                        dungeons.Add(landblockId);
                 }
             }
 
-            CommandHandlerHelper.WriteOutputInfo(session, $"Load test is on. Loading {landblockIds.Count:N0} portal destination landblocks.");
+            dungeons.Sort((a, b) => a.Raw.CompareTo(b.Raw));
+            outdoor.Sort((a, b) => a.Raw.CompareTo(b.Raw));
+        }
+
+        /// <summary>
+        /// Returns percent% of the items (rounded down), spread evenly through the list. 100 returns all of them.
+        /// </summary>
+        private static List<T> TakeEvenlySpread<T>(List<T> items, int percent)
+        {
+            var result = new List<T>();
+
+            for (var i = 0; i < items.Count; i++)
+            {
+                // take item i whenever the running total i * percent / 100 steps up by one
+                if ((i + 1) * percent / 100 > i * percent / 100)
+                    result.Add(items[i]);
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Reads a dat file without adding it to the dat's FileCache, so scanning every landblock does not keep them all in memory
+        /// </summary>
+        private static T ReadFromDatUncached<T>(DatDatabase dat, uint fileId) where T : FileType, new()
+        {
+            if (dat.FileCache.TryGetValue(fileId, out var cached))
+                return (T)cached;
+
+            var datReader = dat.GetReaderForFile(fileId);
+
+            if (datReader == null)
+                return null;
+
+            var obj = new T();
+
+            using (var memoryStream = new MemoryStream(datReader.Buffer))
+            using (var reader = new BinaryReader(memoryStream))
+                obj.Unpack(reader);
+
+            return obj;
+        }
+
+        /// <summary>
+        /// Loads one landblock per game tick, so the world keeps ticking while the load test fills up.
+        /// Stops if the load test is turned off.
+        /// </summary>
+        private static void LoadTestLoadNext(Session session, Queue<LandblockId> pending)
+        {
+            if (!Program.LoadTestOn)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Load test was turned off. {pending.Count:N0} landblocks were not loaded.");
+                return;
+            }
+
+            // not permaload: LoadTestOn keeps it loaded, and records it so turning the load test off releases it
+            LandblockManager.GetLandblock(pending.Dequeue(), false);
+
+            if (pending.Count > 0)
+                WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(() => LoadTestLoadNext(session, pending)));
+            else
+                CommandHandlerHelper.WriteOutputInfo(session, "Load test: all landblocks loaded. Their objects are still spawning in the background.");
         }
 
         /// <summary>
