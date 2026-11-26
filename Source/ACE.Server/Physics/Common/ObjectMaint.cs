@@ -957,13 +957,12 @@ namespace ACE.Server.Physics.Common
                     return false;
                 }
 
-                /* Load Test
-                // only tracking players and combat pets
-                if (!obj.IsPlayer && !obj.WeenieObj.IsCombatPet && PhysicsObj.WeenieObj.FoeType == null)
+                // only tracking players and combat pets (the load test lets creatures target each other)
+                if (!Program.LoadTestOn && !obj.IsPlayer && !obj.WeenieObj.IsCombatPet && PhysicsObj.WeenieObj.FoeType == null)
                 {
                     Console.WriteLine($"{PhysicsObj.Name}.ObjectMaint.AddVisibleTarget({obj.Name}): tried to add a non-player / non-combat pet");
                     return false;
-                }*/
+                }
             }
             if (PhysicsObj.DatObject)
             {

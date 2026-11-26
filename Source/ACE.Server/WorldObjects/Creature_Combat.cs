@@ -1345,7 +1345,8 @@ namespace ACE.Server.WorldObjects
         /// </summary>
         public bool PotentialFoe(Creature creature)
         {
-            return true; // Load Test
+            if (Program.LoadTestOn) // Load Test
+                return true;
 
             return FoeType != null && FoeType == creature.CreatureType || creature.FoeType != null && creature.FoeType == CreatureType;
         }

@@ -2163,11 +2163,47 @@ namespace ACE.Server.Command.Handlers
         }
 
         /// <summary>
-        /// Teleports directly to a dungeon by name or landblock
+        /// Turns the load test on or off; with no parameter it toggles. See Program.LoadTestOn.
+        /// Turning it on also loads the destination landblock of the portals selected below.
+        /// Turning it off releases the landblocks it kept loaded, so they can go dormant and unload again.
         /// </summary>
-        [CommandHandler("loadtest", AccessLevel.Developer, CommandHandlerFlag.None, 0, "Loads a bunch of landblocks for load testing")]
+        [CommandHandler("loadtest", AccessLevel.Developer, CommandHandlerFlag.None, 0, "Turns the load test on or off", "[on|off]")]
         public static void HandleLoadTest(Session session, params string[] parameters)
         {
+            bool turnOn;
+
+            if (parameters.Length == 0)
+                turnOn = !Program.LoadTestOn;
+            else if (parameters[0].Equals("on", StringComparison.OrdinalIgnoreCase))
+                turnOn = true;
+            else if (parameters[0].Equals("off", StringComparison.OrdinalIgnoreCase))
+                turnOn = false;
+            else
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, "Usage: /loadtest [on|off]");
+                return;
+            }
+
+            if (turnOn == Program.LoadTestOn)
+            {
+                CommandHandlerHelper.WriteOutputInfo(session, $"Load test is already {(turnOn ? "on" : "off")}.");
+                return;
+            }
+
+            if (!turnOn)
+            {
+                Program.LoadTestOn = false;
+
+                var released = LandblockManager.ReleaseLoadTestPermaloads();
+
+                CommandHandlerHelper.WriteOutputInfo(session, $"Load test is off. {released:N0} landblocks are no longer kept loaded.");
+                return;
+            }
+
+            Program.LoadTestOn = true;
+
+            var landblockIds = new HashSet<ushort>();
+
             using (var ctx = new WorldDbContext())
             {
                 var query = from weenie in ctx.Weenie
@@ -2189,10 +2225,14 @@ namespace ACE.Server.Command.Handlers
                     {
                         var landblockId = new LandblockId(result.Dest.ObjCellId);
 
-                        WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(() => LandblockManager.GetLandblock(landblockId, false, true)));
+                        // Not permaload: LoadTestOn keeps it loaded, and records it so turning the load test off releases it
+                        if (landblockIds.Add(landblockId.Landblock))
+                            WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(() => LandblockManager.GetLandblock(landblockId, false)));
                     }
                 }
             }
+
+            CommandHandlerHelper.WriteOutputInfo(session, $"Load test is on. Loading {landblockIds.Count:N0} portal destination landblocks.");
         }
 
         /// <summary>

@@ -253,7 +253,8 @@ namespace ACE.Server.Entity
                 var wo = WorldObjectFactory.CreateNewWorldObject(Biota.WeenieClassId);
                 if (wo == null)
                 {
-                    //log.LogWarning("[GENERATOR] 0x{Guid}:{GeneratorWeenieClassId} {Name}.Spawn(): failed to create wcid {BiotaWeenieClassId}", Generator.Guid, Generator.WeenieClassId, Generator.Name, Biota.WeenieClassId);
+                    if (!Program.LoadTestOn)
+                        log.LogWarning("[GENERATOR] 0x{Guid}:{GeneratorWeenieClassId} {Name}.Spawn(): failed to create wcid {BiotaWeenieClassId}", Generator.Guid, Generator.WeenieClassId, Generator.Name, Biota.WeenieClassId);
                     return null;
                 }
 
@@ -561,7 +562,7 @@ namespace ACE.Server.Entity
 
             Spawned.Remove(woi.Guid.Full);
 
-            if (eventType == RegenerationType.Destruction && woi.WeenieType == WeenieType.Creature) // Load Test
+            if (Program.LoadTestOn && eventType == RegenerationType.Destruction && woi.WeenieType == WeenieType.Creature) // Load Test
                 NextAvailable = DateTime.UtcNow.AddSeconds(1);
             else
                 NextAvailable = DateTime.UtcNow.AddSeconds(Delay);

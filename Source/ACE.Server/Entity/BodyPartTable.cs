@@ -27,7 +27,8 @@ namespace ACE.Server.Entity
 
             if (Weenie.PropertiesBodyPart == null)
             {
-                //log.LogError("BodyPartTable is null for {WeenieClassId} - {ClassName}!", weenie.WeenieClassId, weenie.ClassName);
+                if (!Program.LoadTestOn)
+                    log.LogError("BodyPartTable is null for {WeenieClassId} - {ClassName}!", weenie.WeenieClassId, weenie.ClassName);
                 return;
             }
 

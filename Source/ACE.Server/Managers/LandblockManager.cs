@@ -42,6 +42,12 @@ namespace ACE.Server.Managers
         /// </summary>
         private static readonly HashSet<Landblock> loadedLandblocks = new HashSet<Landblock>();
 
+        /// <summary>
+        /// Landblocks that the load test set to Permaload, so turning it off can release them.
+        /// Added to under the upgradeable read lock (one holder at a time) and cleared under the write lock.
+        /// </summary>
+        private static readonly HashSet<Landblock> loadTestPermaloadedLandblocks = new HashSet<Landblock>();
+
         private static readonly List<Landblock> landblockGroupPendingAdditions = new List<Landblock>();
         private static readonly List<LandblockGroup> landblockGroups = new List<LandblockGroup>();
 
@@ -477,8 +483,6 @@ namespace ACE.Server.Managers
         /// </summary>
         public static Landblock GetLandblock(LandblockId landblockId, bool loadAdjacents, bool permaload = false)
         {
-            permaload = true; // Load Test
-
             Landblock landblock;
 
             landblockLock.EnterUpgradeableReadLock();
@@ -516,6 +520,11 @@ namespace ACE.Server.Managers
 
                 if (permaload)
                     landblock.Permaload = true;
+                else if (Program.LoadTestOn && !landblock.Permaload) // Load Test
+                {
+                    landblock.Permaload = true;
+                    loadTestPermaloadedLandblocks.Add(landblock);
+                }
 
                 // load adjacents, if applicable
                 if (loadAdjacents)
@@ -537,6 +546,28 @@ namespace ACE.Server.Managers
             }
 
             return landblock;
+        }
+
+        /// <summary>
+        /// Clears Permaload on every landblock the load test set it on, so they can go dormant and unload again
+        /// </summary>
+        /// <returns>The number of landblocks released</returns>
+        public static int ReleaseLoadTestPermaloads()
+        {
+            landblockLock.EnterWriteLock();
+            try
+            {
+                foreach (var landblock in loadTestPermaloadedLandblocks)
+                    landblock.Permaload = false;
+
+                var released = loadTestPermaloadedLandblocks.Count;
+                loadTestPermaloadedLandblocks.Clear();
+                return released;
+            }
+            finally
+            {
+                landblockLock.ExitWriteLock();
+            }
         }
 
         /// <summary>
