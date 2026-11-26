@@ -74,6 +74,10 @@ R.V and H.V list what it changed:
 It also corrects the fix for `bugs-worldobjects.txt` W.17. Findings it touched carry a
 `[Second review ...]` pointer.
 
+**Measured on a live shard (2026-11-26).** Heap snapshots, counters and traces from
+FrostfACE (~300 players online) are in `perf-managers.txt` Section G (P.14) and
+`perf-database.txt` Section F (Q.13).
+
 ---
 
 ## Highest-value fixes
@@ -118,6 +122,15 @@ negate the parallel landblock architecture. Both are in `perf-physics.txt`.
 **Caveat:** the `ObjectMaint` one is real but its obvious fix is not — making the
 lock per-instance would deadlock (see the resolved-assumptions note below). The
 `LandblockManager` lock is the safer of the two to act on.
+
+**Largest memory finding** (measured on a live shard): `perf-managers.txt` P.14.
+`PlayerManager` keeps the full biota of every character, online or not, for the life
+of the process. On FrostfACE (32,840 characters, nearly all knowing ~4,000 spells) the
+spellbooks alone are 2.49 GB, 40% of a 6.2 GB live heap. The figure is the same at 2
+hours and at 69 hours, so it is a fixed startup cost, not a leak. Online players'
+cached EF contexts hold the same spells again as tracked rows, ~0.3 GB more
+(`perf-database.txt` Q.13). The spellbook arrays hold no object references, so they
+are unlikely to lengthen young-GC pauses.
 
 **On physics heap pressure specifically:** `perf-physics.txt` Section M establishes
 that there is **not a single `struct` in the entire 162-file physics subsystem**

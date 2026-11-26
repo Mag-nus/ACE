@@ -7,6 +7,7 @@ Companion document: bugs-database.txt
 
 UNPROFILED. Round-trip COUNTS below are exact (derived by reading the queries);
 timings are estimates.
+Exception: Section F (Q.13) was measured on a live shard, 2026-11-26.
 
 CALL-FREQUENCY MODEL
   SerializedShardDatabase funnels ALL shard work onto ONE worker thread. That
@@ -251,12 +252,58 @@ SECTION E - SUGGESTED PRIORITY
   6. Q.8  The O(n^3) emote reconciliation.
   7. Q.9, Q.10 - startup time.
   8. Q.2, Q.4, Q.6, Q.12 as follow-up.
+  9. Q.13 (Section F, measured) is a memory item, ranked apart from the
+     latency items above.
 
 CROSS-CUTTING NOTE: Q.1, Q.2, Q.3, Q.4 and Q.6 are all the same underlying
 problem - the data model is loaded one object at a time, one child table at a
 time, on a single serialized thread. Fixing the batching pattern once and
 applying it across those five call sites is far more valuable than any
 individual fix, and it directly reduces user-visible login latency.
+
+
+SECTION F - MEASURED ON A LIVE SHARD (2026-11-26)
+================================================================================
+Same captures as perf-managers.txt Section G (FrostfACE, ~300 players online,
+PerfView heap snapshots at 1h52m and 69h30m of uptime).
+
+Q.13 The biota cache keeps each online player's spellbook rows change-
+     tracked: ~0.3 GB at 300 players, ~14x the entity model's cost per spell
+     ShardDatabaseWithCaching.cs:24-29, 69-81, 137-195
+     [MEASURED - production heap snapshots]
+
+     The cache keeps each biota's ShardDbContext with it (CacheObject.Context,
+     line 27), so that the next SaveBiota can diff against the tracked
+     entities (bugs-database.txt D.0f). A player's entry is created by the
+     first save (line 189), and every later save refreshes LastSeen (line
+     146). The entry therefore lives for the whole session plus
+     ShardPlayerBiotaCacheTime (default 31 minutes), and every spell row of
+     that player stays tracked for all of it.
+
+     MEASURED at 1h52m (292 player biotas cached, 293 players online):
+       spell rows only:
+         BiotaPropertiesSpellBook entities      1,079,364 objects    43 MB
+         two Snapshot objects per spell row     2 x 1.08 M           69 MB
+       all tracked rows (79% are spell rows):
+         InternalEntityEntry                    1,364,370 objects   142 MB
+         InternalComplexCollectionEntry[]       1.37 M               33 MB
+         identity-map entry arrays                                   70 MB
+     That is ~3,700 tracked spell rows per online player at roughly 280 B
+     each, ~0.3 GB in all. The 69h30m snapshot has the same shape (1.33 M
+     tracked rows, 1.09 M of them spell rows). The same spell costs ~20 B in
+     the entity model's Dictionary (perf-managers.txt P.14).
+
+     CPU is not the problem. The saves that walk these rows (DoSaveBiota,
+     EF DetectChanges, and the ToDictionary at BiotaUpdater.cs:141) measured
+     0.018 cores in the 1-minute production CPU trace.
+
+     FIX OPTION (not implemented): keep spellbook rows out of the cached
+     graph, and write spellbook changes as explicit inserts and deletes by
+     (object_Id, spell), since spellbooks change rarely. This touches the
+     D.0f invariant, so check every SaveBiota path first. A shorter
+     ShardPlayerBiotaCacheTime does not help online players, because their
+     saves keep the entry alive.
+
 
 ================================================================================
 END OF REPORT

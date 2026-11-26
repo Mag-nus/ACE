@@ -8,6 +8,7 @@ Companion document: bugs-managers.txt
 UNPROFILED. Reasoned from reading call paths and weighting by call frequency,
 not from measurement. Validate against the in-tree ServerPerformanceMonitor
 counters before optimising.
+Exception: Section G (P.14) was measured on a live shard, 2026-11-26.
 
 *** IMPORTANT FINDING ABOUT THIS CHECKOUT ***   [VERIFIED DIRECTLY]
   Source/ACE.Server/Config.js:51 sets
@@ -299,11 +300,115 @@ SECTION F - SUGGESTED PRIORITY
   5. P.7  Route name lookups through the existing playerNames index.
   6. P.8  Early-out for creatures with no HeartBeat emote set.
   7. P.11, P.9, P.10, P.12, P.13 as follow-up.
+  8. P.14 (Section G, measured) is a memory item, ranked apart from the CPU
+     items above. It is the largest single item on a production heap.
 
 Measure with the ServerPerformanceMonitor counters
 (DoSessionWork_TickOutbound, UpdateGameWorld_Entire, PlayerManager_Tick) before
 and after - noting the irony that P.1-P.4 are about the cost of those very
 counters.
+
+
+SECTION G - MEASURED ON A LIVE SHARD (2026-11-26)
+================================================================================
+Source: FrostfACE, a live shard. 12 vCPU, Windows NT 10.0.17763, ~300 players
+online, 32,840 characters created, Server GC with DATAS (3 heaps). Two
+captures of the same build: one after 69h30m of uptime, and one 1h52m after a
+restart. Each had a PerfView heap snapshot (it walks the whole heap, then
+samples with per-type scale factors), 10 minutes of dotnet-counters, a
+1-minute CPU trace and a 30-second allocation-sampling trace.
+
+P.14 Every character's full biota stays in memory for the life of the
+     process. On this shard their spellbooks are 40% of the live heap
+     PlayerManager.cs:52-80; ShardDatabase.cs:767-794;
+     BiotaConverter.cs:91-95; OfflinePlayer.cs:19
+     [MEASURED - two production heap snapshots]
+
+     PlayerManager.Initialize calls GetAllPlayerBiotasInParallel (line 54).
+     That loads the full biota, every child table, of every character that
+     is not deleted. Line 58 wraps each one in an OfflinePlayer, which keeps
+     it until shutdown. Logging in builds the Player from that same object
+     (WorldManager.cs:96, 109), and logging out wraps it in a new
+     OfflinePlayer (PlayerManager.cs:448). So each character has exactly one
+     Biota in memory for the whole uptime, whether it is online or not.
+
+     The spellbook is the expensive part. BiotaConverter.cs:93 stores it as a
+     Dictionary<int, float>, which costs a 16-byte entry plus a 4-byte bucket
+     per spell, about 20 B. A character with 4,000 spells costs ~81 KB.
+
+     MEASURED on FrostfACE:
+                                              at 1h52m        at 69h30m
+       live heap                               6.20 GB         6.09 GB
+       Entry<int, float>[] arrays over 10 KB   1.98 GB         1.98 GB
+         count (one per spellbook)             30,719          30,597
+       int[] bucket arrays over 10 KB          0.51 GB         0.51 GB
+       spellbooks in total                     2.49 GB  40%    2.49 GB  41%
+
+     The average entries array is 64.6 KB, ~4,040 slots, so nearly every
+     character here knows 3,400-4,800 spells. The sampled owner path is
+     Dictionary<int, float> <- Biota <- OfflinePlayer <- PlayerManager's
+     dictionaries. The 69h30m snapshot came without type names; its types
+     were matched to the named 1h52m snapshot by size, count and the sizes
+     along the owner chain.
+
+     It is a fixed cost paid at startup, not a leak. The live heap and the
+     spellbook total are the same at 2 hours and at 69 hours. The cost
+     scales with characters that are not deleted times the spells each one
+     knows, not with players online. How many spells characters know depends
+     on the shard: on one where they know few, the same code costs far less.
+
+     WHAT IT DOES NOT EXPLAIN: these arrays hold no object references, so
+     the GC never traces inside them and young collections do no work for
+     them. On the same process, gen0/gen1 collections came every ~1.8 s,
+     promoted ~5 MB each, and paused 23 ms on average at 1h52m (28.6 ms
+     average, 64 ms max at 69h30m), with a 9.7 GB gen2. The spellbooks'
+     share of those pauses was not measured; from the above, it is probably
+     very small.
+
+     STARTUP (not measured): the load reads every spell row through a
+     change-tracked EF context (ShardDatabase.cs:255, and perf-database.txt
+     Q.2) before converting it, ~120M rows on this shard (30.7K spellbooks
+     x ~4,000). After the restart, Total CPU Time was 1h50m at 1h52m of
+     uptime, against a steady state of 0.57 cores, so ~47 CPU-minutes were
+     spent elsewhere. Gen2 also held 3.3 GB of free space at 1h52m, against
+     ~1.1 GB on average at 69h30m. Both fit a heavy one-off load, but
+     neither was traced.
+
+     TO SIZE IT ON ANOTHER SHARD, run this on the shard database. It does
+     not pause the server:
+         SELECT COUNT(*) AS spells, COUNT(DISTINCT s.object_Id) AS characters
+         FROM biota_properties_spell_book s
+         JOIN `character` c ON c.id = s.object_Id
+         WHERE c.is_Deleted = 0;
+     The in-memory cost is spells x ~20 B.
+
+     FIX OPTIONS (neither implemented nor measured):
+       (a) A compact spellbook. Biota.PropertiesSpellBook is declared as
+           IDictionary<int, float> (ACE.Entity/Models/Biota.cs:30), and
+           nothing in the tree casts it to Dictionary. So a custom
+           IDictionary backed by sorted parallel int[] and float[] arrays
+           (8 B per spell, ~32 KB for 4,000) fits the declared type.
+           GetOrAddKnownSpell defaults the probability to 2.0
+           (BiotaExtensions.cs:611), so a sorted int[] plus a small table of
+           other values would be ~16 KB. This is contained, but about 50
+           lines in ACE.Server and ACE.Entity use PropertiesSpellBook, and
+           whether any relies on Dictionary behaviour (enumeration order,
+           cheap insert and remove) was not checked.
+       (b) Do not keep spellbooks for offline characters. This saves more but
+           is not a simple change, because of three couplings:
+           - Saving a biota whose PropertiesSpellBook is null DELETES all of
+             its spell rows (BiotaUpdater.cs:156-159), and offline biotas
+             with changes are saved hourly (SaveOfflinePlayersWithChanges,
+             line 154).   [VERIFIED by reading]
+           - Login builds the Player from the cached offline biota
+             (WorldManager.cs:109), so the spellbook must be loaded again
+             before DoPlayerEnterWorld runs.   [VERIFIED by reading]
+           - Code that reads an offline character's spellbook, if any, was
+             not enumerated.
+
+     The cached EF contexts of online players hold the same spellbooks a
+     second time, as tracked rows: ~0.3 GB more, perf-database.txt Q.13.
+
 
 ================================================================================
 END OF REPORT
