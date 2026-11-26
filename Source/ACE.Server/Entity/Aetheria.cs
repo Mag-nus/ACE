@@ -1,14 +1,16 @@
 using System;
 using System.Collections.Generic;
 
+using Microsoft.Extensions.Logging;
+
 using ACE.Common;
+using ACE.Common.Logging;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity.Actions;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
-using log4net;
 
 namespace ACE.Server.Entity
 {
@@ -244,7 +246,7 @@ namespace ACE.Server.Entity
 
             player.SendUseDoneEvent();
 
-            log.DebugFormat("[CRAFTING] {0} revealed a {1} {2} with a surge of {3} on {4}:0x{5}", player.Name, color, randSigil, surgeSpell, target.Name, target.Guid);
+            log.LogDebug("[CRAFTING] {PlayerName} revealed a {Color} {RandSigil} with a surge of {SurgeSpell} on {TargetName}:0x{Guid}", player.Name, color, randSigil, surgeSpell, target.Name, target.Guid);
         }
 
         public static Dictionary<Sigil, EquipmentSet> SigilToEquipmentSet = new Dictionary<Sigil, EquipmentSet>()
@@ -307,6 +309,6 @@ namespace ACE.Server.Entity
             return wo.WeenieClassId == AetheriaManaStone;
         }
 
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
     }
 }

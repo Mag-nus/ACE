@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
+using Microsoft.Extensions.Logging;
+
 using ACE.Database;
 using ACE.Database.Models.World;
 using ACE.Entity;
@@ -279,7 +281,7 @@ namespace ACE.Server.WorldObjects
                     TryHandleKillTask(playerDamager, killQuest, killTaskCredits, cap);
                 }
                 // check option that requires killer to have killtask to pass to fellows
-                else if (!PropertyManager.GetBool("fellow_kt_killer").Item)   
+                else if (PropertyManager.GetBool("fellow_kt_killer").Item)
                 {
                     continue;
                 }
@@ -620,9 +622,9 @@ namespace ACE.Server.WorldObjects
             if (player != null)
             {
                 if (corpse.PhysicsObj == null || corpse.PhysicsObj.Position == null)
-                    log.InfoFormat("[CORPSE] {0}'s corpse (0x{1}) failed to spawn! Tried at {2}", Name, corpse.Guid, player.Location.ToLOCString());
+                    log.LogInformation("[CORPSE] {Name}'s corpse (0x{Guid}) failed to spawn! Tried at {Location}", Name, corpse.Guid, player.Location.ToLOCString());
                 else
-                    log.InfoFormat("[CORPSE] {0}'s corpse (0x{1}) is located at {2}", Name, corpse.Guid, corpse.PhysicsObj.Position);
+                    log.LogInformation("[CORPSE] {Name}'s corpse (0x{Guid}) is located at {Position}", Name, corpse.Guid, corpse.PhysicsObj.Position);
             }
 
             if (saveCorpse)
@@ -729,11 +731,11 @@ namespace ACE.Server.WorldObjects
             var epicCantrips = wo.EpicCantrips;
             var legendaryCantrips = wo.LegendaryCantrips;
 
-            if (epicCantrips.Count > 0 && log.IsDebugEnabled)
-                log.Debug($"[LOOT][EPIC] {Name} ({Guid}) generated item with {epicCantrips.Count} epic{(epicCantrips.Count > 1 ? "s" : "")} - {wo.Name} ({wo.Guid}) - {GetSpellList(epicCantrips)} - killed by {killer?.Name} ({killer?.Guid})");
+            if (epicCantrips.Count > 0 && log.IsEnabled(LogLevel.Debug))
+                log.LogDebug("[LOOT][EPIC] {Name} ({Guid}) generated item with {Count} epic{EpicPlural} - {WoName} ({WoGuid}) - {SpellList} - killed by {KillerName} ({KillerGuid})", Name, Guid, epicCantrips.Count, (epicCantrips.Count > 1 ? "s" : ""), wo.Name, wo.Guid, GetSpellList(epicCantrips), killer?.Name, killer?.Guid);
 
-            if (legendaryCantrips.Count > 0 && log.IsDebugEnabled)
-                log.Debug($"[LOOT][LEGENDARY] {Name} ({Guid}) generated item with {legendaryCantrips.Count} legendar{(legendaryCantrips.Count > 1 ? "ies" : "y")} - {wo.Name} ({wo.Guid}) - {GetSpellList(legendaryCantrips)} - killed by {killer?.Name} ({killer?.Guid})");
+            if (legendaryCantrips.Count > 0 && log.IsEnabled(LogLevel.Debug))
+                log.LogDebug("[LOOT][LEGENDARY] {Name} ({Guid}) generated item with {Count} legendar{LegendaryPlural} - {WoName} ({WoGuid}) - {SpellList} - killed by {KillerName} ({KillerGuid})", Name, Guid, legendaryCantrips.Count, (legendaryCantrips.Count > 1 ? "ies" : "y"), wo.Name, wo.Guid, GetSpellList(legendaryCantrips), killer?.Name, killer?.Guid);
         }
 
         public static string GetSpellList(Dictionary<int, float> spellTable)

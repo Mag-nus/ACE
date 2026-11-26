@@ -6,10 +6,11 @@ using System.Numerics;
 using System.Runtime;
 using System.Threading.Tasks;
 
-using log4net;
+using Microsoft.Extensions.Logging;
 
 using ACE.Common;
 using ACE.Common.Extensions;
+using ACE.Common.Logging;
 using ACE.Database;
 using ACE.Database.Models.Shard;
 using ACE.Database.Models.World;
@@ -33,7 +34,6 @@ using ACE.Server.Physics.Managers;
 using ACE.Server.WorldObjects;
 using ACE.Server.WorldObjects.Entity;
 
-
 using Position = ACE.Entity.Position;
 using Spell = ACE.Server.Entity.Spell;
 
@@ -41,7 +41,7 @@ namespace ACE.Server.Command.Handlers
 {
     public static class DeveloperCommands
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         // TODO: Replace later with a command to spawn a generator at the player's location
         /*
@@ -2280,8 +2280,8 @@ namespace ACE.Server.Command.Handlers
                     {
                         if (value.ObjMaint.RemoveKnownObject(kvp.Value, false))
                         {
-                            if (log.IsDebugEnabled)
-                                log.Debug($"AuditObjectMaint removed 0x{kvp.Value.ID:X8}:{kvp.Value.Name} (IsDestroyed:{kvp.Value.WeenieObj?.WorldObject?.IsDestroyed}, Position:{kvp.Value.Position}) from 0x{value.ID:X8}:{value.Name} (IsDestroyed:{value.WeenieObj?.WorldObject?.IsDestroyed}, Position:{value.Position}) [ObjectTable]");
+                            if (log.IsEnabled(LogLevel.Debug))
+                                log.LogDebug("AuditObjectMaint removed 0x{KvpID:X8}:{KvpName} (IsDestroyed:{WeenieObjIsDestroyed}, Position:{KvpPosition}) from 0x{ValueID:X8}:{ValueName} (IsDestroyed:{WeenieObjIsDestroyed2}, Position:{ValuePosition}) [ObjectTable]", kvp.Value.ID, kvp.Value.Name, kvp.Value.WeenieObj?.WorldObject?.IsDestroyed, kvp.Value.Position, value.ID, value.Name, value.WeenieObj?.WorldObject?.IsDestroyed, value.Position);
                             objectTableErrors++;
                         }
                     }
@@ -2293,8 +2293,8 @@ namespace ACE.Server.Command.Handlers
                     {
                         if (value.ObjMaint.RemoveVisibleObject(kvp.Value, false))
                         {
-                            if (log.IsDebugEnabled)
-                                log.Debug($"AuditObjectMaint removed 0x{kvp.Value.ID:X8}:{kvp.Value.Name} (IsDestroyed:{kvp.Value.WeenieObj?.WorldObject?.IsDestroyed}, Position:{kvp.Value.Position}) from 0x{value.ID:X8}:{value.Name} (IsDestroyed:{value.WeenieObj?.WorldObject?.IsDestroyed}, Position:{value.Position}) [VisibleObjectTable]");
+                            if (log.IsEnabled(LogLevel.Debug))
+                                log.LogDebug("AuditObjectMaint removed 0x{KvpID:X8}:{KvpName} (IsDestroyed:{WeenieObjIsDestroyed}, Position:{KvpPosition}) from 0x{ValueID:X8}:{ValueName} (IsDestroyed:{WeenieObjIsDestroyed2}, Position:{ValuePosition}) [VisibleObjectTable]", kvp.Value.ID, kvp.Value.Name, kvp.Value.WeenieObj?.WorldObject?.IsDestroyed, kvp.Value.Position, value.ID, value.Name, value.WeenieObj?.WorldObject?.IsDestroyed, value.Position);
                             visibleObjectTableErrors++;
                         }
                     }
@@ -2306,8 +2306,8 @@ namespace ACE.Server.Command.Handlers
                     {
                         if (value.ObjMaint.RemoveKnownPlayer(kvp.Value))
                         {
-                            if (log.IsDebugEnabled)
-                                log.Debug($"AuditObjectMaint removed 0x{kvp.Value.ID:X8}:{kvp.Value.Name} (IsDestroyed:{kvp.Value.WeenieObj?.WorldObject?.IsDestroyed}, Position:{kvp.Value.Position}) from 0x{value.ID:X8}:{value.Name} (IsDestroyed:{value.WeenieObj?.WorldObject?.IsDestroyed}, Position:{value.Position}) [VoyeurTable]");
+                            if (log.IsEnabled(LogLevel.Debug))
+                                log.LogDebug("AuditObjectMaint removed 0x{KvpID:X8}:{KvpName} (IsDestroyed:{WeenieObjIsDestroyed}, Position:{KvpPosition}) from 0x{ValueID:X8}:{ValueName} (IsDestroyed:{WeenieObjIsDestroyed2}, Position:{ValuePosition}) [VoyeurTable]", kvp.Value.ID, kvp.Value.Name, kvp.Value.WeenieObj?.WorldObject?.IsDestroyed, kvp.Value.Position, value.ID, value.Name, value.WeenieObj?.WorldObject?.IsDestroyed, value.Position);
                             voyeurTableErrors++;
                         }
                     }
@@ -2316,7 +2316,7 @@ namespace ACE.Server.Command.Handlers
 
             if (session != null)
                 CommandHandlerHelper.WriteOutputInfo(session, $"Physics ObjMaint Audit Completed. Errors - objectTable: {objectTableErrors}, visibleObjectTable: {visibleObjectTableErrors}, voyeurTable: {voyeurTableErrors}");
-            log.Info($"Physics ObjMaint Audit Completed. Errors - objectTable: {objectTableErrors}, visibleObjectTable: {visibleObjectTableErrors}, voyeurTable: {voyeurTableErrors}");
+            log.LogInformation("Physics ObjMaint Audit Completed. Errors - objectTable: {ObjectTableErrors}, visibleObjectTable: {VisibleObjectTableErrors}, voyeurTable: {VoyeurTableErrors}", objectTableErrors, visibleObjectTableErrors, voyeurTableErrors);
         }
 
         [CommandHandler("lootgen", AccessLevel.Developer, CommandHandlerFlag.RequiresWorld, 1, "Generate a piece of loot from the LootGenerationFactory.", "<wcid or classname> <tier>")]
@@ -2389,7 +2389,7 @@ namespace ACE.Server.Command.Handlers
                 if (wo != null)
                     session.Player.TryCreateInInventoryWithNetworking(wo);
                 else
-                    log.Error($"{session.Player.Name}.HandleCILoot: LootGenerationFactory.CreateRandomLootObjects({tier}) returned null");
+                    log.LogError("{Name}.HandleCILoot: LootGenerationFactory.CreateRandomLootObjects({Tier}) returned null", session.Player.Name, tier);
             }
         }
 

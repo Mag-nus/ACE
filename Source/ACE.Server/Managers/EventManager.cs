@@ -1,17 +1,19 @@
 using System;
 using System.Collections.Generic;
+
+using Microsoft.Extensions.Logging;
+
 using ACE.Common;
+using ACE.Common.Logging;
 using ACE.Database.Models.World;
 using ACE.Entity.Enum;
 using ACE.Server.WorldObjects;
-
-using log4net;
 
 namespace ACE.Server.Managers
 {
     public static class EventManager
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public static Dictionary<string, Event> Events;
 
@@ -34,7 +36,7 @@ namespace ACE.Server.Managers
                     StartEvent(evnt.Name, null, null);
             }
 
-            log.DebugFormat("EventManager Initalized.");
+            log.LogDebug("EventManager Initalized.");
         }
 
         public static bool StartEvent(string e, WorldObject source, WorldObject target)
@@ -60,8 +62,8 @@ namespace ACE.Server.Managers
                     Console.WriteLine($"Starting event {evnt.Name}");
             }
 
-            if (log.IsDebugEnabled)
-                log.Debug($"[EVENT] {(source == null ? "SYSTEM" : $"{source.Name} (0x{source.Guid}|{source.WeenieClassId})")}{(target == null ? "" : $", triggered by {target.Name} (0x{target.Guid}|{target.WeenieClassId}),")} started an event: {evnt.Name}{((int)state == evnt.State ? (source == null ? ", which is the default state for this event." : ", which had already been started.") : "")}");
+            if (log.IsEnabled(LogLevel.Debug))
+                log.LogDebug("[EVENT] {Source}{TriggeredBy} started an event: {Name}{StateNote}", (source == null ? "SYSTEM" : $"{source.Name} (0x{source.Guid}|{source.WeenieClassId})"), (target == null ? "" : $", triggered by {target.Name} (0x{target.Guid}|{target.WeenieClassId}),"), evnt.Name, ((int)state == evnt.State ? (source == null ? ", which is the default state for this event." : ", which had already been started.") : ""));
 
             return true;
         }
@@ -89,8 +91,8 @@ namespace ACE.Server.Managers
                     Console.WriteLine($"Stopping event {evnt.Name}");
             }
 
-            if (log.IsDebugEnabled)
-                log.Debug($"[EVENT] {(source == null ? "SYSTEM" : $"{source.Name} (0x{source.Guid}|{source.WeenieClassId})")}{(target == null ? "" : $", triggered by {target.Name} (0x{target.Guid}|{target.WeenieClassId}),")} stopped an event: {evnt.Name}{((int)state == evnt.State ? (source == null ? ", which is the default state for this event." : ", which had already been stopped.") : "")}");
+            if (log.IsEnabled(LogLevel.Debug))
+                log.LogDebug("[EVENT] {Source}{TriggeredBy} stopped an event: {Name}{StateNote}", (source == null ? "SYSTEM" : $"{source.Name} (0x{source.Guid}|{source.WeenieClassId})"), (target == null ? "" : $", triggered by {target.Name} (0x{target.Guid}|{target.WeenieClassId}),"), evnt.Name, ((int)state == evnt.State ? (source == null ? ", which is the default state for this event." : ", which had already been stopped.") : ""));
 
             return true;
         }

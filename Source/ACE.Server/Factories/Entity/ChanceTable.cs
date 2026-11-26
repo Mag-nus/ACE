@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using log4net;
+
+using Microsoft.Extensions.Logging;
 
 using ACE.Common;
+using ACE.Common.Logging;
 
 namespace ACE.Server.Factories.Entity
 {
@@ -12,7 +14,7 @@ namespace ACE.Server.Factories.Entity
         private bool verified;
         private const decimal threshold = 0.0000001M;
 
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         private void VerifyTable()
         {
@@ -22,7 +24,7 @@ namespace ACE.Server.Factories.Entity
                 total += (decimal)entry.chance;
 
             if (Math.Abs(1.0M - total) > threshold)
-                log.Error($"Chance table adds up to {total}, expected 1.0: {string.Join(", ", this)}");
+                log.LogError("Chance table adds up to {Total}, expected 1.0: {Join}", total, string.Join(", ", this));
 
             verified = true;
         }

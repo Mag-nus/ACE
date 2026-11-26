@@ -2,6 +2,8 @@ using System;
 using System.Collections.ObjectModel;
 using System.Threading;
 
+using Microsoft.Extensions.Logging;
+
 using ACE.Common;
 using ACE.Database;
 using ACE.Entity.Enum;
@@ -102,7 +104,7 @@ namespace ACE.Server.WorldObjects
 
             DatabaseManager.Shard.SaveBiotasInParallel(biotas, result =>
             {
-                log.DebugFormat("{0} has been saved. It took {1:N0} ms to process the request.", Name, (DateTime.UtcNow - requestedTime).TotalMilliseconds);
+                log.LogDebug("{Name} has been saved. It took {TotalMilliseconds:N0} ms to process the request.", Name, (DateTime.UtcNow - requestedTime).TotalMilliseconds);
 
                 if (!result)
                 {

@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
+using Microsoft.Extensions.Logging;
+
 using ACE.Common;
 using ACE.DatLoader;
 using ACE.Entity;
@@ -83,7 +85,7 @@ namespace ACE.Server.WorldObjects
 
             if (CombatMode != CombatMode.Magic)
             {
-                log.Warn($"{Name}.HandleActionCastTargetedSpell({targetGuid:X8}, {spellId}, {casterItem?.Name}) - CombatMode mismatch {CombatMode}, LastCombatMode: {LastCombatMode}");
+                log.LogWarning("{Name}.HandleActionCastTargetedSpell({TargetGuid:X8}, {SpellId}, {CasterItemName}) - CombatMode mismatch {CombatMode}, LastCombatMode: {LastCombatMode}", Name, targetGuid, spellId, casterItem?.Name, CombatMode, LastCombatMode);
 
                 if (LastCombatMode == CombatMode.Magic)
                     CombatMode = CombatMode.Magic;
@@ -96,7 +98,7 @@ namespace ACE.Server.WorldObjects
 
             if (FastTick && PhysicsObj.MovementManager.MotionInterpreter.InterpretedState.CurrentStyle != (uint)MotionStance.Magic)
             {
-                log.Warn($"{Name} CombatMode: {CombatMode}, CurrentMotionState: {CurrentMotionState.Stance}.{CurrentMotionState.MotionState.ForwardCommand}, Physics: {(MotionStance)PhysicsObj.MovementManager.MotionInterpreter.InterpretedState.CurrentStyle}.{(MotionCommand)PhysicsObj.MovementManager.MotionInterpreter.InterpretedState.ForwardCommand}");
+                log.LogWarning("{Name} CombatMode: {CombatMode}, CurrentMotionState: {Stance}.{MotionStateForwardCommand}, Physics: {CurrentStyle}.{InterpretedStateForwardCommand}", Name, CombatMode, CurrentMotionState.Stance, CurrentMotionState.MotionState.ForwardCommand, (MotionStance)PhysicsObj.MovementManager.MotionInterpreter.InterpretedState.CurrentStyle, (MotionCommand)PhysicsObj.MovementManager.MotionInterpreter.InterpretedState.ForwardCommand);
                 ApplyPhysicsMotion(new Motion(MotionStance.Magic));
                 SendUseDoneEvent(WeenieError.YoureTooBusy);
                 return;
@@ -274,7 +276,7 @@ namespace ACE.Server.WorldObjects
 
             if (CombatMode != CombatMode.Magic)
             {
-                log.Warn($"{Name}.HandleActionMagicCastUnTargetedSpell({spellId}) - CombatMode mismatch {CombatMode}, LastCombatMode {LastCombatMode}");
+                log.LogWarning("{Name}.HandleActionMagicCastUnTargetedSpell({SpellId}) - CombatMode mismatch {CombatMode}, LastCombatMode {LastCombatMode}", Name, spellId, CombatMode, LastCombatMode);
 
                 if (LastCombatMode == CombatMode.Magic)
                     CombatMode = CombatMode.Magic;
@@ -287,7 +289,7 @@ namespace ACE.Server.WorldObjects
 
             if (FastTick && PhysicsObj.MovementManager.MotionInterpreter.InterpretedState.CurrentStyle != (uint)MotionStance.Magic)
             {
-                log.Warn($"{Name} CombatMode: {CombatMode}, CurrentMotionState: {CurrentMotionState.Stance}.{CurrentMotionState.MotionState.ForwardCommand}, Physics: {(MotionStance)PhysicsObj.MovementManager.MotionInterpreter.InterpretedState.CurrentStyle}.{(MotionCommand)PhysicsObj.MovementManager.MotionInterpreter.InterpretedState.ForwardCommand}");
+                log.LogWarning("{Name} CombatMode: {CombatMode}, CurrentMotionState: {Stance}.{MotionStateForwardCommand}, Physics: {CurrentStyle}.{InterpretedStateForwardCommand}", Name, CombatMode, CurrentMotionState.Stance, CurrentMotionState.MotionState.ForwardCommand, (MotionStance)PhysicsObj.MovementManager.MotionInterpreter.InterpretedState.CurrentStyle, (MotionCommand)PhysicsObj.MovementManager.MotionInterpreter.InterpretedState.ForwardCommand);
                 ApplyPhysicsMotion(new Motion(MotionStance.Magic));
                 SendUseDoneEvent(WeenieError.YoureTooBusy);
                 return;
@@ -702,8 +704,8 @@ namespace ACE.Server.WorldObjects
 
             if (state == null)
             {
-                log.Warn($"{Name}.DoCastSpell(): null state detected");
-                log.Warn(_state);
+                log.LogWarning("{Name}.DoCastSpell(): null state detected", Name);
+                log.LogWarning("{Message:l}", _state);
 
                 // send UseDone?
                 SendUseDoneEvent(WeenieError.BadCast);
@@ -725,7 +727,7 @@ namespace ACE.Server.WorldObjects
                     FindObject(target.Guid.Full, SearchLocations.Everywhere, out _, out var rootOwner, out _);
 
                     if (rootOwner == null)
-                        log.Error($"{Name}.IsWithinAngle({target.Name} ({target.Guid})) - couldn't find rootOwner");
+                        log.LogError("{Name}.IsWithinAngle({TargetName} ({Guid})) - couldn't find rootOwner", Name, target.Name, target.Guid);
 
                     else if (rootOwner != this)
                         angle = GetAngle(rootOwner);
@@ -1193,7 +1195,7 @@ namespace ACE.Server.WorldObjects
 
                 if (!SpellFormula.SpellComponentsTable.SpellComponents.TryGetValue(component, out var spellComponent))
                 {
-                    log.Error($"{Name}.TryBurnComponents(): Couldn't find SpellComponent {component}");
+                    log.LogError("{Name}.TryBurnComponents(): Couldn't find SpellComponent {Component}", Name, component);
                     continue;
                 }
 
@@ -1204,7 +1206,7 @@ namespace ACE.Server.WorldObjects
                 if (item == null)
                 {
                     if (SpellComponentsRequired && PropertyManager.GetBool("require_spell_comps").Item)
-                        log.Warn($"{Name}.TryBurnComponents({spellComponent.Name}): not found in inventory");
+                        log.LogWarning("{Name}.TryBurnComponents({SpellComponentName}): not found in inventory", Name, spellComponent.Name);
                     else
                         burned.RemoveAt(i);
 
@@ -1422,7 +1424,7 @@ namespace ACE.Server.WorldObjects
                     return target is Lifestone;
             }
 
-            log.Error($"VerifyNonComponentTargetType({spell.Id} - {spell.Name}, {target.Name}) - unexpected NonComponentTargetType {spell.NonComponentTargetType}");
+            log.LogError("VerifyNonComponentTargetType({Id} - {SpellName}, {TargetName}) - unexpected NonComponentTargetType {NonComponentTargetType}", spell.Id, spell.Name, target.Name, spell.NonComponentTargetType);
             return false;
         }
 

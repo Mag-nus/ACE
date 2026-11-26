@@ -2,10 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 
-using log4net;
+using Microsoft.Extensions.Logging;
 
 using ACE.Common;
 using ACE.Common.Extensions;
+using ACE.Common.Logging;
 using ACE.Database;
 using ACE.Database.Models.Auth;
 using ACE.DatLoader;
@@ -34,7 +35,7 @@ namespace ACE.Server.WorldObjects
 {
     public partial class Player : Creature, IPlayer
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public Account Account { get; }
 
@@ -164,6 +165,8 @@ namespace ACE.Server.WorldObjects
                 }
                 if (Session.AccessLevel == AccessLevel.Advocate)
                     IsAdvocate = true;
+                else if (IsAdvocate && !AdvocateQuest)
+                    IsAdvocate = false;
             }
 
             IsOlthoiPlayer = HeritageGroup == HeritageGroup.Olthoi || HeritageGroup == HeritageGroup.OlthoiAcid;
@@ -640,7 +643,7 @@ namespace ACE.Server.WorldObjects
         {
             if (!ForcedLogOffRequested) return;
 
-            log.WarnFormat("[LOGOUT] Executing ForcedLogoff for Account {0} with character {1} (0x{2}) at {3}.", Account.AccountName, Name, Guid, DateTime.Now.ToCommonString());
+            log.LogWarning("[LOGOUT] Executing ForcedLogoff for Account {AccountName} with character {Name} (0x{Guid}) at {Now}.", Account.AccountName, Name, Guid, DateTime.Now.ToCommonString());
 
             FinalizeLogout();
 
@@ -655,7 +658,7 @@ namespace ACE.Server.WorldObjects
             SavePlayerToDatabase();
             PlayerManager.SwitchPlayerFromOnlineToOffline(this);
 
-            log.DebugFormat("[LOGOUT] Account {0} exited the world with character {1} (0x{2}) at {3}.", Account.AccountName, Name, Guid, DateTime.Now.ToCommonString());
+            log.LogDebug("[LOGOUT] Account {AccountName} exited the world with character {Name} (0x{Guid}) at {Now}.", Account.AccountName, Name, Guid, DateTime.Now.ToCommonString());
         }
 
         public void HandleMRT()

@@ -1,12 +1,13 @@
-using log4net;
+using Microsoft.Extensions.Logging;
 
+using ACE.Common.Logging;
 using ACE.Entity.Enum;
 
 namespace ACE.Server.Entity.Mutations
 {
     public partial class EffectArgument
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public static EffectArgument operator +(EffectArgument a, EffectArgument b)
         {
@@ -52,7 +53,7 @@ namespace ACE.Server.Entity.Mutations
                     break;
             }
 
-            log.Error($"EffectArgument.Add() - invalid type {a.Type}, {b.Type}");
+            log.LogError("EffectArgument.Add() - invalid type {AType}, {BType}", a.Type, b.Type);
 
             return null;
         }
@@ -101,7 +102,7 @@ namespace ACE.Server.Entity.Mutations
                     break;
             }
 
-            log.Error($"EffectArgument.Subtract() - invalid type {a.Type}, {b.Type}");
+            log.LogError("EffectArgument.Subtract() - invalid type {AType}, {BType}", a.Type, b.Type);
 
             return null;
         }
@@ -150,7 +151,7 @@ namespace ACE.Server.Entity.Mutations
                     break;
             }
 
-            log.Error($"EffectArgument.Multiply() - invalid type {a.Type}, {b.Type}");
+            log.LogError("EffectArgument.Multiply() - invalid type {AType}, {BType}", a.Type, b.Type);
 
             return null;
         }
@@ -199,7 +200,7 @@ namespace ACE.Server.Entity.Mutations
                     break;
             }
 
-            log.Error($"EffectArgument.Divide() - invalid type {a.Type}, {b.Type}");
+            log.LogError("EffectArgument.Divide() - invalid type {AType}, {BType}", a.Type, b.Type);
 
             return null;
         }
@@ -208,7 +209,7 @@ namespace ACE.Server.Entity.Mutations
         {
             if (a.Type != b.Type)
             {
-                log.Error($"EffectArgument.LessThan() - type mismatch {a.Type} {b.Type}");
+                log.LogError("EffectArgument.LessThan() - type mismatch {AType} {BType}", a.Type, b.Type);
                 return false;
             }
 
@@ -230,7 +231,7 @@ namespace ACE.Server.Entity.Mutations
         {
             if (a.Type != b.Type)
             {
-                log.Error($"EffectArgument.GreaterThan() - type mismatch {a.Type} {b.Type}");
+                log.LogError("EffectArgument.GreaterThan() - type mismatch {AType} {BType}", a.Type, b.Type);
                 return false;
             }
 

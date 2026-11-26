@@ -8,18 +8,19 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Microsoft.Extensions.Logging;
+
 using ACE.Common;
+using ACE.Common.Logging;
 using ACE.DatLoader;
 using ACE.Server.Network;
 using ACE.Server.Network.Structure;
-
-using log4net;
 
 namespace ACE.Server.Managers
 {
     public static class DDDManager
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public static bool Debug = false;
 
@@ -58,7 +59,7 @@ namespace ACE.Server.Managers
             if (DatManager.HighResDat != null)
                 InitIterations(DatDatabaseType.HighRes, DatManager.HighResDat);
 
-            log.DebugFormat("DDDManager Initialized.");
+            log.LogDebug("DDDManager Initialized.");
         }
 
         private static void InitIterations(DatDatabaseType datDatabaseType, DatDatabase datDatabase)
@@ -94,7 +95,7 @@ namespace ACE.Server.Managers
                 if (useCompressedFile && precacheCompressedDATFiles)
                     CompressedDatFilesCache[datDatabaseType].TryAdd(fileName, PrependUncompressedFileSize(compressedDatFile, (uint)uncompressedFileSize));
             });
-            log.Info($"Iterations for {datDatabaseType} initialized. Iterations.Count={Iterations[datDatabaseType].Count} | FileCount={fileCount} | DatFileSizes.Count={DatFileSizes[datDatabaseType].Count}{(precacheCompressedDATFiles ? " | precached Compressed files" : "")}");
+            log.LogInformation("Iterations for {DatDatabaseType} initialized. Iterations.Count={IterationsCount} | FileCount={FileCount} | DatFileSizes.Count={DatFileSizesCount}{PrecacheNote}", datDatabaseType, Iterations[datDatabaseType].Count, fileCount, DatFileSizes[datDatabaseType].Count, (precacheCompressedDATFiles ? " | precached Compressed files" : ""));
         }
 
         /// <summary>

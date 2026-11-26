@@ -3,6 +3,8 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 
+using Microsoft.Extensions.Logging;
+
 using ACE.Common;
 using ACE.DatLoader;
 using ACE.DatLoader.Entity.AnimationHooks;
@@ -167,7 +169,7 @@ namespace ACE.Server.WorldObjects
 
             if (CombatTable == null)
             {
-                //log.Error($"{Name} ({Guid}).GetCombatManeuver() - WCID: {WeenieClassId} | CombatTable is null"); // Load Test
+                //log.LogError("{Name} ({Guid}).GetCombatManeuver() - WCID: {WeenieClassId} | CombatTable is null", Name, Guid, WeenieClassId);
                 return null;
             }
 
@@ -176,13 +178,13 @@ namespace ACE.Server.WorldObjects
             var motionTable = DatManager.PortalDat.ReadFromDat<DatLoader.FileTypes.MotionTable>(MotionTableId);
             if (motionTable == null)
             {
-                log.Error($"{Name} ({Guid}).GetCombatManeuver() - WCID: {WeenieClassId} | motionTable is null");
+                log.LogError("{Name} ({Guid}).GetCombatManeuver() - WCID: {WeenieClassId} | motionTable is null", Name, Guid, WeenieClassId);
                 return null;
             }
 
             if (!CombatTable.Stances.TryGetValue(CurrentMotionState.Stance, out var stanceManeuvers))
             {
-                //log.Error($"{Name} ({Guid}).GetCombatManeuver() - WCID: {WeenieClassId} | couldn't find stance {CurrentMotionState.Stance} in CMT {CombatTableDID:X8}"); // Load Test
+                //log.LogError("{Name} ({Guid}).GetCombatManeuver() - WCID: {WeenieClassId} | couldn't find stance {Stance} in CMT {CombatTableDID:X8}", Name, Guid, WeenieClassId, CurrentMotionState.Stance, CombatTableDID);
                 return null;
             }
 
@@ -190,7 +192,7 @@ namespace ACE.Server.WorldObjects
             motionTable.Links.TryGetValue(stanceKey, out var motions);
             if (motions == null)
             {
-                log.Error($"{Name} ({Guid}).GetCombatManeuver() - WCID: {WeenieClassId} | couldn't find stance {CurrentMotionState.Stance} in MotionTable {MotionTableId:X8}"); // Load Test
+                //log.LogError("{Name} ({Guid}).GetCombatManeuver() - WCID: {WeenieClassId} | couldn't find stance {Stance} in MotionTable {MotionTableId:X8}", Name, Guid, WeenieClassId, CurrentMotionState.Stance, MotionTableId);
                 return null;
             }
 
@@ -205,7 +207,7 @@ namespace ACE.Server.WorldObjects
 
             if (!stanceManeuvers.Table.TryGetValue(AttackHeight.Value, out var attackTypes))
             {
-                log.Error($"{Name} ({Guid}).GetCombatManeuver() - WCID: {WeenieClassId} | couldn't find attack height {AttackHeight} for stance {CurrentMotionState.Stance} in CMT {CombatTableDID:X8}");
+                log.LogError("{Name} ({Guid}).GetCombatManeuver() - WCID: {WeenieClassId} | couldn't find attack height {AttackHeight} for stance {Stance} in CMT {CombatTableDID:X8}", Name, Guid, WeenieClassId, AttackHeight, CurrentMotionState.Stance, CombatTableDID);
                 return null;
             }
 
@@ -241,7 +243,7 @@ namespace ACE.Server.WorldObjects
 
                     if (!attackTypes.Table.TryGetValue(AttackType, out maneuvers) || maneuvers.Count == 0)
                     {
-                        //log.Error($"{Name} ({Guid}).GetCombatManeuver() - WCID: {WeenieClassId} | couldn't find attack type Kick or Punch for attack height {AttackHeight} and stance {CurrentMotionState.Stance} in CMT {CombatTableDID:X8}"); // Load Test
+                        //log.LogError("{Name} ({Guid}).GetCombatManeuver() - WCID: {WeenieClassId} | couldn't find attack type Kick or Punch for attack height {AttackHeight} and stance {Stance} in CMT {CombatTableDID:X8}", Name, Guid, WeenieClassId, AttackHeight, CurrentMotionState.Stance, CombatTableDID);
                         return null;
                     }
                 }
@@ -251,7 +253,7 @@ namespace ACE.Server.WorldObjects
 
                     if (!attackTypes.Table.TryGetValue(reduced, out maneuvers) || maneuvers.Count == 0)
                     {
-                        //log.Error($"{Name} ({Guid}).GetCombatManeuver() - WCID: {WeenieClassId} | couldn't find attack type {reduced} for attack height {AttackHeight} and stance {CurrentMotionState.Stance} in CMT {CombatTableDID:X8}"); // Load Test
+                        //log.LogError("{Name} ({Guid}).GetCombatManeuver() - WCID: {WeenieClassId} | couldn't find attack type {Reduced} for attack height {AttackHeight} and stance {Stance} in CMT {CombatTableDID:X8}", Name, Guid, WeenieClassId, reduced, AttackHeight, CurrentMotionState.Stance, CombatTableDID);
                         return null;
                     }
                     //else
@@ -259,7 +261,7 @@ namespace ACE.Server.WorldObjects
                 }
                 else
                 {
-                    //log.Error($"{Name} ({Guid}).GetCombatManeuver() - WCID: {WeenieClassId} | couldn't find attack type {AttackType} for attack height {AttackHeight} and stance {CurrentMotionState.Stance} in CMT {CombatTableDID:X8}"); // Load Test
+                    //log.LogError("{Name} ({Guid}).GetCombatManeuver() - WCID: {WeenieClassId} | couldn't find attack type {AttackType} for attack height {AttackHeight} and stance {Stance} in CMT {CombatTableDID:X8}", Name, Guid, WeenieClassId, AttackType, AttackHeight, CurrentMotionState.Stance, CombatTableDID);
                     return null;
                 }
             }
@@ -304,7 +306,7 @@ namespace ACE.Server.WorldObjects
                         return firstCommand;
                     }
                 }
-                //log.Error($"{Name} ({Guid}).GetCombatManeuver() - WCID: {WeenieClassId} | couldn't find {motionCommand} in MotionTable {MotionTableId:X8}"); // Load Test
+                //log.LogError("{Name} ({Guid}).GetCombatManeuver() - WCID: {WeenieClassId} | couldn't find {MotionCommand} in MotionTable {MotionTableId:X8}", Name, Guid, WeenieClassId, motionCommand, MotionTableId);
                 return null;
             }
 
@@ -361,7 +363,7 @@ namespace ACE.Server.WorldObjects
                 if (!missingAttackFrames.ContainsKey(attackFrameParams))
                 {
                     // only show warning message once for each combo
-                    log.Warn($"{Name} ({Guid}) - no attack frames for MotionTable {MotionTableId:X8}, {CurrentMotionState.Stance}, {motionCommand}, using defaults");
+                    log.LogWarning("{Name} ({Guid}) - no attack frames for MotionTable {MotionTableId:X8}, {Stance}, {MotionCommand}, using defaults", Name, Guid, MotionTableId, CurrentMotionState.Stance, motionCommand);
                     missingAttackFrames.TryAdd(attackFrameParams, true);
                 }
                 attackFrames = defaultAttackFrames;
@@ -609,8 +611,8 @@ namespace ACE.Server.WorldObjects
 
             if (parts.Count == 0)
             {
-                log.Warn($"{Name} ({Guid}.GetAttackPart({motionCommand}) failed");
-                log.Warn($"CombatTable: {CombatTableDID:X8}, MotionTable: {MotionTableId:X8}, CurrentStance: {CurrentMotionState.Stance}, AttackHeight: {AttackHeight}, AttackType: {AttackType}");
+                log.LogWarning("{Name} ({Guid}.GetAttackPart({MotionCommand}) failed", Name, Guid, motionCommand);
+                log.LogWarning("CombatTable: {CombatTableDID:X8}, MotionTable: {MotionTableId:X8}, CurrentStance: {Stance}, AttackHeight: {AttackHeight}, AttackType: {AttackType}", CombatTableDID, MotionTableId, CurrentMotionState.Stance, AttackHeight, AttackType);
                 return new KeyValuePair<CombatBodyPart, PropertiesBodyPart>();
             }
 

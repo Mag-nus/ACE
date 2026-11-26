@@ -1,16 +1,16 @@
 using System;
-using System.IO;
 
+using Microsoft.Extensions.Logging;
+
+using ACE.Common.Logging;
 using ACE.Server.Network.GameMessages;
-
-using log4net;
 
 namespace ACE.Server.Network
 {
     internal class MessageFragment
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
-        private static readonly ILog packetLog = LogManager.GetLogger(System.Reflection.Assembly.GetEntryAssembly(), "Packets");
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger packetLog = LogManager.GetLogger("Packets");
 
         public GameMessage Message { get; private set; }
 
@@ -48,8 +48,8 @@ namespace ACE.Server.Network
             Index = 0;
             if (Count == 1)
                 TailSent = true;
-            if (packetLog.IsDebugEnabled)
-                packetLog.DebugFormat("Sequence {0}, count {1}, DataRemaining {2}", sequence, Count, DataRemaining);
+            if (packetLog.IsEnabled(LogLevel.Debug))
+                packetLog.LogDebug("Sequence {Sequence}, count {Count}, DataRemaining {DataRemaining}", sequence, Count, DataRemaining);
         }
 
         public ServerPacketFragment GetTailFragment()
@@ -66,8 +66,8 @@ namespace ACE.Server.Network
 
         private ServerPacketFragment CreateServerFragment(ushort index)
         {
-            if (packetLog.IsDebugEnabled)
-                packetLog.DebugFormat("Creating ServerFragment for index {0}", index);
+            if (packetLog.IsEnabled(LogLevel.Debug))
+                packetLog.LogDebug("Creating ServerFragment for index {Index}", index);
             if (index >= Count)
                 throw new ArgumentOutOfRangeException("index", index, "Passed index is greater then computed count");
 
@@ -85,10 +85,11 @@ namespace ACE.Server.Network
             if (DataRemaining < dataToSend)
                 throw new InvalidOperationException("More data to send then data remaining!");
 
-            // Read data starting at position reading dataToSend bytes
-            Message.Data.Seek(position, SeekOrigin.Begin);
+            // Copy dataToSend bytes starting at position directly from the message's buffer.
+            // The same GameMessage is often queued to several sessions (see EnqueueBroadcast), and sessions send in parallel,
+            // so the shared MemoryStream's Position must not be used here: one session's Seek would move another session's Read.
             byte[] data = new byte[dataToSend];
-            Message.Data.Read(data, 0, dataToSend);
+            Buffer.BlockCopy(Message.Data.GetBuffer(), position, data, 0, dataToSend);
 
             // Build ServerPacketFragment structure
             ServerPacketFragment fragment = new ServerPacketFragment(data);
@@ -99,8 +100,8 @@ namespace ACE.Server.Network
             fragment.Header.Queue = (ushort)Message.Group;
 
             DataRemaining -= dataToSend;
-            if (packetLog.IsDebugEnabled)
-                packetLog.DebugFormat("Done creating ServerFragment for index {0}. After reading {1} DataRemaining {2}", index, dataToSend, DataRemaining);
+            if (packetLog.IsEnabled(LogLevel.Debug))
+                packetLog.LogDebug("Done creating ServerFragment for index {Index}. After reading {DataToSend} DataRemaining {DataRemaining}", index, dataToSend, DataRemaining);
             return fragment;
         }
     }

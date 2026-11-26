@@ -5,9 +5,10 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
-using log4net;
+using Microsoft.Extensions.Logging;
 
 using ACE.Common;
+using ACE.Common.Logging;
 using ACE.Database;
 using ACE.Database.Models.Shard;
 using ACE.Entity;
@@ -26,7 +27,7 @@ namespace ACE.Server.Managers
 {
     public static class PlayerManager
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         private static readonly ReaderWriterLockSlim playersLock = new ReaderWriterLockSlim();
         private static readonly Dictionary<uint, Player> onlinePlayers = new Dictionary<uint, Player>();
@@ -74,7 +75,7 @@ namespace ACE.Server.Managers
                         playerAccountsDict[offlinePlayer.Guid.Full] = offlinePlayer;
                     }
                     else
-                        log.Error($"PlayerManager.Initialize: couldn't find account for player {offlinePlayer.Name} ({offlinePlayer.Guid})");
+                        log.LogError("PlayerManager.Initialize: couldn't find account for player {Name} ({Guid})", offlinePlayer.Name, offlinePlayer.Guid);
                 }
             });
         }
@@ -757,9 +758,9 @@ namespace ACE.Server.Managers
             }
 
             if (channel != Channel.AllBroadcast)
-                log.Info($"[CHAT][{channel.ToString().ToUpper()}] {(sender != null ? sender.Name : "[SYSTEM]")} says on the {channel} channel, \"{message}\"");
+                log.LogInformation("[CHAT][{ToUpper}] {Sender} says on the {Channel} channel, \"{Message}\"", channel.ToString().ToUpper(), (sender != null ? sender.Name : "[SYSTEM]"), channel, message);
             else
-                log.Info($"[CHAT][GLOBAL] {(sender != null ? sender.Name : "[SYSTEM]")} issued a world broadcast, \"{message}\"");
+                log.LogInformation("[CHAT][GLOBAL] {Sender} issued a world broadcast, \"{Message}\"", (sender != null ? sender.Name : "[SYSTEM]"), message);
         }
 
         public static void BroadcastToChannelFromConsole(Channel channel, string message)

@@ -3,6 +3,8 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
 
+using Microsoft.Extensions.Logging;
+
 using ACE.Database;
 using ACE.Entity;
 using ACE.Entity.Enum;
@@ -259,10 +261,16 @@ namespace ACE.Server.WorldObjects
             actionChain.AddAction(CurrentLandblock, () =>
             {
                 foreach (var wo in myEscrow)
-                    TryCreateInInventoryWithNetworking(wo);
+                {
+                    if (!TryCreateInInventoryWithNetworking(wo) && !target.TryCreateInInventoryWithNetworking(wo))
+                        log.LogWarning("Item 0x{Guid:X8}:{WoName} for player {TargetName} lost from FinalizeTrade failure.", wo.Guid.Full, wo.Name, target.Name);
+                }
 
                 foreach (var wo in targetEscrow)
-                    target.TryCreateInInventoryWithNetworking(wo);
+                {
+                    if (!target.TryCreateInInventoryWithNetworking(wo) && !TryCreateInInventoryWithNetworking(wo))
+                        log.LogWarning("Item 0x{Guid:X8}:{WoName} for player {Name} lost from FinalizeTrade failure.", wo.Guid.Full, wo.Name, Name);
+                }
 
                 Session.Network.EnqueueSend(new GameEventWeenieError(Session, WeenieError.TradeComplete));
                 target.Session.Network.EnqueueSend(new GameEventWeenieError(target.Session, WeenieError.TradeComplete));

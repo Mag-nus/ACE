@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
+using Microsoft.Extensions.Logging;
+
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity;
@@ -158,7 +160,7 @@ namespace ACE.Server.WorldObjects
 
                 if (item.MaterialType == null)
                 {
-                    log.Warn($"[CRAFTING] {Name}.HandleSalvaging({item.Name}): no material type");
+                    log.LogWarning("[CRAFTING] {Name}.HandleSalvaging({ItemName}): no material type", Name, item.Name);
                     continue;
                 }
 

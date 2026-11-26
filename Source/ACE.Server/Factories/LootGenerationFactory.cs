@@ -4,9 +4,10 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 
-using log4net;
+using Microsoft.Extensions.Logging;
 
 using ACE.Common;
+using ACE.Common.Logging;
 using ACE.Database;
 using ACE.Database.Models.World;
 using ACE.Entity.Enum;
@@ -23,7 +24,7 @@ namespace ACE.Server.Factories
 {
     public static partial class LootGenerationFactory
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         // Used for cumulative ServerPerformanceMonitor event recording
         //private static readonly ThreadLocal<Stopwatch> stopwatch = new ThreadLocal<Stopwatch>(() => new Stopwatch());
@@ -121,7 +122,7 @@ namespace ACE.Server.Factories
 
             if (treasureItemType == TreasureItemType.Undef)
             {
-                log.Error($"LootGenerationFactory.RollWcid({treasureDeath.TreasureType}, {category}): treasureItemType == Undef");
+                log.LogError("LootGenerationFactory.RollWcid({TreasureType}, {Category}): treasureItemType == Undef", treasureDeath.TreasureType, category);
                 return null;
             }
 
@@ -271,7 +272,7 @@ namespace ACE.Server.Factories
 
                 if (wo == null)
                 {
-                    log.Error($"CreateAndMutateWcid({treasureDeath.TreasureType}, {(int)treasureRoll.Wcid} - {treasureRoll.Wcid}, {treasureRoll.GetItemType()}, {isMagical}) - failed to create item");
+                    log.LogError("CreateAndMutateWcid({TreasureType}, {TreasureRollWcid} - {TreasureRollWcid2}, {ItemType}, {IsMagical}) - failed to create item", treasureDeath.TreasureType, (int)treasureRoll.Wcid, treasureRoll.Wcid, treasureRoll.GetItemType(), isMagical);
                     return null;
                 }
 
@@ -336,7 +337,7 @@ namespace ACE.Server.Factories
                             break;
 
                         default:
-                            log.Error($"CreateAndMutateWcid({treasureDeath.TreasureType}, {(int)treasureRoll.Wcid} - {treasureRoll.Wcid}, {treasureRoll.GetItemType()}, {isMagical}) - unknown weapon type");
+                            log.LogError("CreateAndMutateWcid({TreasureType}, {TreasureRollWcid} - {TreasureRollWcid2}, {ItemType}, {IsMagical}) - unknown weapon type", treasureDeath.TreasureType, (int)treasureRoll.Wcid, treasureRoll.Wcid, treasureRoll.GetItemType(), isMagical);
                             break;
                     }
                     break;
@@ -424,7 +425,7 @@ namespace ACE.Server.Factories
         {
             if (wo.TsysMutationData == null)
             {
-                log.Warn($"[LOOT] Missing PropertyInt.TsysMutationData on loot item {wo.WeenieClassId} - {wo.Name}");
+                log.LogWarning("[LOOT] Missing PropertyInt.TsysMutationData on loot item {WeenieClassId} - {Name}", wo.WeenieClassId, wo.Name);
                 return GetDefaultMaterialType(wo);
             }
 
@@ -610,7 +611,7 @@ namespace ACE.Server.Factories
                 }
                 else
                 {
-                    log.Warn($"[LOOT] Color looked failed for {wo.MaterialType} ({(int)wo.MaterialType}) - {wo.WeenieClassId} - {wo.Name}.");
+                    log.LogWarning("[LOOT] Color looked failed for {WoMaterialType} ({WoMaterialType2}) - {WeenieClassId} - {Name}.", wo.MaterialType, (int)wo.MaterialType, wo.WeenieClassId, wo.Name);
                 }
             }
         }

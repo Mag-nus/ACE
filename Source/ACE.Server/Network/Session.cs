@@ -3,9 +3,10 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 
-using log4net;
+using Microsoft.Extensions.Logging;
 
 using ACE.Common;
+using ACE.Common.Logging;
 using ACE.Common.Performance;
 using ACE.Database;
 using ACE.Database.Models.Shard;
@@ -23,7 +24,7 @@ namespace ACE.Server.Network
 {
     public class Session
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public IPEndPoint EndPointC2S { get; }
 
@@ -171,8 +172,8 @@ namespace ACE.Server.Network
             }
             catch (Exception ex)
             {
-                log.WarnFormat("Session TickOutbound {0} that threw an exception.", EndPointC2S);
-                log.Warn(ex);
+                log.LogWarning("Session TickOutbound {EndPointC2S} that threw an exception.", EndPointC2S);
+                log.LogWarning(ex, "{Message:l}", ex.Message);
             }
         }
 
@@ -311,9 +312,9 @@ namespace ACE.Server.Network
                     reas = reas + ", " + PendingTermination.ExtraReason;
                 }
                 if (WorldManager.WorldStatus == WorldManager.WorldStatusState.Open)
-                    log.Info($"Session {Network?.ClientId}\\{EndPointC2S} dropped. Account: {Account}, Player: {Player?.Name}{reas}");
+                    log.LogInformation("Session {ClientId}\\{EndPointC2S} dropped. Account: {Account}, Player: {Name}{Reas}", Network?.ClientId, EndPointC2S, Account, Player?.Name, reas);
                 else
-                    log.DebugFormat("Session {0}\\{1} dropped. Account: {2}, Player: {3}{4}", Network?.ClientId, EndPointC2S, Account, Player?.Name, reas);
+                    log.LogDebug("Session {ClientId}\\{EndPointC2S} dropped. Account: {Account}, Player: {Name}{Reas}", Network?.ClientId, EndPointC2S, Account, Player?.Name, reas);
             }
 
             if (Player != null)

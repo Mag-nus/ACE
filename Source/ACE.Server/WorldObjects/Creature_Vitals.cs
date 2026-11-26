@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 
+using Microsoft.Extensions.Logging;
+
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.WorldObjects.Entity;
@@ -38,7 +40,7 @@ namespace ACE.Server.WorldObjects
                 case PropertyAttribute2nd.Mana:
                     return Mana;
                 default:
-                    log.Error($"{Name}.GetCreatureVital({vital}): unexpected vital");
+                    log.LogError("{Name}.GetCreatureVital({Vital}): unexpected vital", Name, vital);
                     return null;
             }
         }

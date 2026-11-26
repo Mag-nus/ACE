@@ -1,15 +1,16 @@
 using System.Collections.Generic;
 
-using log4net;
+using Microsoft.Extensions.Logging;
 
 using ACE.Common;
+using ACE.Common.Logging;
 using ACE.Database.Models.World;
 
 namespace ACE.Server.Factories.Tables
 {
     public static class QualityChance
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         private static readonly List<float> QualityChancePerTier = new List<float>()
         {
@@ -214,7 +215,7 @@ namespace ACE.Server.Factories.Tables
                 if (rng < curChance && curChance >= treasureDeath.LootQualityMod)
                     return i + 1;
             }
-            log.Error($"QualityTables.Roll({treasureDeath.Tier}, {treasureDeath.LootQualityMod}) - this shouldn't happen");
+            log.LogError("QualityTables.Roll({Tier}, {LootQualityMod}) - this shouldn't happen", treasureDeath.Tier, treasureDeath.LootQualityMod);
             return 0;
         }
 
@@ -251,7 +252,7 @@ namespace ACE.Server.Factories.Tables
                     return (float)(dy * (interval + i));
                 }
             }
-            log.Error($"QualityTables.RollInterval({treasureDeath.Tier}, {treasureDeath.LootQualityMod}) - this shouldn't happen");
+            log.LogError("QualityTables.RollInterval({Tier}, {LootQualityMod}) - this shouldn't happen", treasureDeath.Tier, treasureDeath.LootQualityMod);
             return 0.0f;
         }
     }

@@ -6,16 +6,17 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading;
 
+using Microsoft.Extensions.Logging;
+
+using ACE.Common.Logging;
 using ACE.Entity.Enum;
 using ACE.Server.Network;
-
-using log4net;
 
 namespace ACE.Server.Command
 {
     public static class CommandManager
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public static readonly bool NonInteractiveConsole = Convert.ToBoolean(Environment.GetEnvironmentVariable("ACE_NONINTERACTIVE_CONSOLE"));
 
@@ -28,7 +29,7 @@ namespace ACE.Server.Command
 
         public static IEnumerable<CommandHandlerInfo> GetCommandByName(string commandname)
         {
-            return commandHandlers.Select(p => p.Value).Where(p => p.Attribute.Command == commandname);
+            return commandHandlers.Select(p => p.Value).Where(p => p.Attribute.Command.Equals(commandname, StringComparison.OrdinalIgnoreCase));
         }
 
         public static CommandHandler GetDelegate(Action<Session, string[]> handler) => (CommandHandler)Delegate.CreateDelegate(typeof(CommandHandler), handler.Method);
@@ -71,17 +72,17 @@ namespace ACE.Server.Command
             if (!commandHandlers.ContainsKey(command))
             {
                 commandHandlers.Add(command, commandHandler);
-                log.Info($"Command created: {command}");
+                log.LogInformation("Command created: {Command}", command);
                 return true;
             }
             //Update if overriding and the command exists
             else if (overrides)
             {
-                log.Info($"Command updated: {command}");
+                log.LogInformation("Command updated: {Command}", command);
                 commandHandlers[command] = commandHandler;
                 return true;
             }
-            log.Warn($"Failed to add command: {command}");
+            log.LogWarning("Failed to add command: {Command}", command);
             return false;
         }
 
@@ -90,7 +91,7 @@ namespace ACE.Server.Command
             if (!commandHandlers.ContainsKey(command))
                 return false;
 
-            log.Info($"Removed command: {command}");
+            log.LogInformation("Removed command: {Command}", command);
             commandHandlers.Remove(command);
             return true;
         }
@@ -116,7 +117,7 @@ namespace ACE.Server.Command
 
             if (NonInteractiveConsole)
             {
-                log.Info("ACEmulator command prompt disabled - Environment.GetEnvironmentVariable(ACE_NONINTERACTIVE_CONSOLE) was true");
+                log.LogInformation("ACEmulator command prompt disabled - Environment.GetEnvironmentVariable(ACE_NONINTERACTIVE_CONSOLE) was true");
                 return;
             }
 
@@ -139,6 +140,13 @@ namespace ACE.Server.Command
                 Console.Write("ACE >> ");
 
                 string commandLine = Console.ReadLine();
+
+                if (commandLine == null)
+                {
+                    log.LogInformation("ACEmulator command prompt disabled - console input stream was closed");
+                    return;
+                }
+
                 if (string.IsNullOrWhiteSpace(commandLine))
                     continue;
 
@@ -150,7 +158,7 @@ namespace ACE.Server.Command
                 }
                 catch (Exception ex)
                 {
-                    log.Error($"Exception while parsing command: {commandLine}", ex);
+                    log.LogError(ex, "Exception while parsing command: {CommandLine}", commandLine);
                     return;
                 }
                 try
@@ -168,13 +176,13 @@ namespace ACE.Server.Command
                         }
                         catch (Exception ex)
                         {
-                            log.Error($"Exception while invoking command handler for: {commandLine}", ex);
+                            log.LogError(ex, "Exception while invoking command handler for: {CommandLine}", commandLine);
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    log.Error($"Exception while getting command handler for: {commandLine}", ex);
+                    log.LogError(ex, "Exception while getting command handler for: {CommandLine}", commandLine);
                 }
             }
         }

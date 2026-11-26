@@ -2,8 +2,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-using log4net;
+using Microsoft.Extensions.Logging;
 
+using ACE.Common.Logging;
 using ACE.Database.Models.Shard;
 using ACE.Entity.Enum;
 using ACE.Server.Managers;
@@ -14,7 +15,7 @@ namespace ACE.Server.Network.Structure
 {
     public class SquelchDB
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         /// <summary>
         /// Account squelches
@@ -54,7 +55,7 @@ namespace ACE.Server.Network.Structure
                 var squelchPlayer = PlayerManager.FindByGuid(squelch.SquelchCharacterId);
                 if (squelchPlayer == null && squelch.SquelchAccountId == 0)
                 {
-                    log.Warn($"BuildSquelchDB(): couldn't find character 0x{squelch.SquelchCharacterId:X8}");
+                    log.LogWarning("BuildSquelchDB(): couldn't find character 0x{SquelchCharacterId:X8}", squelch.SquelchCharacterId);
                     continue;
                 }
 
@@ -76,7 +77,7 @@ namespace ACE.Server.Network.Structure
 
                         if (mostRecentLoggedInCharacterForSquelchedAccount == null)
                         {
-                            log.Warn($"BuildSquelchDB(): couldn't find character 0x{squelch.SquelchCharacterId:X8} and account {squelch.SquelchAccountId} has no other characters");
+                            log.LogWarning("BuildSquelchDB(): couldn't find character 0x{SquelchCharacterId:X8} and account {SquelchAccountId} has no other characters", squelch.SquelchCharacterId, squelch.SquelchAccountId);
                             continue;
                         }
 

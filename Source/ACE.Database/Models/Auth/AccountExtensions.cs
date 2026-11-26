@@ -1,6 +1,7 @@
-using ACE.Common.Cryptography;
+using Microsoft.Extensions.Logging;
 
-using log4net;
+using ACE.Common.Cryptography;
+using ACE.Common.Logging;
 
 using System;
 using System.Linq;
@@ -12,7 +13,7 @@ namespace ACE.Database.Models.Auth
 {
     public static class AccountExtensions
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public static bool PasswordMatches(this Account account, string password)
         {
@@ -39,7 +40,7 @@ namespace ACE.Database.Models.Auth
             }
             else // Account password is using SHA512 salt
             {
-                log.DebugFormat("{0} password verified using SHA512 hash/salt, migrating to bcrypt.", account.AccountName);
+                log.LogDebug("{AccountName} password verified using SHA512 hash/salt, migrating to bcrypt.", account.AccountName);
 
                 var input = GetPasswordHash(account, password);
 
@@ -78,12 +79,12 @@ namespace ACE.Database.Models.Auth
 
             if (workFactor < 4)
             {
-                log.Warn("PasswordHashWorkFactor in config less than minimum value of 4, using 4 and continuing.");
+                log.LogWarning("PasswordHashWorkFactor in config less than minimum value of 4, using 4 and continuing.");
                 workFactor = 4;
             }
             else if (workFactor > 31)
             {
-                log.Warn("PasswordHashWorkFactor in config greater than maximum value of 31, using 31 and continuing.");
+                log.LogWarning("PasswordHashWorkFactor in config greater than maximum value of 31, using 31 and continuing.");
                 workFactor = 31;
             }
 

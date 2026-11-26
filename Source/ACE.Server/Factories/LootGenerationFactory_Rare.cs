@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
+using Microsoft.Extensions.Logging;
+
 using ACE.Common;
 using ACE.Server.WorldObjects;
 
@@ -92,7 +94,7 @@ namespace ACE.Server.Factories
             var wo = WorldObjectFactory.CreateNewWorldObject((uint)rareWCID);
 
             if (wo == null)
-                log.Error($"LootGenerationFactory_Rare.CreateRare(): failed to generate rare wcid {rareWCID}");
+                log.LogError("LootGenerationFactory_Rare.CreateRare(): failed to generate rare wcid {RareWCID}", rareWCID);
 
             return wo;
         }

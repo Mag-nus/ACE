@@ -1,5 +1,7 @@
 using System;
 
+using Microsoft.Extensions.Logging;
+
 using ACE.Common;
 using ACE.Database.Models.World;
 using ACE.Entity.Enum;
@@ -90,7 +92,7 @@ namespace ACE.Server.Factories
             }
             else
             {
-                log.Error($"RollItemMaxMana({wo.Name}, {roll.ItemType}, {maxSpellMana}) - unknown item type");
+                log.LogError("RollItemMaxMana({Name}, {ItemType}, {MaxSpellMana}) - unknown item type", wo.Name, roll.ItemType, maxSpellMana);
                 return 1;
             }
 
@@ -124,7 +126,7 @@ namespace ACE.Server.Factories
             }
             else if (!roll.IsGem)
             {
-                log.Error($"RollSpellcraft({wo.Name}, {roll.ItemType}) - unknown item type");
+                log.LogError("RollSpellcraft({Name}, {ItemType}) - unknown item type", wo.Name, roll.ItemType);
             }
 
             var rng = ThreadSafeRandom.Next(range.min, range.max);
@@ -203,7 +205,7 @@ namespace ACE.Server.Factories
             }
             else
             {
-                log.Error($"RollItemSkillLimit({wo.Name}, {roll.ItemType}) - unknown item type");
+                log.LogError("RollItemSkillLimit({Name}, {ItemType}) - unknown item type", wo.Name, roll.ItemType);
                 return false;
             }
 

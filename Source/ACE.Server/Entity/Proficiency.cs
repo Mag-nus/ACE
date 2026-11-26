@@ -1,6 +1,9 @@
 using System;
-using log4net;
+
+using Microsoft.Extensions.Logging;
+
 using ACE.Common;
+using ACE.Common.Logging;
 using ACE.Entity.Enum;
 using ACE.Server.WorldObjects;
 using ACE.Server.WorldObjects.Entity;
@@ -9,7 +12,7 @@ namespace ACE.Server.Entity
 {
     public class Proficiency
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public static TimeSpan FullTime = TimeSpan.FromMinutes(15);
 
@@ -40,7 +43,7 @@ namespace ACE.Server.Entity
             if (timeDiff < 0)
             {
                 // can happen if server clock is rewound back in time
-                log.Warn($"Proficiency.OnSuccessUse({player.Name}, {skill.Skill}, {difficulty}) - timeDiff: {timeDiff}");
+                log.LogWarning("Proficiency.OnSuccessUse({Name}, {Skill}, {Difficulty}) - timeDiff: {TimeDiff}", player.Name, skill.Skill, difficulty, timeDiff);
                 skill.PropertiesSkill.LastUsedTime = currentTime;       // update to prevent log spam
                 return;
             }
@@ -74,7 +77,7 @@ namespace ACE.Server.Entity
 
                 if (totalXPGranted > 10000)
                 {
-                    log.Warn($"Proficiency.OnSuccessUse({player.Name}, {skill.Skill}, {difficulty}) - totalXPGranted: {totalXPGranted:N0}");
+                    log.LogWarning("Proficiency.OnSuccessUse({Name}, {Skill}, {Difficulty}) - totalXPGranted: {TotalXPGranted:N0}", player.Name, skill.Skill, difficulty, totalXPGranted);
                 }
 
                 var maxLevel = Player.GetMaxLevel();
@@ -114,7 +117,7 @@ namespace ACE.Server.Entity
         {
             if (difficulty < 0)
             {
-                log.Error($"Proficiency.OnSuccessUse({player.Name}, {skill.Skill}, {difficulty}) - difficulty cannot be negative");
+                log.LogError("Proficiency.OnSuccessUse({Name}, {Skill}, {Difficulty}) - difficulty cannot be negative", player.Name, skill.Skill, difficulty);
                 return;
             }
             OnSuccessUse(player, skill, (uint)difficulty);

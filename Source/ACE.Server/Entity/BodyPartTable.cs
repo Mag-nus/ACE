@@ -1,9 +1,10 @@
 using System.Collections.Generic;
 using System.Linq;
 
-using log4net;
+using Microsoft.Extensions.Logging;
 
 using ACE.Common;
+using ACE.Common.Logging;
 using ACE.Entity.Enum;
 using ACE.Entity.Models;
 
@@ -11,7 +12,7 @@ namespace ACE.Server.Entity
 {
     public class BodyPartTable
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public Weenie Weenie;
 
@@ -26,7 +27,7 @@ namespace ACE.Server.Entity
 
             if (Weenie.PropertiesBodyPart == null)
             {
-                //log.Error($"BodyPartTable is null for {weenie.WeenieClassId} - {weenie.ClassName}!"); // Load Test
+                //log.LogError("BodyPartTable is null for {WeenieClassId} - {ClassName}!", weenie.WeenieClassId, weenie.ClassName);
                 return;
             }
 

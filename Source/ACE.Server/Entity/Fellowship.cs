@@ -3,7 +3,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
+using Microsoft.Extensions.Logging;
+
 using ACE.Common;
+using ACE.Common.Logging;
 using ACE.Entity;
 using ACE.Entity.Enum;
 using ACE.Server.Managers;
@@ -12,13 +15,11 @@ using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.Structure;
 using ACE.Server.WorldObjects;
 
-using log4net;
-
 namespace ACE.Server.Entity
 {
     public class Fellowship
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         /// <summary>
         /// The maximum # of fellowship members
@@ -190,7 +191,7 @@ namespace ACE.Server.Entity
 
             if (!fellowshipMembers.ContainsKey(player.Guid.Full))
             {
-                log.Warn($"{leader.Name} tried to dismiss {player.Name} from the fellowship, but {player.Name} was not found in the fellowship");
+                log.LogWarning("{LeaderName} tried to dismiss {PlayerName} from the fellowship, but {PlayerName} was not found in the fellowship", leader.Name, player.Name, player.Name);
 
                 var done = true;
 
@@ -198,11 +199,11 @@ namespace ACE.Server.Entity
                 {
                     if (player.Fellowship == this)
                     {
-                        log.Warn($"{player.Name} still has a reference to this fellowship somehow. This shouldn't happen");
+                        log.LogWarning("{Name} still has a reference to this fellowship somehow. This shouldn't happen", player.Name);
                         done = false;
                     }
                     else
-                        log.Warn($"{player.Name} has a reference to a different fellowship. {leader.Name} is possibly sending crafted data!");
+                        log.LogWarning("{PlayerName} has a reference to a different fellowship. {LeaderName} is possibly sending crafted data!", player.Name, leader.Name);
                 }
 
                 if (done) return;
@@ -767,7 +768,7 @@ namespace ACE.Server.Entity
                 var offlinePlayer = PlayerManager.FindByGuid(fellowGuid);
                 var offlineName = offlinePlayer != null ? offlinePlayer.Name : "NULL";
 
-                log.Warn($"Dropped fellow: {offlineName}");
+                log.LogWarning("Dropped fellow: {OfflineName}", offlineName);
                 fellowshipMembers.Remove(fellowGuid);
             }
             if (fellowGuids.Contains(FellowshipLeaderGuid))

@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
 
+using Microsoft.Extensions.Logging;
+
+using ACE.Common.Logging;
 using ACE.Entity.Enum;
 using ACE.Entity.Enum.Properties;
 using ACE.Server.Entity.Actions;
@@ -10,8 +13,6 @@ using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
 
-using log4net;
-
 namespace ACE.Server.Entity
 {
     public class Tailoring
@@ -19,7 +20,7 @@ namespace ACE.Server.Entity
         // http://acpedia.org/wiki/Tailoring
         // https://asheron.fandom.com/wiki/Tailoring
 
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         // tailoring kits
         public const uint ArmorTailoringKit = 41956;
@@ -332,7 +333,7 @@ namespace ACE.Server.Entity
             // errors shouldn't be possible here, since the items were pre-validated, but just in case...
             if (!player.TryCreateInInventoryWithNetworking(result))
             {
-                log.Error($"[TAILORING] Tailoring.Finalize({player.Name} (0x{player.Guid}), {source.Name} (0x{source.Guid}), {target.Name} (0x{target.Guid}), {result.Name}) - couldn't add {result.Name} ({result.Guid}) to player inventory after validation, this shouldn't happen!");
+                log.LogError("[TAILORING] Tailoring.Finalize({PlayerName} (0x{PlayerGuid}), {SourceName} (0x{SourceGuid}), {TargetName} (0x{TargetGuid}), {ResultName}) - couldn't add {ResultName} ({ResultGuid}) to player inventory after validation, this shouldn't happen!", player.Name, player.Guid, source.Name, source.Guid, target.Name, target.Guid, result.Name, result.Name, result.Guid);
                 result.Destroy();  // cleanup for guid manager
             }
 

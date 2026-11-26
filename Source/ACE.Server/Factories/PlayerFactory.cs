@@ -2,8 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-using log4net;
+using Microsoft.Extensions.Logging;
 
+using ACE.Common.Logging;
 using ACE.Database;
 using ACE.DatLoader;
 using ACE.DatLoader.FileTypes;
@@ -18,7 +19,7 @@ namespace ACE.Server.Factories
 {
     public static class PlayerFactory
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public enum CreateResult
         {
@@ -27,12 +28,17 @@ namespace ACE.Server.Factories
             InvalidSkillRequested,
             FailedToTrainSkill,
             FailedToSpecializeSkill,
-            ClientServerSkillsMismatch
+            ClientServerSkillsMismatch,
+            InvalidCharacterCreateData
         }
 
         public static CreateResult Create(CharacterCreateInfo characterCreateInfo, Weenie weenie, ObjectGuid guid, uint accountId, WeenieType weenieType, out Player player)
         {
-            var heritageGroup = DatManager.PortalDat.CharGen.HeritageGroups[(uint)characterCreateInfo.Heritage];
+            if (!DatManager.PortalDat.CharGen.HeritageGroups.TryGetValue((uint)characterCreateInfo.Heritage, out var heritageGroup))
+            {
+                player = null;
+                return InvalidCharacterCreateData(characterCreateInfo, accountId, "heritage", (uint)characterCreateInfo.Heritage);
+            }
 
             if (weenieType == WeenieType.Admin)
                 player = new Admin(weenie, guid, accountId);
@@ -49,7 +55,8 @@ namespace ACE.Server.Factories
             //player.SetProperty(PropertyDataId.Icon, cgh.IconImage); // I don't believe this is used anywhere in the client, but it might be used by a future custom launcher
 
             // pull character data from the dat file
-            var sex = heritageGroup.Genders[(int)characterCreateInfo.Gender];
+            if (!heritageGroup.Genders.TryGetValue((int)characterCreateInfo.Gender, out var sex))
+                return InvalidCharacterCreateData(characterCreateInfo, accountId, "gender", characterCreateInfo.Gender);
 
             player.SetProperty(PropertyDataId.MotionTable, sex.MotionTable);
             player.SetProperty(PropertyDataId.SoundTable, sex.SoundTable);
@@ -61,6 +68,22 @@ namespace ACE.Server.Factories
             // Check the character scale
             if (sex.Scale != 100)
                 player.SetProperty(PropertyFloat.DefaultScale, sex.Scale / 100.0f); // Scale is stored as a percentage
+
+            // The appearance values below come from the client and are used as indexes into the dat lists
+            var appearance = characterCreateInfo.Appearance;
+
+            if (appearance.HairStyle >= sex.HairStyleList.Count)
+                return InvalidCharacterCreateData(characterCreateInfo, accountId, "hair style", appearance.HairStyle);
+            if (appearance.Eyes >= sex.EyeStripList.Count)
+                return InvalidCharacterCreateData(characterCreateInfo, accountId, "eyes", appearance.Eyes);
+            if (appearance.Nose >= sex.NoseStripList.Count)
+                return InvalidCharacterCreateData(characterCreateInfo, accountId, "nose", appearance.Nose);
+            if (appearance.Mouth >= sex.MouthStripList.Count)
+                return InvalidCharacterCreateData(characterCreateInfo, accountId, "mouth", appearance.Mouth);
+            if (appearance.HairColor >= sex.HairColorList.Count)
+                return InvalidCharacterCreateData(characterCreateInfo, accountId, "hair color", appearance.HairColor);
+            if (appearance.EyeColor >= sex.EyeColorList.Count)
+                return InvalidCharacterCreateData(characterCreateInfo, accountId, "eye color", appearance.EyeColor);
 
             // Get the hair first, because we need to know if you're bald, and that's the name of that tune!
             var hairstyle = sex.HairStyleList[(int)characterCreateInfo.Appearance.HairStyle];
@@ -104,6 +127,16 @@ namespace ACE.Server.Factories
             {
                 if (player.Heritage != (int)HeritageGroup.Gearknight) // Gear Knights do not get clothing (pcap verified)
                 {
+                    // Validate every clothing style before any clothing is created
+                    if (appearance.HeadgearStyle < uint.MaxValue && appearance.HeadgearStyle >= sex.HeadgearList.Count)
+                        return InvalidCharacterCreateData(characterCreateInfo, accountId, "headgear style", appearance.HeadgearStyle);
+                    if (appearance.ShirtStyle >= sex.ShirtList.Count)
+                        return InvalidCharacterCreateData(characterCreateInfo, accountId, "shirt style", appearance.ShirtStyle);
+                    if (appearance.PantsStyle >= sex.PantsList.Count)
+                        return InvalidCharacterCreateData(characterCreateInfo, accountId, "pants style", appearance.PantsStyle);
+                    if (appearance.FootwearStyle >= sex.FootwearList.Count)
+                        return InvalidCharacterCreateData(characterCreateInfo, accountId, "footwear style", appearance.FootwearStyle);
+
                     if (characterCreateInfo.Appearance.HeadgearStyle < uint.MaxValue) // No headgear is max UINT
                     {
                         var hat = GetClothingObject(sex.GetHeadgearWeenie(characterCreateInfo.Appearance.HeadgearStyle), characterCreateInfo.Appearance.HeadgearColor, characterCreateInfo.Appearance.HeadgearHue);
@@ -131,6 +164,9 @@ namespace ACE.Server.Factories
                     else
                         player.TryAddToInventory(CreateIOU(sex.GetFootwearWeenie(characterCreateInfo.Appearance.FootwearStyle)));
                 }
+
+                if (characterCreateInfo.TemplateOption < 0 || characterCreateInfo.TemplateOption >= heritageGroup.Templates.Count)
+                    return InvalidCharacterCreateData(characterCreateInfo, accountId, "template", characterCreateInfo.TemplateOption);
 
                 string templateName = heritageGroup.Templates[characterCreateInfo.TemplateOption].Name;
                 player.SetProperty(PropertyString.Template, templateName);
@@ -175,7 +211,7 @@ namespace ACE.Server.Factories
 
                     if (!DatManager.PortalDat.SkillTable.SkillBaseHash.ContainsKey((uint)i))
                     {
-                        log.ErrorFormat("Character {0} tried to create with skill {1} that was not found in Portal dat.", characterCreateInfo.Name, i);
+                        log.LogError("Character {Name} tried to create with skill {I} that was not found in Portal dat.", characterCreateInfo.Name, i);
                         return CreateResult.InvalidSkillRequested;
                     }
 
@@ -355,6 +391,9 @@ namespace ACE.Server.Factories
             // Index used to determine the starting location
             var startArea = characterCreateInfo.StartArea;
 
+            if (startArea >= DatManager.PortalDat.CharGen.StarterAreas.Count)
+                return InvalidCharacterCreateData(characterCreateInfo, accountId, "start area", startArea);
+
             var starterArea = DatManager.PortalDat.CharGen.StarterAreas[(int)startArea];
 
             player.Location = new Position(starterArea.Locations[0].ObjCellID,
@@ -415,6 +454,17 @@ namespace ACE.Server.Factories
             CharacterCreateSetDefaultCharacterOptions(player);
 
             return CreateResult.Success;
+        }
+
+        /// <summary>
+        /// Logs a client-supplied character creation value that does not exist in the dat files,
+        /// and returns the result that rejects the creation.
+        /// </summary>
+        private static CreateResult InvalidCharacterCreateData(CharacterCreateInfo characterCreateInfo, uint accountId, string field, long value)
+        {
+            log.LogWarning("Character creation of {Name} for account {AccountId} rejected: {Field} {Value} is not valid for heritage {Heritage}, gender {Gender}", characterCreateInfo.Name, accountId, field, value, characterCreateInfo.Heritage, characterCreateInfo.Gender);
+
+            return CreateResult.InvalidCharacterCreateData;
         }
 
         private static WorldObject GetClothingObject(uint weenieClassId, uint palette, double shade)
@@ -582,7 +632,7 @@ namespace ACE.Server.Factories
         {
             if (!PropertyManager.GetBool("iou_trades").Item)
             {
-                log.Warn($"CreateIOU: Skipping creation of IOU for missing weenie {missingWeenieId} because IOU system is disabled.");
+                log.LogWarning("CreateIOU: Skipping creation of IOU for missing weenie {MissingWeenieId} because IOU system is disabled.", missingWeenieId);
 
                 return null;
             }

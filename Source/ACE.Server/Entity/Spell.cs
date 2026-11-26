@@ -1,9 +1,10 @@
 using System;
 using System.Collections.Generic;
 
-using log4net;
+using Microsoft.Extensions.Logging;
 
 using ACE.Common;
+using ACE.Common.Logging;
 using ACE.DatLoader;
 using ACE.DatLoader.Entity;
 using ACE.DatLoader.FileTypes;
@@ -20,7 +21,7 @@ namespace ACE.Server.Entity
     /// </summary>
     public partial class Spell: IEquatable<Spell>
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         /// <summary>
         /// The spell information from the client DAT
@@ -81,7 +82,7 @@ namespace ACE.Server.Entity
                 Formula = new SpellFormula(this, _formula);
 
             if (loadDB && (_spell == null || _spellBase == null))
-                log.DebugFormat("Spell.Init(spellID = {0}, loadDB = {1}) failed! {2} {3}", spellID, loadDB, (_spell == null ? "_spell was null" : ""), (_spellBase == null ? "_spellBase was null" : ""));
+                log.LogDebug("Spell.Init(spellID = {SpellID}, loadDB = {LoadDB}) failed! {SpellNote} {SpellBaseNote}", spellID, loadDB, (_spell == null ? "_spell was null" : ""), (_spellBase == null ? "_spellBase was null" : ""));
         }
 
         /// <summary>

@@ -1,14 +1,16 @@
 using System.Linq;
 using System.Threading;
-using Microsoft.EntityFrameworkCore;
 
-using log4net;
+using Microsoft.EntityFrameworkCore;
 
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
 
+using ACE.Common.Logging;
 using ACE.Database.Models.Auth;
 using ACE.Entity.Enum;
+
 using System.Collections.Generic;
 using System;
 using System.Net;
@@ -17,7 +19,7 @@ namespace ACE.Database
 {
     public class AuthenticationDatabase
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public bool Exists(bool retryUntilFound)
         {
@@ -29,12 +31,12 @@ namespace ACE.Database
                 {
                     if (((RelationalDatabaseCreator)context.Database.GetService<IDatabaseCreator>()).Exists())
                     {
-                        log.InfoFormat("[DATABASE] Successfully connected to {0} database on {1}:{2}.", config.Database, config.Host, config.Port);
+                        log.LogInformation("[DATABASE] Successfully connected to {Database} database on {Host}:{Port}.", config.Database, config.Host, config.Port);
                         return true;
                     }
                 }
 
-                log.Error($"[DATABASE] Attempting to reconnect to {config.Database} database on {config.Host}:{config.Port} in 5 seconds...");
+                log.LogError("[DATABASE] Attempting to reconnect to {Database} database on {Host}:{Port} in 5 seconds...", config.Database, config.Host, config.Port);
 
                 if (retryUntilFound)
                     Thread.Sleep(5000);

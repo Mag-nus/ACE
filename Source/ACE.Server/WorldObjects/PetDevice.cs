@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
 
-using log4net;
+using Microsoft.Extensions.Logging;
 
+using ACE.Common.Logging;
 using ACE.Database;
 using ACE.Entity;
 using ACE.Entity.Enum;
@@ -21,7 +22,7 @@ namespace ACE.Server.WorldObjects
     /// </summary>
     public class PetDevice : WorldObject
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public int? PetClass
         {
@@ -68,7 +69,7 @@ namespace ACE.Server.WorldObjects
 
             if (PetClass == null)
             {
-                log.Error($"{activator.Name}.ActOnUse({Name}) - PetClass is null for PetDevice {WeenieClassId}");
+                log.LogError("{ActivatorName}.ActOnUse({Name}) - PetClass is null for PetDevice {WeenieClassId}", activator.Name, Name, WeenieClassId);
                 return;
             }
 
@@ -151,7 +152,7 @@ namespace ACE.Server.WorldObjects
 
             if (wo == null)
             {
-                log.Error($"{player.Name}.SummonCreature({wcid}) - couldn't find wcid for PetDevice {WeenieClassId} - {WeenieClassName}");
+                log.LogError("{Name}.SummonCreature({Wcid}) - couldn't find wcid for PetDevice {WeenieClassId} - {WeenieClassName}", player.Name, wcid, WeenieClassId, WeenieClassName);
                 return false;
             }
 
@@ -159,7 +160,7 @@ namespace ACE.Server.WorldObjects
 
             if (pet == null)
             {
-                log.Error($"{player.Name}.SummonCreature({wcid}) - PetDevice {WeenieClassId} - {WeenieClassName} tried to summon {wo.WeenieClassId} - {wo.WeenieClassName} of unknown type {wo.WeenieType}");
+                log.LogError("{Name}.SummonCreature({Wcid}) - PetDevice {WeenieClassId} - {WeenieClassName} tried to summon {WoWeenieClassId} - {WoWeenieClassName} of unknown type {WeenieType}", player.Name, wcid, WeenieClassId, WeenieClassName, wo.WeenieClassId, wo.WeenieClassName, wo.WeenieType);
                 return false;
             }
             var success = pet.Init(player, this);

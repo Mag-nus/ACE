@@ -1,8 +1,9 @@
 using System;
 using System.Numerics;
 
-using log4net;
+using Microsoft.Extensions.Logging;
 
+using ACE.Common.Logging;
 using ACE.DatLoader;
 using ACE.Entity;
 using ACE.Entity.Enum.Properties;
@@ -17,7 +18,7 @@ namespace ACE.Server.Entity
 {
     public static class PositionExtensions
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public static Vector3 ToGlobal(this Position p, bool skipIndoors = false)
         {
@@ -128,8 +129,8 @@ namespace ACE.Server.Entity
             }
             catch (Exception e)
             {
-                log.ErrorFormat("GetCell() threw an exception: {0}\nposition as LOC => {1}", e.ToString(), p.ToLOCString());
-                log.Error(e);
+                log.LogError("GetCell() threw an exception: {E}\nposition as LOC => {P}", e.ToString(), p.ToLOCString());
+                log.LogError(e, "{Message:l}", e.Message);
 
                 return 0;
             }
@@ -360,8 +361,8 @@ namespace ACE.Server.Entity
 
         public static bool AttemptToFixRotation(this Position pos, WorldObject wo, PositionType positionType)
         {
-            log.Warn($"detected bad quaternion x y z w for {wo.Name} (0x{wo.Guid}) | WCID: {wo.WeenieClassId} | WeenieType: {wo.WeenieType} | PositionType: {positionType}");
-            log.Warn($"before fix: {pos.ToLOCString()}");
+            log.LogWarning("detected bad quaternion x y z w for {Name} (0x{Guid}) | WCID: {WeenieClassId} | WeenieType: {WeenieType} | PositionType: {PositionType}", wo.Name, wo.Guid, wo.WeenieClassId, wo.WeenieType, positionType);
+            log.LogWarning("before fix: {Pos}", pos.ToLOCString());
 
             var normalized = Quaternion.Normalize(pos.Rotation);
 
@@ -370,7 +371,7 @@ namespace ACE.Server.Entity
             if (success)
                 pos.Rotation = normalized;
 
-            log.Warn($" after fix: {pos.ToLOCString()}");
+            log.LogWarning(" after fix: {Pos}", pos.ToLOCString());
 
             return success;
         }

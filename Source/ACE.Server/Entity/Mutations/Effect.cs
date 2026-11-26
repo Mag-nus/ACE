@@ -1,5 +1,6 @@
-using log4net;
+using Microsoft.Extensions.Logging;
 
+using ACE.Common.Logging;
 using ACE.Entity.Enum;
 using ACE.Server.WorldObjects;
 
@@ -7,7 +8,7 @@ namespace ACE.Server.Entity.Mutations
 {
     public class Effect
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public EffectArgument Quality;
         public MutationEffectType Type;
@@ -125,7 +126,7 @@ namespace ACE.Server.Entity.Mutations
 
             if (!arg1.IsValid)
             {
-                log.Error($"{wo.Name} ({wo.Guid}).TryMutate({type}) - argument 1 invalid");
+                log.LogError("{Name} ({Guid}).TryMutate({Type}) - argument 1 invalid", wo.Name, wo.Guid, type);
                 return false;
             }
 
@@ -144,7 +145,7 @@ namespace ACE.Server.Entity.Mutations
 
                     if (!arg2.IsValid)
                     {
-                        log.Error($"{wo.Name} ({wo.Guid}).TryMutate({type}) - argument 2 invalid");
+                        log.LogError("{Name} ({Guid}).TryMutate({Type}) - argument 2 invalid", wo.Name, wo.Guid, type);
                         return false;
                     }
                     break;

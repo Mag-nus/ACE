@@ -1,8 +1,9 @@
 using System;
 
-using log4net;
+using Microsoft.Extensions.Logging;
 
 using ACE.Common.Extensions;
+using ACE.Common.Logging;
 using ACE.Entity.Enum;
 using ACE.Server.Command;
 using ACE.Server.Network.GameMessages.Messages;
@@ -11,7 +12,7 @@ namespace ACE.Server.Network.GameAction.Actions
 {
     public static class GameActionTalk
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         [GameAction(GameActionType.Talk)]
         public static void Handle(ClientMessage clientMessage, Session session)
@@ -32,7 +33,7 @@ namespace ACE.Server.Network.GameAction.Actions
                 }
                 catch (Exception ex)
                 {
-                    log.Error($"Exception while parsing command: {commandRaw}", ex);
+                    log.LogError(ex, "Exception while parsing command: {CommandRaw}", commandRaw);
                     return;
                 }
 
@@ -42,7 +43,7 @@ namespace ACE.Server.Network.GameAction.Actions
                 }
                 catch (Exception ex)
                 {
-                    log.Error($"Exception while getting command handler for: {commandRaw}", ex);
+                    log.LogError(ex, "Exception while getting command handler for: {CommandRaw}", commandRaw);
                 }
 
                 if (response == CommandHandlerResponse.Ok)
@@ -57,7 +58,7 @@ namespace ACE.Server.Network.GameAction.Actions
                     }
                     catch (Exception ex)
                     {
-                        log.Error($"Exception while invoking command handler for: {commandRaw}", ex);
+                        log.LogError(ex, "Exception while invoking command handler for: {CommandRaw}", commandRaw);
                     }
                 }
                 else if (response == CommandHandlerResponse.SudoOk)
@@ -75,7 +76,7 @@ namespace ACE.Server.Network.GameAction.Actions
                     }
                     catch (Exception ex)
                     {
-                        log.Error($"Exception while invoking command handler for: {commandRaw}", ex);
+                        log.LogError(ex, "Exception while invoking command handler for: {CommandRaw}", commandRaw);
                     }
                 }
                 else

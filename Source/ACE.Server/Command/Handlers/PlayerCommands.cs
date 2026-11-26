@@ -1,9 +1,10 @@
 using System;
 using System.Collections.Generic;
 
-using log4net;
+using Microsoft.Extensions.Logging;
 
 using ACE.Common;
+using ACE.Common.Logging;
 using ACE.Database;
 using ACE.Entity;
 using ACE.Entity.Enum;
@@ -15,12 +16,11 @@ using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
 
-
 namespace ACE.Server.Command.Handlers
 {
     public static class PlayerCommands
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         // pop
         [CommandHandler("pop", AccessLevel.Player, CommandHandlerFlag.None, 0,
@@ -88,7 +88,7 @@ namespace ACE.Server.Command.Handlers
             // ensure current multihouse owner
             if (!session.Player.IsMultiHouseOwner(false))
             {
-                log.Warn($"{session.Player.Name} tried to /house-select {houseIdx}, but they are not currently a multi-house owner!");
+                log.LogWarning("{Name} tried to /house-select {HouseIdx}, but they are not currently a multi-house owner!", session.Player.Name, houseIdx);
                 return;
             }
 
@@ -130,7 +130,7 @@ namespace ACE.Server.Command.Handlers
             var player = PlayerManager.FindByGuid(keepHouse.HouseOwner ?? 0, out bool isOnline);
             if (player == null)
             {
-                log.Error($"{session.Player.Name}.HandleHouseSelect({houseIdx}) - couldn't find HouseOwner {keepHouse.HouseOwner} for {keepHouse.Name} ({keepHouse.Guid})");
+                log.LogError("{PlayerName}.HandleHouseSelect({HouseIdx}) - couldn't find HouseOwner {HouseOwner} for {KeepHouseName} ({Guid})", session.Player.Name, houseIdx, keepHouse.HouseOwner, keepHouse.Name, keepHouse.Guid);
                 return;
             }
 
@@ -144,8 +144,6 @@ namespace ACE.Server.Command.Handlers
             actionChain.AddDelaySeconds(3.0f);  // wait for slumlord inventory biotas above to save
             actionChain.AddAction(session.Player, session.Player.HandleActionQueryHouse);
             actionChain.EnqueueChain();
-
-            Console.WriteLine("OK");
         }
 
         [CommandHandler("debugcast", AccessLevel.Player, CommandHandlerFlag.RequiresWorld, "Shows debug information about the current magic casting state")]
@@ -419,7 +417,7 @@ namespace ACE.Server.Command.Handlers
             for (var i = 1; i < parameters.Length; i++)
                 description += parameters[i] + " ";
 
-            description.Trim();
+            description = description.Trim();
 
             switch (category.ToLower())
             {
@@ -454,7 +452,7 @@ namespace ACE.Server.Command.Handlers
             var w = "";
             var g = "";
 
-            if (cg == "creature" || cg == "npc"|| cg == "item" || cg == "item")
+            if (cg == "creature" || cg == "npc" || cg == "item")
             {
                 var objectId = new ObjectGuid();
                 if (session.Player.HealthQueryTarget.HasValue || session.Player.ManaQueryTarget.HasValue || session.Player.CurrentAppraisalTarget.HasValue)

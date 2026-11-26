@@ -2,6 +2,9 @@ using System;
 using System.Reflection;
 using System.Text;
 
+using Microsoft.Extensions.Logging;
+
+using ACE.Common.Logging;
 using ACE.Entity.Enum;
 using ACE.Server.Entity;
 using ACE.Server.Managers;
@@ -9,8 +12,6 @@ using ACE.Server.Network.Enum;
 using ACE.Server.Network.GameEvent.Events;
 using ACE.Server.Network.GameMessages;
 using ACE.Server.Network.GameMessages.Messages;
-
-using log4net;
 
 namespace ACE.Server.Network.Handlers
 {
@@ -104,10 +105,10 @@ namespace ACE.Server.Network.Handlers
                 }
 
                 if (channelID != adjustedChannelID)
-                    log.DebugFormat("[CHAT] ChannelID ({0}) was adjusted to {1} | ChatNetworkBlobDispatchType: {2}", channelID, adjustedChannelID, chatBlobDispatchType);
+                    log.LogDebug("[CHAT] ChannelID ({ChannelID}) was adjusted to {AdjustedChannelID} | ChatNetworkBlobDispatchType: {ChatBlobDispatchType}", channelID, adjustedChannelID, chatBlobDispatchType);
 
                 if (chatType != adjustedchatType)
-                    log.DebugFormat("[CHAT] ChatType ({0}) was adjusted to {1} | ChatNetworkBlobDispatchType: {2}", chatType, adjustedchatType, chatBlobDispatchType);
+                    log.LogDebug("[CHAT] ChatType ({ChatType}) was adjusted to {AdjustedchatType} | ChatNetworkBlobDispatchType: {ChatBlobDispatchType}", chatType, adjustedchatType, chatBlobDispatchType);
 
                 var gameMessageTurbineChat = new GameMessageTurbineChat(ChatNetworkBlobType.NETBLOB_EVENT_BINARY, ChatNetworkBlobDispatchType.ASYNCMETHOD_SENDTOROOMBYNAME, adjustedChannelID, session.Player.Name, message, senderID, adjustedchatType);
 
@@ -340,7 +341,7 @@ namespace ACE.Server.Network.Handlers
             session.Network.EnqueueSend(new GameMessageTurbineChat(ChatNetworkBlobType.NETBLOB_RESPONSE_BINARY, ChatNetworkBlobDispatchType.ASYNCMETHOD_SENDTOROOMBYNAME, contextId, null, null, 0, chatType));
         }
 
-        private static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
         private static void LogTurbineChat(uint channelID, string name, string message, uint senderID, ChatType chatType)
         {
@@ -381,7 +382,7 @@ namespace ACE.Server.Network.Handlers
                     return;
             }
 
-            log.Info($"[CHAT][{chatType}]{(chatType == ChatType.Allegiance ? $"[{channelID}]" : "")} {name} says, \"{message}\"");
+            log.LogInformation("[CHAT][{ChatType}]{Channel} {Name} says, \"{Message}\"", chatType, (chatType == ChatType.Allegiance ? $"[{channelID}]" : ""), name, message);
         }
     }
 }

@@ -9,10 +9,11 @@ using System.Net;
 using System.Text.RegularExpressions;
 using System.Threading;
 
-using log4net;
+using Microsoft.Extensions.Logging;
 
 using ACE.Common;
 using ACE.Common.Extensions;
+using ACE.Common.Logging;
 using ACE.Database;
 using ACE.Database.Models.Auth;
 using ACE.Entity;
@@ -37,7 +38,7 @@ namespace ACE.Server.Command.Handlers
 {
     public static class AdminCommands
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         // // commandname parameters
         // [CommandHandler("commandname", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0)]
@@ -2883,7 +2884,7 @@ namespace ACE.Server.Command.Handlers
                         item.SaveBiotaToDatabase();
                     }
                     else
-                        log.Warn($"0x{item.Guid}:{item.Name} for player {player.Name} lost from fumble failure.");
+                        log.LogWarning("0x{Guid}:{ItemName} for player {PlayerName} lost from fumble failure.", item.Guid, item.Name, player.Name);
                 }
             }
             else

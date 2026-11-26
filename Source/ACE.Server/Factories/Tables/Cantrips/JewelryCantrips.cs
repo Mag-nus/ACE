@@ -1,7 +1,8 @@
 using System.Collections.Generic;
 
-using log4net;
+using Microsoft.Extensions.Logging;
 
+using ACE.Common.Logging;
 using ACE.Entity.Enum;
 using ACE.Server.Factories.Entity;
 
@@ -9,7 +10,7 @@ namespace ACE.Server.Factories.Tables
 {
     public static class JewelryCantrips
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         private static readonly List<SpellId> spells = new List<SpellId>()
         {
@@ -97,13 +98,13 @@ namespace ACE.Server.Factories.Tables
 
                 if (spellLevels == null)
                 {
-                    log.Error($"JewelryCantrips - couldn't find {spell}");
+                    log.LogError("JewelryCantrips - couldn't find {Spell}", spell);
                     continue;
                 }
 
                 if (spellLevels.Count != NumLevels)
                 {
-                    log.Error($"JewelryCantrips - expected {NumLevels} levels for {spell}, found {spellLevels.Count}");
+                    log.LogError("JewelryCantrips - expected {NumLevels} levels for {Spell}, found {Count}", NumLevels, spell, spellLevels.Count);
                     continue;
                 }
 

@@ -1,7 +1,10 @@
 using System;
 using System.Linq;
 
+using Microsoft.Extensions.Logging;
+
 using ACE.Common;
+using ACE.Common.Logging;
 using ACE.DatLoader;
 using ACE.Entity.Enum;
 using ACE.Server.Managers;
@@ -11,13 +14,11 @@ using ACE.Server.Network.GameMessages;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.Network.Structure;
 
-using log4net;
-
 namespace ACE.Server.Network.Handlers
 {
     public static class DDDHandler
     {
-        private static readonly ILog log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static readonly ILogger log = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         public static bool Debug = false;
 
@@ -149,7 +150,7 @@ namespace ACE.Server.Network.Handlers
             else if (clientIsMissingIterations) logMsg += " | update required";
             else logMsg += " | no update required";
             if (clientIsMissingIterations && !enableDATpatching) logMsg += ", but DAT patching is disabled";
-            log.Info(logMsg);
+            log.LogInformation("{Message:l}", logMsg);
 
             if (clientHasExtraIterations)
             {
@@ -164,7 +165,7 @@ namespace ACE.Server.Network.Handlers
                 session.BeginDDDSentTime = DateTime.UtcNow;
                 session.BeginDDDSent = true;
 
-                log.Info($"[DDD] client {session.Account} informed with BeginDDD payload:\n Total Missing Iterations: {totalMissingIterations} | Expected Data Transfer Size: {totalFileSize / 1024:N0} kB");
+                log.LogInformation("[DDD] client {Account} informed with BeginDDD payload:\n Total Missing Iterations: {TotalMissingIterations} | Expected Data Transfer Size: {TotalFileSizeKb:N0} kB", session.Account, totalMissingIterations, totalFileSize / 1024);
 
                 var hasPortalMissingIterations = missingIterations.TryGetValue(DatDatabaseType.Portal, out var portalMissingIterations);
                 var hasLanguageMissingIterations = missingIterations.TryGetValue(DatDatabaseType.Language, out var languageMissingIterations);
@@ -180,7 +181,7 @@ namespace ACE.Server.Network.Handlers
                                 //session.Network.EnqueueSend(new GameMessageDDDDataMessage(fileId, DatDatabaseType.Portal));
                                 DDDManager.AddToQueue(session, fileId, DatDatabaseType.Portal);
                             else
-                                log.Warn($"[DDD] DDD_InterrogationResponse: DDDManager.AddToQueue failed: DatManager.PortalDat.AllFiles does not contain 0x{fileId:X8}");
+                                log.LogWarning("[DDD] DDD_InterrogationResponse: DDDManager.AddToQueue failed: DatManager.PortalDat.AllFiles does not contain 0x{FileId:X8}", fileId);
                         }
                     }
                 }
@@ -195,7 +196,7 @@ namespace ACE.Server.Network.Handlers
                                 //session.Network.EnqueueSend(new GameMessageDDDDataMessage(fileId, DatDatabaseType.Language));
                                 DDDManager.AddToQueue(session, fileId, DatDatabaseType.Language);
                             else
-                                log.Warn($"[DDD] DDD_InterrogationResponse: DDDManager.AddToQueue failed: DatManager.LanguageDat.AllFiles does not contain 0x{fileId:X8}");
+                                log.LogWarning("[DDD] DDD_InterrogationResponse: DDDManager.AddToQueue failed: DatManager.LanguageDat.AllFiles does not contain 0x{FileId:X8}", fileId);
                         }
                     }
                 }
@@ -210,7 +211,7 @@ namespace ACE.Server.Network.Handlers
                                 //session.Network.EnqueueSend(new GameMessageDDDDataMessage(fileId, DatDatabaseType.HighRes));
                                 DDDManager.AddToQueue(session, fileId, DatDatabaseType.HighRes);
                             else
-                                log.Warn($"[DDD] DDD_InterrogationResponse: DDDManager.AddToQueue failed: DatManager.HighResDat.AllFiles does not contain 0x{fileId:X8}");
+                                log.LogWarning("[DDD] DDD_InterrogationResponse: DDDManager.AddToQueue failed: DatManager.HighResDat.AllFiles does not contain 0x{FileId:X8}", fileId);
                         }
                     }
                 }
@@ -242,7 +243,7 @@ namespace ACE.Server.Network.Handlers
                 session.DatWarnLanguage = false;
                 session.DatWarnHighRes = false;
 
-                log.Info($"[DDD] client {session.Account} reported it successfully received and patched its DAT files with expected BeginDDD payload");
+                log.LogInformation("[DDD] client {Account} reported it successfully received and patched its DAT files with expected BeginDDD payload", session.Account);
             }
         }
 
@@ -255,7 +256,7 @@ namespace ACE.Server.Network.Handlers
             var qdid_type = (DatFileType)message.Payload.ReadUInt32();
             var qdid_ID = message.Payload.ReadUInt32();
 
-            log.Info($"[DDD] client {session.Account} requested data on 0x{qdid_ID:X8} | {qdid_type}{(!enableDATpatching ? $"; DAT patching is disabled{(showDatWarning ? " and client will be booted" : "")}" : "")}");
+            log.LogInformation("[DDD] client {Account} requested data on 0x{Qdid_ID:X8} | {Qdid_type}{DatPatchingNote}", session.Account, qdid_ID, qdid_type, (!enableDATpatching ? $"; DAT patching is disabled{(showDatWarning ? " and client will be booted" : "")}" : ""));
 
             if (!enableDATpatching)
             {
@@ -302,11 +303,11 @@ namespace ACE.Server.Network.Handlers
                     //session.Network.EnqueueSend(new GameMessageDDDDataMessage(qdid_ID, DatDatabaseType.Cell));
                     DDDManager.AddToQueue(session, qdid_ID, DatDatabaseType.Cell);
                 else if (qdid_type != DatFileType.LandBlockInfo)
-                    log.Warn($"[DDD] DDD_RequestDataMessage: The server does not have the requested data on 0x{qdid_ID:X8} | {qdid_type} to send to client {session.Account}.");
+                    log.LogWarning("[DDD] DDD_RequestDataMessage: The server does not have the requested data on 0x{Qdid_ID:X8} | {Qdid_type} to send to client {Account}.", qdid_ID, qdid_type, session.Account);
             }
             else
             {
-                log.Warn($"[DDD] DDD_RequestDataMessage: client {session.Account} requested data on 0x{qdid_ID:X8} | {qdid_type} which has been ignored.");
+                log.LogWarning("[DDD] DDD_RequestDataMessage: client {Account} requested data on 0x{Qdid_ID:X8} | {Qdid_type} which has been ignored.", session.Account, qdid_ID, qdid_type);
             }
         }
     }
