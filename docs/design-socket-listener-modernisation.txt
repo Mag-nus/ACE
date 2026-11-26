@@ -221,9 +221,9 @@ M2. Multiple concurrent receives   [the structural fix for D1]
      ReceiveFromAsync as proposed in M3) is registered with epoll, and each
      send on it wakes the epoll thread and the thread pool: ~10-12.5 us of
      process CPU per send, against ~2.7 us when the receive side is a thread
-     blocked in the synchronous ReceiveFrom. M3 as written would make sends
-     slightly WORSE than today. See perf-network.txt H.1. Linux only; Windows
-     not measured.]
+     blocked in the synchronous ReceiveFrom. M3 as written would not reduce
+     the send cost: it measured the same as today's APM receive. See
+     perf-network.txt H.1 and H.V. Linux only; Windows not measured.]
 
 M3. ReceiveFromAsync returning ValueTask instead of APM
     Removes the IAsyncResult and delegate allocation per operation. Modern

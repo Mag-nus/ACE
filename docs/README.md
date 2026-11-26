@@ -63,6 +63,17 @@ Where the review disagrees with the first pass, the finding carries a
 H.E are the current priority lists. New bugs are in `bugs-network.txt` F.5-F.6 and
 `bugs-worldobjects.txt` W.16-W.17.
 
+A second review of Sections R and H re-ran their key measurements, and they reproduce.
+R.V and H.V list what it changed:
+- the R.1 active-list design misses several wake-up sources;
+- the R.2 lock is in effect a global mutex;
+- H.2 applies to hosts with 6+ vCPU and overlaps H.1;
+- NT.3's ratio is 2-5x;
+- `ReceiveFromAsync` is no better than today's receive.
+
+It also corrects the fix for `bugs-worldobjects.txt` W.17. Findings it touched carry a
+`[Second review ...]` pointer.
+
 ---
 
 ## Highest-value fixes

@@ -285,7 +285,17 @@ W.17 Appraising a creature adds a Deception skill to it   [VERIFIED by reading]
      its SAC to Untrained and sets ChangesDetected = true. Harmless for
      ordinary monsters (they are not saved), but it mutates another object's
      biota from a read-only action, and it would mark a persisted creature
-     dirty. FIX: pass add: false and treat a missing skill as 0.
+     dirty.
+     FIX: read the skill WITHOUT adding it, but compute the value it would
+     have. Do not treat a missing skill as 0. That changes appraisal odds,
+     because an Untrained skill created here still has a value:
+     CreatureSkill.Current (CreatureSkill.cs:154-195) adds the target's
+     attribute formula when IsUsable (Untrained with SkillTable MinLevel == 1,
+     CreatureSkill.cs:48-63), and always adds enchantment additives. One way:
+     with add: false returning null, build a transient CreatureSkill over a
+     PropertiesSkill { SAC = Untrained } that is not stored in the biota or in
+     Skills. Not checked: whether Deception is usable untrained (needs the
+     portal dat).
 
 
 SECTION D - INVESTIGATED, NOT A BUG

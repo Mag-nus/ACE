@@ -10,6 +10,7 @@ dotnet build PhysE2E.csproj -c Release -o out/base -v q -nologo 2>&1 | grep -E "
 for d in variants/*/; do
   v=$(basename "$d")
   [ "$v" = base ] && continue
+  [ -f "variants/$v/ACE.Server.dll" ] || continue    # variant not built (make_variants.py was run for a subset)
   cp -r out/base "out/$v"
   cp "variants/$v/ACE.Server.dll" "variants/$v/ACE.Server.pdb" "out/$v/"
 done

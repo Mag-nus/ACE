@@ -1106,6 +1106,8 @@ three things:
   3. Examined and measured the inbound action path on the world thread, which
      Section G did not cover.
 
+A second review of this section, with its key measurements re-run, is in H.V.
+
 Method notes:
   - Allocation figures are exact. Timings were taken on a shared 4-vCPU VM, so
     use them as ratios within one run.
@@ -1150,6 +1152,8 @@ NT.3 TIME IS UNDERSTATED 3-7x. The copy was accurate about itself, but it
      ("sendto removed" is a paired subtraction; read it as within ~20%.)
      The prototype's time ratios therefore do not carry over to the real path;
      its allocation and retention figures do.
+     [Second review: counting user CPU only, the ratio is 2.2-5.4x, not 3-7x.
+     See H.V.]
 
 NT.3 SCENARIO "ack + echo + 3 small" CANNOT HAPPEN. No message type uses group
      0, so optional headers never share a packet with fragments. On the real
@@ -1264,6 +1268,8 @@ H.1  [HIGH on Linux] Every send on a socket with a pending async receive wakes
      NT.2's own 527 B per datagram.
      DO NOT use ReceiveFromAsync, which design-socket-listener-modernisation.txt
      proposes as M3: it measured worse than today's APM receive.
+     [Second review: no better rather than worse - within noise of APM. See
+     H.V.]
      DIAGNOSTICS, not recommendations: DOTNET_SYSTEM_NET_SOCKETS_INLINE_COMPLETIONS=1
      took the loop-shape cost from 186.7 to 30.1 ms/s, and
      DOTNET_ThreadPool_UnfairSemaphoreSpinLimit=0 to 85.5 ms/s.
@@ -1289,6 +1295,8 @@ H.2  [MEDIUM] Ticking sessions with Parallel.ForEach at DOP > 1 doubles the idle
      This reinstates the second half of P.0a's original fix ("fall back to a
      serial loop"). Not measured: the break-even point under real flush load.
      Confidence: VERIFIED (measured on the real DoSessionWork).
+     [Second review: applies to hosts with 6 or more vCPU, and with real
+     timers the increase is ~30%, not 2x. See H.V.]
 
 H.3  [LOW-MEDIUM, behaviour] One bundle per ~6 ms per session, lowest group
      first: observed on the wire
@@ -1586,6 +1594,66 @@ successful lookup on .NET 10, because ObjectGuid lacks IEquatable<ObjectGuid>
 elide it.
 
 
+--- H.V SECOND REVIEW OF SECTION H (2026-11-25) --------------------------------
+
+An independent check of Section H: the key benchmarks re-run on the current
+build (Source/ACE.Server/bin/Release/net10.0), and the claims re-read against
+the code.
+
+REPRODUCED
+  - H.1 (socket-checks/send-by-receive-mode). Run in the original order, and
+    again one process per mode in reverse order, process CPU per send was:
+      - plain socket: 2.7 us;
+      - blocking ReceiveFrom thread: 2.8 us;
+      - BeginReceiveFrom pending: 9.6-10.8 us;
+      - ReceiveFromAsync pending: 10.5-10.7 us.
+    Order and process did not matter.
+  - H.2 (net-e2e systemic), DOP 1 -> 4:
+      - timers pushed out: 160.3 -> 299.7 ms/s;
+      - real timers: 259.2 -> 332.3 ms/s.
+    DoSessionWork per call at 1000 sessions (net-e2e tick): 197 us at DOP 1,
+    61 us at DOP 4.
+  - Confirmed by reading:
+      - H.3: nextSend is shared by all groups, and only group 0 carries ack
+        and time-sync.
+      - H.4: the lambda captures the endPoint parameter, so the closure is
+        created at method entry.
+      - The NT.7 / F.4 clamp: a pure ack reuses CurrentValue
+        (NetworkSession.cs:747-748).
+      - IN.1, IN.7 and IN.8.
+
+CORRECTIONS
+H.1  ReceiveFromAsync is NO BETTER than today's APM receive, rather than
+     worse: 10.5-10.7 us against 9.6-10.8 us per send in these runs, which is
+     within the noise. The advice stands: it does not fix the send cost, and
+     the blocking receive thread does.
+
+H.2  WHO IT AFFECTS. At the shipped WorldThreadCountMultiplier of 0.34, the
+     session tick runs at DOP max(vCPU x 0.34, 1):
+       - 1 below 6 vCPU;
+       - 2 at 6-8 vCPU;
+       - 3 at 9-11 vCPU;
+       - 4 at 12 vCPU.
+     So H.2 applies to hosts with 6 or more vCPU. It also applies to any
+     Config.js without the multiplier key, where the DOP is unlimited
+     (bugs-common.txt C.2).
+     SIZE. "Doubles" is the case with the ack and time-sync timers pushed out.
+     With the real timers running the increase is about 30% (259 -> 332
+     ms/s), because at DOP 1 the sends already wake the thread pool (H.1).
+     H.1 and H.2 act on the same worker wake-ups, so do not add their savings.
+
+NT.3 (H.B) THE RATIO IS 2-5x, NOT 3-7x. H.B subtracts a bare sendto from the
+     real total. Counting user CPU only, from the same run
+     (net-e2e/results/flush.txt), the real managed flush is real minus
+     bare-sendto user time:
+         1 x 60 B             542 ns    2.2x Section G's 245 ns
+         6 small            1,177 ns    2.4x Section G's 490 ns
+         ack + echo only      669 ns    5.4x Section G's 123 ns
+         1500 B + 3 small   1,789 ns    2.2x Section G's 809 ns
+     Against the copy run under the same conditions it is 1.6-2.2x. H.B's
+     conclusion holds: the prototype's time ratios do not carry over.
+
+
 --- H.E PRIORITY, REVISED ------------------------------------------------------
 
 G.E's order mostly stands. Changes:
@@ -1598,9 +1666,9 @@ G.E's order mostly stands. Changes:
     to NM.2 / NM.6: about half of every appraisal's allocation.
   - Add IN.6 fix 1 and bugs-network F.5 as cheap protection against
     client-triggered world-thread cost.
-  - NT.3's CPU case is weaker than stated (the real managed flush is 3-7x the
-    copy's time, so the prototype's ratios do not transfer); its allocation
-    and retention case is confirmed.
+  - NT.3's CPU case is weaker than stated (the real managed flush is 2-5x the
+    copy's time by user CPU (H.V), so the prototype's ratios do not
+    transfer); its allocation and retention case is confirmed.
   - NT.7 stays last, and needs the clamp to CurrentValue.
 
 NOT VERIFIED in Section H: production rates and object sizes; Windows; the

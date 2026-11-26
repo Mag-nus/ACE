@@ -2494,6 +2494,8 @@ five things:
   5. Ran REAL physics updates end to end on synthetic terrain, which Section Q
      could not do, and compared them with its composed estimates (R.4).
 
+A second review of this section, with its key measurements re-run, is in R.V.
+
 Timings were taken on a shared 4-vCPU VM; use them as ratios within one run.
 Allocation figures are exact. Linux only.
 
@@ -2562,6 +2564,8 @@ R.1  [HIGH at scale] The per-object loop in Landblock.TickPhysics is NOT cold
      A cheaper first step is to measure: count worldObjects against the
      objects that get past the early-outs, per tick, on a live server.
      Confidence: cost VERIFIED (measured); fix PLAUSIBLE.
+     [Second review: the wake-up list above is incomplete, and the leave rule
+     needs to be state-based. See R.V.]
 
 R.2  [HIGH] P.1 measured: the global landblock lock scales NEGATIVELY - and
      P.1's fix as written is unsafe
@@ -2630,6 +2634,8 @@ R.2  [HIGH] P.1 measured: the global landblock lock scales NEGATIVELY - and
      TickPhysicsEfficiencyTracker). Compare it before and after.
      Confidence: measurement VERIFIED; hazard VERIFIED by reading; the safe
      version is PLAUSIBLE (not prototyped in the server).
+     [Second review: GetLandblock is in effect a global mutex, and three
+     read-lock methods can already see a landblock mid-Init. See R.V.]
 
 R.3  PG.1: confirmed, with one extension and one caveat
      - The one-line fix was re-read and re-run: the sphere overload of
@@ -2843,6 +2849,74 @@ SEVERITY LABELS in Section Q rest on assumed object and update counts. R.4
      server.
 
 
+--- R.V SECOND REVIEW OF SECTION R (2026-11-25) --------------------------------
+
+An independent check of Section R: the key benchmarks re-run on the current
+build (Source/ACE.Server/bin/Release/net10.0), the R.4 variants rebuilt from a
+fresh copy of Source/, and the claims re-read against the code.
+
+REPRODUCED
+  - R.1, mixed case: 4.4 / 8.4 / 22.6 / 43.6 ns per object at 1k / 20k / 100k
+    / 300k objects (R.1: 5.0 / 9.1 / 25.1 / 43.0).
+  - R.2, real GetLandblock: 67.3 / 46.1 / 21.7 M calls/s at 1 / 2 / 4 threads
+    (R.2: 67.5 / 41.2 / 28.2). Read lock and lock-free rows also match.
+  - R.4, base against items1to5, scenario a: 4,880 -> 3,728 B and 1.36 ->
+    1.04 us per update_object. Random walk, seed 1, 200,000 updates: 0
+    mismatches. The pc2naive negative control gives 161,621 mismatches, the
+    same count as R.4. The regenerated source.diff files match the committed
+    ones apart from timestamps.
+  - Confirmed by reading:
+      - R.2's publication hazard: landblocks[x,y] is written before PostInit
+        builds land cells, buildings and static objects.
+      - R.2's fast path is equivalent for a loaded landblock: with
+        !loadAdjacents and !permaload, today's code does nothing after the
+        array read.
+      - The R.3 extension: add_cell drops duplicates, and a key that is
+        present means its landblock is loaded, so the skipped Get has no side
+        effect.
+      - The TickRate quirk: 1.0f / 30 rounds to slightly more than 2/60.
+  - The items1to5 diff was read for aliasing outside the harness's coverage:
+      - TargetManager.cs:164 shares the Position object, not its Frame.
+      - SetWalkable copies LocalSpacePos (SpherePath.cs:300).
+      - BackupCheckPos is never aliased.
+      - The CurPos = CheckPos aliases (Transition.cs:941, 964) are the ones
+        PC.2's guards handle.
+    No hazard found.
+
+CORRECTIONS
+R.1  THE WAKE-UP LIST IS INCOMPLETE. UpdateObjectPhysics
+     (WorldObject_Tick.cs:237-288) also gets past its early-outs in ways R.1
+     does not list:
+       - is_active(). TransientStateFlags.Active is set in eight places in
+         PhysicsObj.cs (867, 882, 2447, 2581, 3119, 3215, 3459, 3994). An
+         object that animates while inactive returns false and, under R.1's
+         leave rule, drops out of the set. Nothing brings it back when it is
+         activated.
+       - IsDead is computed (Monster_Combat.cs:74, Health.Current <= 0), so
+         "when a creature starts dying" has no single place to hook.
+       - A monster that falls asleep while animating starts passing the
+         creature test again (Monster_Awareness.cs:55 sets IsAwake = false).
+       - The 5 Hz throttle also returns false. A throttled creature must not
+         leave the set.
+     DESIGN FIX:
+       - Hook the Active flag change inside PhysicsObj (one file), creature
+         death (Creature_Death.cs) and falling asleep.
+       - Make the leave rule depend on state (not animating, not a missile,
+         not dying, InitialUpdates > 1), not on "returned false".
+     The cost figures are unaffected.
+
+R.2  WHY IT SCALES NEGATIVELY. EnterUpgradeableReadLock admits one thread at a
+     time, so GetLandblock is in effect a global mutex across all physics
+     threads, not a shared read. That is why total throughput falls as
+     threads are added.
+     PRECISION: "today no other thread can observe that window" is true for
+     GetLandblock callers, which include all of physics. But IsLoaded,
+     GetLoadedLandblocks and DoEnvironChange (LandblockManager.cs:462, 543,
+     817) take the plain read lock, which coexists with the upgradeable
+     holder, so they can already see a landblock mid-Init. R.2's conclusion
+     is unchanged.
+
+
 --- R.E PRIORITY, REVISED ------------------------------------------------------
 
   1. R.2 + PG.1 (+ the R.3 extension). The safe lock-free fast path and the
@@ -2854,7 +2928,7 @@ SEVERITY LABELS in Section Q rest on assumed object and update counts. R.4
      crowds, and an idle active creature's update drops to 0 B.
   3. R.1. First count objects on a live server; if the count is in the
      hundreds of thousands, the active list is worth more than everything in
-     item 2.
+     item 2. Its wake-up list needs R.V's additions first.
   4. PC.1. The pool: a further -2,464 B per update and x0.82 on top of item 2
      (x0.86 on its own).
   5. PG.7 (40 KB and 6.7 us off every physics Landblock built), then PG.4,

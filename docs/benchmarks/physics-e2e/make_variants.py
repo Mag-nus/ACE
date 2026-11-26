@@ -419,6 +419,14 @@ def run(cmd, **kw):
     return r.returncode, r.stdout
 
 
+def ensure_copy():
+    """Create srcbuild/ (a copy of the repo's Source tree without build output) if it does not exist yet."""
+    if os.path.isdir(COPY_SRC):
+        return
+    shutil.copytree(REPO_SRC, COPY_SRC, ignore=shutil.ignore_patterns("bin", "obj", "TestResults", "*.Tests"))
+    shutil.copyfile(os.path.join(REPO_SRC, "..", "LICENSE"), os.path.join(HERE, "srcbuild", "LICENSE"))
+
+
 def restore():
     for f in FILES:
         shutil.copyfile(os.path.join(REPO_SRC, f), os.path.join(COPY_SRC, f))
@@ -462,6 +470,7 @@ def build(name, edits):
 
 if __name__ == "__main__":
     names = sys.argv[1:] or list(VARIANTS)
+    ensure_copy()
     for n in names:
         build(n, VARIANTS[n])
     restore()
