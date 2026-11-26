@@ -2241,8 +2241,8 @@ namespace ACE.Server.Command.Handlers
         /// <summary>
         /// Outdoor landblocks are loaded this many landblocks apart in X and in Y.
         /// Landblocks closer than LandblockGroup.LandblockGroupMinSpacing (4) join the same landblock group.
-        /// Areas grow while the load test runs (monsters crossing into a neighbour load it and its adjacents, and the test keeps them),
-        /// and at 10 apart they sometimes joined, so this leaves room for that growth.
+        /// Monsters crossing into a neighbour load it and its adjacents. Those are not kept: they go dormant after a minute and unload after five,
+        /// but while loaded they widen the area, so this leaves room between the areas.
         /// </summary>
         private const int LoadTestOutdoorSpacing = 20;
 
@@ -2340,8 +2340,7 @@ namespace ACE.Server.Command.Handlers
                 return;
             }
 
-            // not permaload: LoadTestOn keeps it loaded, and records it so turning the load test off releases it
-            LandblockManager.GetLandblock(pending.Dequeue(), false);
+            LandblockManager.LoadTestPermaload(pending.Dequeue());
 
             if (pending.Count > 0)
                 WorldManager.ActionQueue.EnqueueAction(new ActionEventDelegate(() => LoadTestLoadNext(session, pending)));

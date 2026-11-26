@@ -44,7 +44,7 @@ namespace ACE.Server.Managers
 
         /// <summary>
         /// Landblocks that the load test set to Permaload, so turning it off can release them.
-        /// Added to under the upgradeable read lock (one holder at a time) and cleared under the write lock.
+        /// Changed only under the write lock.
         /// </summary>
         private static readonly HashSet<Landblock> loadTestPermaloadedLandblocks = new HashSet<Landblock>();
 
@@ -520,11 +520,6 @@ namespace ACE.Server.Managers
 
                 if (permaload)
                     landblock.Permaload = true;
-                else if (Program.LoadTestOn && !landblock.Permaload) // Load Test
-                {
-                    landblock.Permaload = true;
-                    loadTestPermaloadedLandblocks.Add(landblock);
-                }
 
                 // load adjacents, if applicable
                 if (loadAdjacents)
@@ -543,6 +538,36 @@ namespace ACE.Server.Managers
             finally
             {
                 landblockLock.ExitUpgradeableReadLock();
+            }
+
+            return landblock;
+        }
+
+        /// <summary>
+        /// Loads a landblock for the load test and keeps it loaded until ReleaseLoadTestPermaloads.
+        /// Only this landblock is kept: neighbours that physics or moving objects load from it go dormant and unload as usual.
+        /// A landblock that is already permaloaded (for example by config) is left as it is and not recorded.
+        /// </summary>
+        public static Landblock LoadTestPermaload(LandblockId landblockId)
+        {
+            var landblock = GetLandblock(landblockId, false);
+
+            landblockLock.EnterWriteLock();
+            try
+            {
+                if (!landblock.Permaload)
+                {
+                    landblock.Permaload = true;
+                    loadTestPermaloadedLandblocks.Add(landblock);
+
+                    // a landblock that was already loaded may be dormant, and only a player wakes a permaloaded landblock.
+                    // isAdjacent: true wakes just this landblock, not its neighbours.
+                    landblock.SetActive(true);
+                }
+            }
+            finally
+            {
+                landblockLock.ExitWriteLock();
             }
 
             return landblock;

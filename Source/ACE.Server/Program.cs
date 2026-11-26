@@ -46,7 +46,7 @@ namespace ACE.Server
 
         /// <summary>
         /// Set by the /loadtest developer command. While true:
-        /// every landblock that is requested stays loaded, creatures treat each other as foes,
+        /// the landblocks the command loads stay loaded, creatures treat each other as foes,
         /// destroyed creatures respawn after 1 second, and log messages that flood under that load are suppressed.
         /// </summary>
         public static bool LoadTestOn;
