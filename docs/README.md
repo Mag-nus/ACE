@@ -78,6 +78,17 @@ It also corrects the fix for `bugs-worldobjects.txt` W.17. Findings it touched c
 FrostfACE (~300 players online) are in `perf-managers.txt` Section G (P.14) and
 `perf-database.txt` Section F (Q.13).
 
+**Measured under load (2026-11-26/27).** Whole-server runs of the `/loadtest` command
+(no players, 8 vCPU Linux VM) are in `perf-physics.txt` Section S:
+- On a populated surface nearly every landblock ends up in one landblock group, so the
+  "multi-threaded" tick runs on about one thread and the server manages 39 updates a
+  second on 1.45 of 8 cores (S.1).
+- When memory gets tight, the GC stops the world for 1.3-3.5 s (S.2).
+- Gen2 carries 1-5.7 GB of free space on top of 6.5-7.5 GB of live objects (S.3).
+- Each young collection pauses for ~25 ms, longer than a 60 Hz tick (S.4).
+
+Bugs seen in those runs: `bugs-command.txt` X.14 and `bugs-managers.txt` M.16.
+
 ---
 
 ## Highest-value fixes
@@ -269,11 +280,18 @@ elsewhere, because a GC pause there stalls the parallel physics tick for every p
 in that group. That is why loot generation matters despite being bursty
 (`perf-factories.txt` Section H closing note), and it is an argument for prioritising
 physics and loot allocations over equally-sized ones on cold paths.
+*[Measured under load, `perf-physics.txt` S.4-S.5: a collection stops every thread at
+once, wherever the allocation that triggered it ran. What a megabyte costs depends on
+the total allocation rate, not on the thread. Loot and physics still matter for their
+volume.]*
 
 ### Confirm before committing effort
 
-None of this is profiled. `dotnet-counters` on `gen-0/1/2-gc-count` and `alloc-rate`
-under a populated load settles the entire ranking above — specifically **whether
+Under the load test (`perf-physics.txt` S.2-S.4, no players) Server GC is on with 8
+heaps, and each young collection stops the world for ~25 ms. Volume does cost: one
+stop per ~530 MB allocated. The rest is not yet profiled.
+`dotnet-counters` on `gen-0/1/2-gc-count` and `alloc-rate`
+under a populated load settles the ranking above — specifically **whether
 promotion is actually occurring**, which is the premise for putting Tier 1 and 2 ahead
 of Tier 3. Also check `GCSettings.IsServerGC`, since Gen1 cost differs sharply between
 configurations. `perf-physics.txt` Section M closes with the full list of what a

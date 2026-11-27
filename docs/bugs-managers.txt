@@ -321,6 +321,27 @@ M.13 ServerPerformanceMonitor.Reset() is a guaranteed no-op
      returns on !IsRunning. A Stop()/Start() cycle therefore carries stale
      statistics forward instead of clearing them.
 
+M.16 Landblock-group log lines print every landblock's type name instead of
+     the group summary  [OBSERVED]
+     LandblockManager.cs:723, 725, 732, 738
+
+     The four "[LANDBLOCK GROUP] TrySplit for / split for old / split and new"
+     calls pass the LandblockGroup itself as a message argument.
+     LandblockGroup overrides ToString ("x: 0x.. - 0x.., y: .., w, h, Count"),
+     which log4net's WarnFormat/DebugFormat used. But LandblockGroup is also
+     IEnumerable<Landblock>, and the Microsoft.Extensions.Logging formatter
+     enumerates IEnumerable arguments and joins the items, so ToString is
+     never called. Landblock has no ToString, so each line is
+     "ACE.Server.Entity.Landblock, " repeated once per landblock. On the
+     outdoor load test (perf-physics.txt S.1) one line was 36 KB, for a group
+     of ~5,000 landblocks. The lines lost the bounds and count they were
+     written to show, and each one enumerates the whole group on the world
+     thread while debug logging is on.
+     Introduced by the ILogger conversion (#4553): before it these were
+     WarnFormat/DebugFormat calls.
+     FIX: pass landblockGroups[i].ToString() (and split.ToString()), or add a
+     Landblock.ToString and keep the enumeration.
+
 
 SECTION D - INVESTIGATED, NOT A BUG
 ================================================================================

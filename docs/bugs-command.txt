@@ -210,6 +210,28 @@ X.9  Shared state mutated from database callback threads, off the world tick
      FIX: marshal the callback body onto an ActionChain or world-thread
      enqueue.
 
+X.14 serverstatus from the console races the landblock tick  [OBSERVED]
+     Entity/Landblock.cs:1029-1034; AdminStatCommands.cs:95, 217, 241
+     GetAllWorldObjectsForDiagnostics() returns worldObjects.Values.ToList().
+     Its comment says the copy avoids cross-thread issues. The copy is itself
+     the cross-thread read: it enumerates the landblock's Dictionary on the
+     Command Manager thread while ProcessPendingWorldObjectAdditionsAndRemovals
+     (Landblock.cs:639, 661) adds and removes entries on the tick thread.
+     Seen on the vm8 load test (perf-physics.txt Section S): the console
+     `serverstatus` failed twice in about 80 calls, with 12,000-60,000
+     creatures loaded and generators respawning:
+         System.IndexOutOfRangeException
+           at Dictionary`2.ValueCollection.CopyTo
+           at List`1..ctor(IEnumerable`1)
+           at AdminStatCommands.HandleServerStatus (line 95)
+     CommandManager catches it, so the effect is a failed command and an
+     error in the log, not a crash. A copy that does not throw can still
+     miscount. In-game invocations are not affected: GameActionTalk runs from
+     NetworkManager.InboundMessageQueue on the world thread, between ticks.
+     FIX: when the session is null (console), run the handler body through
+     WorldManager.EnqueueAction, so it reads between ticks as in-game commands
+     do.
+
 
 SECTION E - LOW SEVERITY / HYGIENE
 ================================================================================
@@ -258,6 +280,7 @@ SECTION G - SUGGESTED PRIORITY
   2. X.3  The same command's shared-weenie mutation.
   3. X.4  Access levels that do not match command power.
   4. X.9  Callback-thread mutation of world state.
+     X.14 Console serverstatus racing the landblock tick (observed under load).
   5. X.5, X.6, X.7, X.8 - the crash cluster. X.7 is notable because the
           empty-string quoting trick generalises across many handlers, so a
           sweep is better than individual fixes.

@@ -934,6 +934,27 @@ Q.4  The line-of-sight object's teardown decrements a cell count it never
      uptime. Its consumers were not audited. The same teardown takes the
      static ObjectMaint write lock (perf-physics.txt PC.13).
 
+Q.5  Some corpses retry a failing fall every update for minutes, and log a
+     warning each time   [OBSERVED under load, cause not traced]
+     PhysicsObj.cs:1692-1711 (UpdateObjectInternal, the CurCell == null branch)
+     When transition() returns a path with no CurCell, the update logs
+     "avoided CurCell=null", resets the origin and zeroes CachedVelocity. The
+     object is not stopped or made to rest, so the next update tries the same
+     fall again. On the dungeon load test (perf-physics.txt Section S) four
+     corpses did this for about 5 minutes each (5:05, 5:04, 5:05, 4:50 from
+     first to last warning), ~23 times a second, ~7,000 warnings apiece:
+         Corpse of Guruk Colossus  0x02750209 [59.97 -140.22 -6.0]  -> z -8.4
+         Corpse of Guruk Colossus  0x02750209 [58.77 -143.23 -6.0]  -> z -8.6
+         Corpse of Guruk Smasher   0x5F4D01E4 [70.94 -157.79 18.0]  -> z 17.4
+         Corpse of Guruk Beast     0x5F4D02E4 [157.14 -118.89 24.0] -> z 23.2
+     Each starts on a whole-number height in a dungeon cell and fails to fall
+     below it. They were 85% of the 32,250 warnings in one 30 min run, and the
+     WARN log grows ~10 MB per 30 minutes. Live creatures hit the same branch
+     in the same cells (Guruk Colossus 557 times, Guruk Titan 1,178) but move
+     on. The CPU cost is small: a few full transitions per second per corpse.
+     Why the transition finds no cell there was not investigated. Reproduce by
+     killing a Guruk at one of these spots.
+
 ================================================================================
 END OF REPORT
 ================================================================================
