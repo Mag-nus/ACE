@@ -58,6 +58,10 @@ N.0c [MEDIUM] TailSize miscalculated for exact multiples of 448 bytes
      boundary. Note the standing TODO at ServerPacket.cs:10 ("I don't know why
      this value is 464") sits on the very constant this overflows.
 
+     FIX: when the remainder is 0 and DataLength > 0, the tail is a full
+     448-byte chunk, so TailSize is 464. Upstream PR #4506 (open as of
+     2026-11-27) contains this exact change, with a test at 448 and 896 bytes.
+
 N.0d [MEDIUM, SECURITY] Anti-speedhack check is fully bypassable by the client
      NetworkSession.cs:623-628
 

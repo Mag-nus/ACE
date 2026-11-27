@@ -254,10 +254,8 @@ ordering.
 - **`perf-network.txt` P.2** is the largest single allocation *rate* found anywhere in
   the audit: `CreateServerFragment` does a full `byte[]` payload copy **per
   recipient** — estimated ~600k `byte[68]`/sec at 100 mutually-visible players, order
-  40 MB/sec. It is pure Gen0, so cheap per byte — **but fix it regardless, because the
-  same line is a genuine data race**: `SendBundle` runs under `Parallel.ForEach` while
-  multiple threads `Seek` the same shared `MemoryStream`. Offset-based fragments
-  remove the race and the copy in one change.
+  40 MB/sec. It is pure Gen0, so cheap per byte. The measured pass found that rate
+  ~12-60x too high for players, and `NT.3` (serialise each packet once) is the fix.
 - **`perf-physics.txt` Section M** — the physics per-frame churn. `M.0` establishes
   there is **not one `struct` in 162 files**; `Position` costs 80 bytes across two
   objects for 32 bytes of data. Do not pick these off individually — the leverage is
@@ -482,9 +480,8 @@ and an adjacent branch doesn't, it's a copy-paste slip, not intent — confirmed
 repeatedly across `bugs-command.txt` and `bugs-managers.txt`.
 
 **Fixes that resolve a bug and a performance problem together.** The physics
-`CellArray` rewrite, DatLoader's `streamMutex` and block walk,
-`UnpackableExtensions`, and the network fragment race (`perf-network.txt` P.2 fixes
-a genuine data race while removing the largest per-recipient allocation). Sequence
+`CellArray` rewrite, DatLoader's `streamMutex` and block walk, and
+`UnpackableExtensions`. Sequence
 these together rather than fixing each twice.
 
 **One bug is currently acting as an optimization.** `bugs-physics.txt` G.13 —

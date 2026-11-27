@@ -325,9 +325,8 @@ E.8  PacketHeader.CalculateHash32 / PacketFragmentHeader.Pack - already
 SECTION F - SUGGESTED PRIORITY
 ================================================================================
   Superseded by the measured priority in G.E; kept for the original reasoning.
-  1. P.2  Offset-based fragments. Fixes a genuine THREAD-SAFETY BUG and removes
-          the largest per-recipient allocation at the same time. Highest value
-          in this document for that reason.
+  1. P.2  Offset-based fragments. Removes the largest per-recipient
+          allocation.
   2. P.1  Share GameMessageCreateObject across observers and cache
           CalculateObjDesc. This is the O(N^2)-on-zone-entry fix.
   3. P.4  Early-return in NetworkSession.Update. Trivial change, removes
@@ -951,6 +950,13 @@ P.2  The allocation is real, but the per-recipient rate was ~12-60x too high
      to 120 s, and it assumes nothing writes to a GameMessage after
      EnqueueSend (not verified). NT.3 avoids both with one copy into the wire
      buffer, a copy that is needed anyway.
+     Upstream PR #4506 (open as of 2026-11-27) takes a third route: one
+     exact-size ToArray() snapshot per GameMessage at NetworkBundle.Enqueue,
+     each fragment a ReadOnlyMemory slice of it. Retention is no worse than
+     today (one exact-size array shared by every recipient's cached packets),
+     and a write after the first enqueue is silently left out of the wire
+     data. It saves N-1 payload copies per N-recipient broadcast; NT.3 still
+     removes more.
 
 P.3  DROP. Hash32 over a 68-byte fragment costs 5.4 ns per recipient. Caching it
      on the shared GameMessage would add cross-thread mutable state for no
