@@ -106,8 +106,8 @@ measured window.
   25  28th 03:51      nx-q5pacsm2-dungeons-1    q5pacsm2 dungeons  done
   26  28th 04:53      nx-q5par2-dungeons-1      q5par2   dungeons  done
   27  28th 05:56      nx-q5par2-dungeons-2      q5par2   dungeons  done
-  28  28th 06:58      nx-q5pacsm2-dungeons-2    q5pacsm2 dungeons  running
-  29  28th ~08:03     nx-q5pacs-dungeons-2      q5pacs   dungeons  queued
+  28  28th 06:58      nx-q5pacsm2-dungeons-2    q5pacsm2 dungeons  done
+  29  28th 08:01      nx-q5pacs-dungeons-2      q5pacs   dungeons  running
   30  28th ~09:06     nx-q5pa-dungeons-2        q5pa     dungeons  queued
   31  28th ~10:09     nx-lbphase-off-1          lbphase  outdoor   queued
   32  28th ~11:12     nx-lbphase-on-1           lbphase  outdoor   queued
@@ -197,6 +197,16 @@ WORK BETWEEN RUNS
           landblock tick on the dungeon load in all four builds
   07:03   done: run 27, in run 28's warm-up. The q5par2 pair averages
           2.1% under q5pa (C.7)
+  07:10   queued queue5 (runs 37-44, C.9): a drift check of base, then
+          the A/B of the two PRs; GC recorder started for its labels
+  08:03   done: run 28, in run 29's warm-up (C.7). Built prmem (PR A on
+          the load-test tree, md5 df559192). A rebuild of base from the
+          same tree gives a1451abf again, byte for byte, so the PR builds
+          differ from base only by their diffs
+  08:05   built prphys (PR B, md5 9571b11d). ACE.Server.Tests: base 16
+          passed, 4 failed (the known Config.js.example / starterGear.json
+          path failures); PR A 19 / 4 (its three VisibleCellMap tests
+          pass); PR B 16 / 4
 
 
 ================================================================================
@@ -410,6 +420,13 @@ C.7  The memory fixes and R.2 on the dungeon load (runs 23-30)
      Memory, allocation and collections as runs 23 and 26 (5.70-5.75 GB
      after each background gen2, peak RSS 10.34 GB, 167 MB/s). Errors:
      the same 11 lines; 8 stuck corpses. Run 30 repeats q5pa.
+     RUN 28 (q5pacsm2 again): the memory result repeats: eleven
+     background gen2s left 2.48-2.57 GB (run 25: 2.50-2.57), peak RSS
+     4.98 GB, memory load 42-44%. 1.370 cores, 2.2% more than run 25;
+     the pair averages 1.355. The second half runs higher so far: run 27
+     was 1.5% over run 26 and run 28 2.2% over run 25, so the pairs, not
+     single runs, carry the comparison. Errors: the same 10 lines; 7
+     stuck corpses.
 
 C.8  Next memory work
      QUEUED: run 36, a diag.sh run of q5pacsm2 (q5pacs + the second memory
@@ -438,7 +455,9 @@ C.9  Drift check and the A/B of the two PRs (runs 37-44)
      that spread, the A/B waits.
      DESIGN: ABCCBA on the dungeon load, 45 min windows: base, prmem,
      prphys, prphys, prmem, base. Both PR builds are the load-test tree
-     plus the PR diff; the load-test harness touches none of the PR files.
+     plus the PR diff (prmem df559192, prphys 9571b11d); the harness
+     touches none of the PR's code. The branches: memory-cellstruct-cache
+     and physics-allocations, off master 65aed571c, in .worktrees/.
      MEASURES: as C.7; the live heap from what survives each background
      gen2. The results go into the PR docs (PR-*.md in the repo root).
 
@@ -603,6 +622,8 @@ D.15 The VM swaps a little when memory load peaks. Per 45 min window, from
          run 27 (q5par2,    1.8 MB out, 8.1 MB in, 7.3 MB of it at 06:40,
           dungeons)         the minute of a status check from the host
                             shell; probe loop 67-75 ms
+         run 28 (q5pacsm2,  nothing out, 0.6 MB in; probe loop 67-75 ms
+          dungeons)
      It is small next to a 12 GB heap, but a compaction that touches
      swapped-out pages has to wait for them. Run 20's compactions (2.3-3.6 s)
      were no longer than the others. Each run's swap is checked from here on.
@@ -622,6 +643,7 @@ lb       = loaded landblocks, window average (surface only)
 
   run                         cores  update  monster  alloc  GC/min  pause  worst   lb
   2026-11-27/28, overnight queue (plan-next.txt), 45 min windows
+  nx-q5pacsm2-dungeons-2      1.370   5.48    13.06    166    25.1   37.4    105
   nx-q5par2-dungeons-2        1.416   5.65    13.41    167    25.2   37.7     92
   nx-q5par2-dungeons-1        1.395   5.56    13.14    168    25.4   37.1     95
   nx-q5pacsm2-dungeons-1      1.340   5.29    12.90    165    25.0   36.5    105
