@@ -139,6 +139,16 @@ O.6  Top-layer queries: no per-tick memo, group-by plus triple OrderByDescending
      (no LINQ, no intermediate list), and make invalidation GRANULAR - only the
      affected StatModKey rather than everything.
 
+     THE HEARTBEAT RUNS THE SAME QUERY. GetEnchantmentsTopLayer
+     (PropertiesEnchantmentRegistryExtensions.cs:141-163) is the unfiltered
+     form, with the same group by and three sorts, and it is never cached.
+     EnchantmentManager.HeartBeat (EnchantmentManager.cs:1222) runs it every
+     5 s for every object that has enchantments.
+     MEASURED (perf-physics.txt S.6, base build, 30 s allocation sample):
+     EnchantmentManager.HeartBeat is 3.9% of everything allocated on the
+     surface load, about 7 MB/s, and 0.4% on the dungeon load. The same
+     single-pass scan fixes it.
+
      NOTE: bugs-entity-shared.txt S.3 reports that this same registry mutates
      under a READ lock during the heartbeat. Fix that first - it is a data race -
      then optimise here.

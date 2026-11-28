@@ -239,8 +239,10 @@ Measure before and after - several are large enough to regress if done wrong.
     (bugs-datloader.txt D.6, the Palette). Audit consumers for writes first.
     [AUDITED 2026-11-25: no post-construction writes to Polygon, Vertex,
      BSPNode or their Spheres in-tree; sharing is safe except against mods.
-     Do perf-physics.txt PG.4 (stop building ~70% of the geometry on the
-     server) first. See perf-physics.txt Q.C.]
+     See perf-physics.txt Q.C.]
+    [MEASURED 2026-11-27: about 140 copies of each cell structure on the
+     dungeon load test, about 2.7 GB of a 5.9 GB live heap. Do this before
+     PG.4. See perf-physics.txt S.7.]
 
 27. Quadratic insertion nesting (O.1).
     Real 3-5x structural multiplier - but it also changes HOW MANY

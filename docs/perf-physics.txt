@@ -2148,8 +2148,10 @@ PG.4 [HIGH memory / GC mark] The server builds and keeps geometry it never
      breaks any mod or other project reading them with Server = true;
      client-emulation projects (Server = false) are unaffected. Load-time
      behaviour is otherwise unchanged.
-     ORDER: do this BEFORE perf-datloader.txt P.4 (CellStruct sharing); after
-     it, sharing only has to amortise the remaining ~26%.
+     ORDER: do this AFTER perf-datloader.txt P.4 (CellStruct sharing). The
+     dungeon load builds about 140 copies of each cell structure (S.7), so
+     sharing removes about 99% of this geometry, and the diet then only
+     shrinks the shared copies.
      Confidence: VERIFIED (grep, and measured on synthetic geometry; real-dat
      ratios not measured).
 
@@ -2925,14 +2927,18 @@ R.2  WHY IT SCALES NEGATIVELY. EnterUpgradeableReadLock admits one thread at a
   2. Q.E items 1-5 as one change: PG.1, PC.7 + PC.8 + PC.11, PG.2, PC.3 stage 0,
      PC.2. The diffs exist, and they are verified identical over 1,000,000
      updates: 24% fewer bytes and x0.77 time on open ground, x0.44-x0.50 in
-     crowds, and an idle active creature's update drops to 0 B.
+     crowds, and an idle active creature's update drops to 0 B. On the whole
+     server: 5.1% fewer cores and 31% less allocation (S.6).
   3. R.1. First count objects on a live server; if the count is in the
      hundreds of thousands, the active list is worth more than everything in
      item 2. Its wake-up list needs R.V's additions first.
   4. PC.1. The pool: a further -2,464 B per update and x0.82 on top of item 2
      (x0.86 on its own).
-  5. PG.7 (40 KB and 6.7 us off every physics Landblock built), then PG.4,
-     PC.12, PG.3 and the rest of Q.E in its order. PC.4 (AFrame struct) last.
+  5. PC.4, AFrame as a struct. Small in the R.4 harness, but on the whole
+     server it took a further 2.3% of the cores and 27% of the allocation
+     off item 4 (S.6).
+  6. PG.7 (40 KB and 6.7 us off every physics Landblock built), then PG.4,
+     PC.12, PG.3 and the rest of Q.E in its order.
 
 NOT VERIFIED in Section R: world-object counts and update mixes on a live
 server; contention under the server's real call pattern (R.2 gives bounds);
@@ -2977,7 +2983,8 @@ SETUP
 
 S.1  [HIGH at scale] On a populated surface the landblock groups merge, and
      the "multi-threaded" tick runs on about one thread
-     Entity/LandblockGroup.cs:37-39, 271-290; Managers/LandblockManager.cs:196-250
+     Entity/LandblockGroup.cs:37-39, 271-290;
+     Managers/LandblockManager.cs:196-250
 
      Landblocks within LandblockGroupMinSpacing (4; 3 when dormant) of any
      landblock in a group join that group, and groups that a new landblock
@@ -3013,9 +3020,9 @@ S.1  [HIGH at scale] On a populated surface the landblock groups merge, and
      at least O(n^2) in the group's size (ShouldBeAddedToThisLandblockGroup
      scans the whole group, inside a goto loop that repeats until nothing
      moves). On the outdoor run the logged calls (over 1 ms, or that split)
-     took 5.5 ms at the median, 139 ms at most and 3.1 s over the hour. Its debug lines print
-     "ACE.Server.Entity.Landblock" once per landblock (36 KB per line),
-     because Landblock does not override ToString.
+     took 5.5 ms at the median, 139 ms at most and 3.1 s over the hour.
+     Its log lines print "ACE.Server.Entity.Landblock" once per landblock
+     (36 KB per line) instead of the group's bounds (bugs-managers.txt M.16).
 
      PRODUCTION RELEVANCE, NOT VERIFIED: FrostfACE loads about 90 landblocks
      with none dormant, so the per-landblock walk costs it ~0.1 ms of a 2.6 ms
@@ -3031,7 +3038,8 @@ S.1  [HIGH at scale] On a populated surface the landblock groups merge, and
      anything that assumes one thread runs a group's landblocks for the whole
      tick has to be found first.
 
-S.2  [HIGH] When memory gets tight, the GC stops the world for 1.3-3.5 s
+S.2  [HIGH] When memory gets tight, the GC stops the world for 1.3-3.5 s,
+     and back-to-back for up to 8 s
      On every outdoor run, background gen2 collections (one every ~2 min)
      swept without compacting, so gen2 free space sawed between ~1 and ~5 GB.
      Once the working set reached 12.4-12.6 GB (MemAvailable ~1.5 GB of
@@ -3042,14 +3050,26 @@ S.2  [HIGH] When memory gets tight, the GC stops the world for 1.3-3.5 s
          base    1  (3.46 s)                                         3.50 s
          pg1     2  (2.91, 3.19 s)                                   3.60 s
          pg1r2   5  (3.34, 2.43, 2.30, 1.33, 1.40 s)                 3.79 s
+         base p2 3  (3.42, 3.13, 3.53 s)                             3.91 s
      (worst tick = the longest UpdateGameWorld_Entire in serverperformance.)
      The dungeon load (10.9 GB committed, ~3 GB available) never compacted:
      worst 5 s GC pause 0.15-0.20 s, worst tick 0.09-0.32 s.
-     A player would see the world freeze for up to 3.5 s, up to five times in
-     45 minutes. No GC setting causes this: it is the default configuration on
-     a 16 GB machine with this heap. The lever is the gen2 free space and the
-     live heap (S.3). Changing GC settings is left until the code-level memory
-     work is done.
+     BACK TO BACK: the pass 2 pg1r2 surface run (2026-11-27) loaded more of
+     the map (6,681 landblocks and 64,000 creatures on average, against
+     about 6,100 and 59,000-61,000 in pass 1). Its working set reached
+     12.8-13.3 GB, and the compacting gen2s came in runs:
+         15:31:50-15:32:05   3 blocking gen2s   5.65 s of pause in 10 s
+         15:44:33-15:45:02   5 blocking gen2s   8.26 s of pause in 15 s
+         15:50:55            1                  3.20 s
+         15:54:55-15:55:13   3                  6.10 s of pause in 10 s
+     Its longest world update was 10.9 s.
+     The pass 2 base run loaded 6,378 landblocks on average and peaked at a
+     12.8 GB working set; its three compactions came singly.
+     A player would see the world freeze for 3.5 s, or for up to 8 s when
+     the compactions chain, several times in 45 minutes. No GC setting causes
+     this: it is the default configuration on a 16 GB machine with this heap.
+     The lever is the gen2 free space and the live heap (S.3). Changing GC
+     settings is left until the code-level memory work is done.
      With DATAS turned off (DOTNET_GCDynamicAdaptationMode=0) the outdoor run
      reached 13.46 GB RSS and was stopped before it could run out of memory.
 
@@ -3071,24 +3091,89 @@ S.3  [HIGH] The memory is the GC heap, and up to half of gen2 is free space
      (perf-managers.txt Section G), though most of its live heap is spellbooks,
      which this load does not create.
 
-S.4  [MEDIUM] Each young collection pauses the world for ~25 ms, longer than
-     a tick
+S.4  [HIGH] Each young collection pauses the world for ~25 ms, longer than
+     a tick, and most of it is spent on objects that old objects point to
      Mean pause per collection (pause time / collection count, all
      generations): 25.1-25.4 ms on the base, pg1 and pg1r2 dungeon runs,
-     27.6 ms on the base outdoor run. FrostfACE averages 23-28.6 ms. At 60 Hz a tick is 16.7 ms, so
-     every young GC costs about one tick: on the dungeon load that is 0.85
-     GCs per second, and on FrostfACE one every ~1.8 s.
+     27.6 ms on the base outdoor run. FrostfACE averages 23-28.6 ms. At 60 Hz
+     a tick is 16.7 ms, so every young GC costs about one tick: on the
+     dungeon load that is 0.85 GCs per second, and on FrostfACE one every
+     ~1.8 s.
      This qualifies README.md's "Where to reduce GC pressure", which treats
      short-lived garbage as nearly free. DATAS held the gen0 budget at about
-     530 MB per collection on the dungeon load, so each ~530 MB allocated
-     costs one ~25 ms stop. Short-lived garbage is cheap per byte but not per
-     collection.
-     Where the 25 ms goes is NOT MEASURED. FrostfACE promotes only ~5 MB per
-     young GC, so copying survivors is unlikely to be most of it. Scanning
-     gen2-to-gen0 references (card marking) across a 10 GB gen2 is the
-     candidate. That would make struct conversions (PC.4, M.4) worth more
-     than their byte counts. A GC trace (GCMarkWithType events) would settle
-     it.
+     530 MB per collection on the dungeon load (about 67 MB on each of 8
+     heaps), so each ~530 MB allocated costs one ~25 ms stop. Short-lived
+     garbage is cheap per byte but not per collection.
+
+     WHERE THE PAUSE GOES. GC events in the 1 min trace after each window,
+     split per heap by the GCMarkWithType events (8 heaps; the trace also
+     samples threads, which may add a little to every figure):
+                                     dungeons, base          surface, base
+                                     gen0 (36)   gen1 (14)   gen0 (19)  gen1 (9)
+         pause                       22.2 ms     32.5 ms     39.0 ms    75.9 ms
+         suspending threads           0.03        0.04        0.01       0.02
+         mark from stacks             0.35        0.32        0.33       0.42
+         mark from old objects        8.2        10.2        13.2       20.1
+           (card marking)
+         mark from other roots        0.24        0.15        0.58       0.84
+         plan, relocate, compact     12.9        21.3        24.4       54.1
+         survivors, all heaps        21.4 MB     43.9 MB     69 MB     182 MB
+                                                 into gen2             into gen2
+     Nearly every surviving byte is reached through a card (dungeons, gen0:
+     21.3 of 21.4 MB), from an old object, not from a thread's stack. So the
+     survivors are objects that long-lived objects hold in their fields for
+     longer than one GC interval (~1.2 s), and the pause is spent finding
+     them (cards) and moving them (relocate, compact). Stacks and handles cost
+     almost nothing.
+     The same survivors build gen2's free space. Gen1 collections promote
+     ~10 MB/s into gen2 on the dungeon load (14 x 43.9 MB a minute) and
+     ~27 MB/s on the surface (9 x 182 MB). Gen2's size stays roughly level,
+     so about as much dies in gen2, and background GCs sweep it without
+     compacting: the 1-5.7 GB of free space (S.3) and, when memory runs out,
+     the blocking compactions (S.2).
+     CONSEQUENCES:
+       - Cutting allocation volume cuts the NUMBER of pauses, not their
+         length. Under DATAS it makes each one LONGER, because DATAS then
+         runs fewer GC heaps (S.6).
+       - The pause length and the gen2 churn come from objects that live a few
+         seconds in a field of a long-lived object. Value types held by
+         world and physics objects (Position, AFrame: PC.4, M.4) and
+         per-object collections that are replaced instead of reused are the
+         candidates.
+     ON THE SURFACE THE BASE BUILD COLLECTS THREE TIMES AS OFTEN. Bytes
+     allocated per collection, in 3 min steps over each 45 min window:
+         dungeons, every build          about 530 MB throughout
+         surface, pg1 and pg1r2         500-537 MB throughout (3 runs), at
+                                        working sets up to 13.45 GB
+         surface, base                  160 MB for most of the window
+                                        (2 runs); 450-530 MB for a few
+                                        minutes after each blocking gen2
+     The GC's own events (GCGlobalHeapHistory, in the traces after each
+     window) show the gen0 budget it set for each heap. It takes three
+     values. 67.1 MB in all six traces checked: three dungeon runs, two
+     PG.1 surface runs, and pass 1 base's surface trace, which fell in one
+     of its ~500 MB stretches. 40.4 MB and 20.2-20.9 MB in pass 2 base's
+     surface traces (8 x 20 MB is the 160 MB above). Memory load was 71-87%
+     in all of them, and every surface trace shows 8 heaps, so neither
+     memory pressure nor DATAS's heap count sets it.
+     Allocation is about the same (243-254 MB/s against
+     260-280), so base runs 62-76 collections a minute against 30-32, each
+     about half as long (28-34 ms against 56-70 ms), and the total pause is
+     about the same (3.5% of the time against 3.7%). The cause is not
+     found.
+     So on the surface, compare builds by total pause and by the worst
+     pauses, not by collection count or pause per collection. The surface
+     runs queued for 2026-11-27/28 (loadtest-plan.txt C.6) run base and q5pa,
+     which contains PG.1, twice each.
+     GC THREADS' SHARE OF THE CPU: a 60 s perf profile of the base dungeon
+     load (16 min in, before the first heap dump) puts 10.6% of the
+     process's on-CPU samples on the ".NET Server GC" threads, about 0.17 of
+     its 1.6 cores. World threads are 69.6%, the World Manager thread 19.6%.
+     Not counted there: allocation helpers and write barriers on the world
+     threads themselves (libcoreclr is 18.3% of samples, unsymbolised).
+     NOT YET MEASURED: which types make up the ~10 MB/s promoted into gen2
+     and later freed. The heap dumps (S.7) show what stays live, not what
+     passes through.
 
 S.5  [LOW, calibration] "[PERFORMANCE][PHYSICS] ... took N ms to process
      UpdateObjectPhysics()" lines under load are GC pauses, not slow physics
@@ -3102,6 +3187,185 @@ S.5  [LOW, calibration] "[PERFORMANCE][PHYSICS] ... took N ms to process
      Sacrificial Edge (953 lines) and spell projectiles (Flame Bolt 168,
      Lightning Bolt 101, ...).
      Exclude GC pauses before using these lines to find slow objects.
+
+
+S.6  [HIGH] The physics fixes on the whole server: 10% fewer cores and 63%
+     less allocation
+     Builds, each verified identical to base on single objects in R.4:
+       q5    Q.E items 1-5 (PG.1, PC.7, PC.8, PC.11, PG.2, PC.3 stage 0,
+             guarded PC.2), plus the F.11 transit-cell sphere fix
+       q5p   q5 + PC.1, a per-thread Transition pool
+       q5pa  q5p + PC.4, AFrame as a struct
+     Dungeon load, 30 min windows, in ABBA order (base, q5, q5p, q5pa, q5pa,
+     q5p, q5, base) from 07:42 to 13:58 on 2026-11-27, so drift over the day
+     cancels. Each figure is the mean of the two runs of that build.
+                             base     q5       q5p      q5pa
+         process cores       1.618    1.536    1.485    1.451
+                                      -5.1%    -8.2%    -10.4%
+         world update        6.14     5.91     5.81     5.70  ms
+         Monster_Tick, sum   15.28    14.37    13.98    13.78 ms per tick
+         allocation          450      309      228      166   MB/s
+                                      -31%     -49%     -63%
+         collections         1,517    1,046    784      725   per 30 min
+         GC heaps (DATAS)    8        7-8      7-8      6
+         pause per GC        25.4     27.9     32.3     37.1  ms
+         total pause         38.5     29.2     25.3     26.9  s per 30 min
+         into gen2           10.1     9.3      7.4      6.3   MB/s
+         worst 5 s of pause  182      164      160      138   ms
+     Both halves of the ABBA agree: cores -5.2 / -5.0% (q5), -7.8 / -8.7%
+     (q5p), -9.8 / -10.9% (q5pa). Each step beats the ~1% noise in both
+     halves: PC.1 takes -2.8 / -3.8% off q5, and PC.4 takes -2.2 / -2.5% off
+     q5p. No build logged an error or warning type that base did not.
+
+     PC.4 IS WORTH MORE THAN R.4 SHOWED. In the single-object harness the
+     AFrame struct took only 200-300 B per update off q5p. On the whole server
+     it took 62 MB/s off q5p (27% of its allocation) and 2.3% of the cores.
+     The harness does not run animation (Sequence, PartArray) or the
+     WorldObject side, which also create AFrames. R.E's order is revised
+     below.
+
+     DATAS SPENDS PART OF THE GAIN ON FEWER GC HEAPS. Each heap gets a gen0
+     budget of about 70 MB (533 MB per collection on base's 8 heaps, 411 MB
+     on q5pa's 6), and DATAS runs fewer heaps when collections cost less.
+     That has three effects:
+       - collections fall less than allocation (-52% against -63%), because
+         the total budget shrinks with the heap count;
+       - each pause gets longer, because the same work is split over fewer
+         GC threads. Card marking costs 66-76 heap-ms per gen0 collection in
+         every build: 8.3 ms on each of 8 heaps, 12.4 ms on each of 6. The
+         mean gen0 pause rises from 22.6 to 33.1 ms, and gen1 from 33.3 to
+         51.1 ms (59 ms at most, three and a half ticks);
+       - total pause stops falling after q5p.
+     Fewer heaps also means fewer GC threads busy during each collection,
+     which is part of the CPU saving.
+     What goes into gen2 still falls by a third. That intake becomes gen2's
+     free space and, on the surface, the blocking compactions (S.2, S.3).
+     A floor on the heap count is a GC setting. It belongs to the GC-setting
+     phase, after the code-level memory work.
+
+     WHAT BASE ALLOCATES. 30 s allocation samples after the window (the
+     runtime's sampled allocation events, attributed by type and by ACE frame
+     on the stack), base build:
+                                                 dungeons       surface
+         estimated allocation                    470 MB/s       184 MB/s
+         under PhysicsObj.update_object          82%            55%
+         AFrame / Sphere / Position              28 / 17 / 12%  24 / 5 / 9%
+         boxed ObjCell enumerator (CheckOtherCells)  6%         5%
+         creature spawns (Generator_Generate)    1.5%           8.1%
+         landblock loads (Landblock.Init)        ~0             2.5%
+         enchantment heartbeat                   0.4%           3.9%
+     So on the surface the physics fixes reach about half of what is
+     allocated, against four fifths on the dungeon load. The enchantment
+     heartbeat is perf-worldobjects.txt O.6.
+
+     LIMITS: one load (dungeons, no players). Heap counts, the card-marking
+     split and gen2 intake come from the 1 min trace after each window, not
+     the whole window. The per-tick timers include any GC pause that lands
+     inside them, so part of the world update and Monster_Tick drop is the
+     smaller total pause. q5pa against base on the surface is queued
+     (loadtest-plan.txt C.6).
+
+
+S.7  [HIGH memory] Nearly half the live heap on the dungeon load is copies
+     of the same cell geometry
+     Base build, dungeon load, one 60 min diagnostic run (loadtest-plan.txt
+     C.2): a forced compacting full GC at 15, 20, 30, 40, 50 and 60 min, heap
+     dumps right after the ones at 20 and 60 min, and one pass over the first
+     dump that records which type references which.
+     LIVE HEAP after each forced GC: 5.75, 5.78, 5.86, 5.94, 5.93, 5.93 GB.
+     It is flat from 40 min on, and the only steady growth is the GUID queue
+     below. Between the forced GCs, background GCs leave 2.7-3.2 GB of free
+     space, so the heap reads 8.6-9.1 GB.
+     (The dumps hold 6.32-6.48 GB because they include objects allocated in
+     the seconds between the GC and the dump. Counts of the long-lived types
+     below are exact.)
+
+     WHAT HOLDS IT, first dump (MB):
+         EnvCell geometry, one CellStruct copy per EnvCell        ~2,700
+           Vertex 1,044, Polygon 494, Vertex[] 319, List<Vertex> 180,
+           BSPNode 250, BSPLeaf 112, polygon dictionaries 154,
+           List<Polygon> and Polygon[] 132, BSP node spheres 96
+         EnvCell.VisibleCells dictionaries                          391
+           (plus their bucket arrays)
+         EnchantmentManagerWithCaching and its 12 dictionaries      181
+         ObjectMaint's 5 dictionaries per PhysicsObj                100
+         GUID recycle queue (first dump / second dump)          57 / 154
+         spellbooks (Dictionary<int, float>)                         87
+     The rest is per-object state: property dictionaries of each Biota and
+     Weenie, physics parts and their poses (PC.4 makes the AFrames structs),
+     and the dat file index.
+
+     THE GEOMETRY. Each physics EnvCell builds its own CellStruct from the dat
+     environment (EnvCell.cs:72), and PolygonCache, VertexCache and BSPCache
+     are all disabled (perf-datloader.txt P.4, PG.4, PG.5). The dump measures
+     the result:
+         physics CellStructs   134,117   from   958 dat CellStructs
+                                                 (332 Environments)
+         physics Polygons    5,618,716   from   173,333 dat Polygons
+         Vertex objects     21,757,377   from   122,109 dat vertices
+     That is about 140 copies of each cell structure. A cache keyed by
+     (EnvironmentID, CellStructureID), as P.4 proposes, removes about 99% of
+     it: roughly 2.7 GB, close to half the live heap. It also leaves the GC
+     about 40 million fewer objects to mark on every full collection.
+     Sharing is safe in-tree: nothing writes to these objects after
+     construction (Q.C, PG.5). The only assignments to EnvCell.CellStructure
+     are EnvCell.cs:72 and the empty one in EnvCell.Init (:231).
+     ORDER: with 140 copies per structure, P.4 comes before PG.4. PG.4's
+     diet then only shrinks the 958 shared copies, a few MB.
+     Built as variant q5pacs (q5pa plus the cache: a ConcurrentDictionary in
+     a new Physics/Entity/CellStructCache.cs, following GfxObjCache, and a
+     one-line change at EnvCell.cs:72). Its A/B on the surface and the
+     dungeon load is queued (loadtest-plan.txt C.6, C.7).
+
+     NEW, VisibleCells. Each EnvCell keeps a Dictionary<uint, EnvCell> of the
+     cells it can see (EnvCell.cs:115-126): 10.3 million entries in 133,099
+     dictionaries, about 77 per cell, 380 MB of entry arrays plus buckets.
+     The keys are the low 16 bits of cell IDs in the same landblock, and
+     EnvCell already holds the same IDs in VisibleCellIDs (:29, :60).
+     FIX: two arrays in the dat's order, an EnvCell[] and a uint[] of keys,
+     with lookups (GetVisible, IsVisibleIndoors) by a vectorised
+     Array.IndexOf. That is about 1 KB for 77 cells instead of about 3.4 KB,
+     ~0.3 GB on this load. Add and Remove are only reached from code that is
+     commented out (Landblock.cs:430, 566). The readers that iterate .Values
+     are EnvCell.cs:201, 409, ObjectMaint.cs:373, BuildingObj.cs:96 and
+     ObjCell.cs:400, and dat order is the order a Dictionary filled from that
+     list gives today.
+     Also, the duplicate guard at EnvCell.cs:122 tests the full cell ID
+     against keys that are only its low 16 bits, so it never fires. A
+     repeated ID in a dat list would throw at the Add on :124.
+
+     NEW, GUID recycle queue. Managers/GuidManager.cs:127-129, 208, 296.
+     Every destroyed dynamic object enqueues a Tuple<DateTime, uint> (a 32 B
+     object plus an 8 B slot) that waits recycleTime, 6 hours, before reuse.
+     The load destroys about 1,050 objects a second (corpses, projectiles,
+     loot), so the queue grew from 1.24 to 3.77 million entries between the
+     dumps. At 6 hours it would hold about 23 million entries: 0.9 GB of
+     tuples plus a 268 MB array, all of it in gen2. The comment at :118
+     estimates 10 million GUIDs a day on a 500-player shard: about 2.5 million
+     entries, 100 MB, at 6 hours.
+     FIX: a struct entry. Queue<(DateTime, uint)> keeps the code as it is at
+     16 B per entry, with no object per entry and nothing in the array for
+     the GC to trace; (uint guid, uint enqueuedSeconds) would be 8 B. The
+     order and timing stay the same.
+
+     NEW, eager caches per WorldObject. Every WorldObject creates an
+     EnchantmentManagerWithCaching (WorldObject.cs:252), and each creates 12
+     cache dictionaries up front (EnchantmentManagerWithCaching.cs:206-555).
+     The dump has 161,238 of them, mostly on items, corpses and projectiles
+     that never carry an enchantment: 1.77 million dictionaries (142 MB), of
+     which about 150,000 hold an entry. ObjectMaint likewise creates 5
+     dictionaries per PhysicsObj (ObjectMaint.cs:46-80).
+     FIX: create each dictionary on first write. Readers treat null as empty.
+     About 130 MB on this load.
+     VisibleCellMap, the value-tuple queue and the lazy caches are built
+     together as variant q5pacsm2, on top of q5pacs. VisibleCellMap matched
+     Dictionary<uint, EnvCell> in 2,000 random trials. Queued in
+     loadtest-plan.txt C.7.
+
+     LIMITS: one load, no players (P.14's character biotas and spellbooks are
+     not in it). The surface load was not dumped. It holds fewer EnvCells per
+     landblock but far more landblocks, so the queued surface A/B of q5pacs
+     measures it directly.
 
 
 ================================================================================

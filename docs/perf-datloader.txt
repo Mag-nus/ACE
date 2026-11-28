@@ -99,6 +99,11 @@ P.4  Derived physics geometry cached at the wrong granularity
      geometry is rebuilt hundreds of times per dungeon - and again after every
      landblock unload/reload cycle.
 
+     MEASURED (2026-11-27, heap dump of the dungeon load test,
+     perf-physics.txt S.7): 134,117 physics CellStructs built from 958
+     distinct dat CellStructs, about 140 copies of each. The copies are
+     about 2.7 GB of a 5.9 GB live heap.
+
      FIX: a ConcurrentDictionary<(uint envId, ushort cellStructId), CellStruct>.
      Alternatively, enable the two existing caches - though they are disabled,
      so first confirm why.
