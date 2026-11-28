@@ -105,8 +105,8 @@ measured window.
   24  28th 02:48      nx-q5pacs-dungeons-1      q5pacs   dungeons  done
   25  28th 03:51      nx-q5pacsm2-dungeons-1    q5pacsm2 dungeons  done
   26  28th 04:53      nx-q5par2-dungeons-1      q5par2   dungeons  done
-  27  28th 05:56      nx-q5par2-dungeons-2      q5par2   dungeons  running
-  28  28th ~07:00     nx-q5pacsm2-dungeons-2    q5pacsm2 dungeons  queued
+  27  28th 05:56      nx-q5par2-dungeons-2      q5par2   dungeons  done
+  28  28th 06:58      nx-q5pacsm2-dungeons-2    q5pacsm2 dungeons  running
   29  28th ~08:03     nx-q5pacs-dungeons-2      q5pacs   dungeons  queued
   30  28th ~09:06     nx-q5pa-dungeons-2        q5pa     dungeons  queued
   31  28th ~10:09     nx-lbphase-off-1          lbphase  outdoor   queued
@@ -115,7 +115,16 @@ measured window.
   34  28th ~13:18     nx-lbphase-off-2          lbphase  outdoor   queued
   35  28th ~14:21     nx-lbphase-on-dungeons    lbphase  dungeons  queued
   36  28th ~15:25     diag-q5pacsm2-dungeons    q5pacsm2 dungeons  queued
-                      (queue ends 28th ~16:32)
+  --- queue5: plan-pr.txt, after queue4, editable until it starts ---------
+  37  28th ~16:33     dr-base-dungeons-1        base     dungeons  queued
+  38  28th ~17:36     dr-base-dungeons-2        base     dungeons  queued
+  39  28th ~18:39     pr-base-1                 base     dungeons  queued
+  40  28th ~19:42     pr-mem-1                  prmem    dungeons  queued
+  41  28th ~20:45     pr-phys-1                 prphys   dungeons  queued
+  42  28th ~21:48     pr-phys-2                 prphys   dungeons  queued
+  43  28th ~22:51     pr-mem-2                  prmem    dungeons  queued
+  44  28th ~23:54     pr-base-2                 base     dungeons  queued
+                      (queue ends 29th ~00:57)
 
 WORK BETWEEN RUNS
   10:06   done: GC pause breakdown from the existing CPU traces (C.4), in the
@@ -186,6 +195,8 @@ WORK BETWEEN RUNS
   06:00   done: run 26, in run 27's warm-up. q5par2 2.8% under q5pa;
           shadow-list teardown (perf-physics.txt P.4) is 10-11% of the
           landblock tick on the dungeon load in all four builds
+  07:03   done: run 27, in run 28's warm-up. The q5par2 pair averages
+          2.1% under q5pa (C.7)
 
 
 ================================================================================
@@ -392,6 +403,13 @@ C.7  The memory fixes and R.2 on the dungeon load (runs 23-30)
      corpses, the most of any dungeon run (3-10 before), but at the same
      Q.5 spots: 7 of them in one cell, 0x5F4D01E4, where base and pg1r2
      runs also trap corpses.
+     RUN 27 (q5par2 again): 1.416 cores, 1.5% more than run 26. The pair
+     averages 1.406, 2.1% under run 23's q5pa. World update 5.65 ms, the
+     same as run 23; Monster_Tick 13.41. Lock spinning stays low: 2.35%
+     of the trace samples, against 2.15% in run 26 and 6.54% on q5pa.
+     Memory, allocation and collections as runs 23 and 26 (5.70-5.75 GB
+     after each background gen2, peak RSS 10.34 GB, 167 MB/s). Errors:
+     the same 11 lines; 8 stuck corpses. Run 30 repeats q5pa.
 
 C.8  Next memory work
      QUEUED: run 36, a diag.sh run of q5pacsm2 (q5pacs + the second memory
@@ -408,6 +426,21 @@ C.8  Next memory work
      - GC settings (DATAS off, GCConserveMemory, a floor on the DATAS heap
        count from D.10), only after the code-level memory work, judged on
        worst pause and worst tick, not averages.
+
+C.9  Drift check and the A/B of the two PRs (runs 37-44)
+     QUESTION: what does each PR, built on master, save against master?
+     PR A (memory): the CellStruct cache, VisibleCellMap, the GUID queue as
+     value tuples and the enchantment caches created on first use (q5pacs +
+     m2 without q5pa). PR B (physics): the q5pa set.
+     DRIFT CHECK FIRST (runs 37-38): two runs of the same base binary
+     (a1451abf) as p1-base-dungeons, ab-base-1/2 and p2-base-dungeons, which
+     read 1.600-1.630 cores on 2026-11-26/27. If the VM has drifted beyond
+     that spread, the A/B waits.
+     DESIGN: ABCCBA on the dungeon load, 45 min windows: base, prmem,
+     prphys, prphys, prmem, base. Both PR builds are the load-test tree
+     plus the PR diff; the load-test harness touches none of the PR files.
+     MEASURES: as C.7; the live heap from what survives each background
+     gen2. The results go into the PR docs (PR-*.md in the repo root).
 
 
 ================================================================================
@@ -567,6 +600,9 @@ D.15 The VM swaps a little when memory load peaks. Per 45 min window, from
           dungeons)
          run 26 (q5par2,    48 KB out, 0.1 MB in; probe loop 67-80 ms
           dungeons)
+         run 27 (q5par2,    1.8 MB out, 8.1 MB in, 7.3 MB of it at 06:40,
+          dungeons)         the minute of a status check from the host
+                            shell; probe loop 67-75 ms
      It is small next to a 12 GB heap, but a compaction that touches
      swapped-out pages has to wait for them. Run 20's compactions (2.3-3.6 s)
      were no longer than the others. Each run's swap is checked from here on.
@@ -586,6 +622,7 @@ lb       = loaded landblocks, window average (surface only)
 
   run                         cores  update  monster  alloc  GC/min  pause  worst   lb
   2026-11-27/28, overnight queue (plan-next.txt), 45 min windows
+  nx-q5par2-dungeons-2        1.416   5.65    13.41    167    25.2   37.7     92
   nx-q5par2-dungeons-1        1.395   5.56    13.14    168    25.4   37.1     95
   nx-q5pacsm2-dungeons-1      1.340   5.29    12.90    165    25.0   36.5    105
   nx-q5pacs-dungeons-1        1.371   5.42    13.14    166    25.2   36.7     99
