@@ -92,28 +92,28 @@ measured window.
   13  27th 16:04      p2-base-outdoor           base     outdoor   done
   14  27th 17:07      p2-pg1r2-dungeons         pg1r2    dungeons  done
   15  -               p2-pg1-dungeons           pg1      dungeons  skipped
-  16  27th 18:09      p2-base-dungeons          base     dungeons  running
+  16  27th 18:09      p2-base-dungeons          base     dungeons  done
   --- queue3: plan-next.txt, editable until it starts (~19:15) -------------
-  17  ~19:15          nx-base-outdoor-1         base     outdoor   queued
-  18  ~20:18          nx-q5pa-outdoor-1         q5pa     outdoor   queued
-  19  ~21:21          nx-q5pacs-outdoor-1       q5pacs   outdoor   queued
-  20  ~22:24          nx-q5pacs-outdoor-2       q5pacs   outdoor   queued
-  21  ~23:27          nx-q5pa-outdoor-2         q5pa     outdoor   queued
-  22  28th ~00:30     nx-base-outdoor-2         base     outdoor   queued
-  23  28th ~01:33     nx-q5pa-dungeons-1        q5pa     dungeons  queued
-  24  28th ~02:36     nx-q5pacs-dungeons-1      q5pacs   dungeons  queued
-  25  28th ~03:39     nx-q5pacsm2-dungeons-1    q5pacsm2 dungeons  queued
-  26  28th ~04:42     nx-q5par2-dungeons-1      q5par2   dungeons  queued
-  27  28th ~05:45     nx-q5par2-dungeons-2      q5par2   dungeons  queued
-  28  28th ~06:48     nx-q5pacsm2-dungeons-2    q5pacsm2 dungeons  queued
-  29  28th ~07:51     nx-q5pacs-dungeons-2      q5pacs   dungeons  queued
-  30  28th ~08:54     nx-q5pa-dungeons-2        q5pa     dungeons  queued
-  31  28th ~09:57     nx-lbphase-off-1          lbphase  outdoor   queued
-  32  28th ~11:00     nx-lbphase-on-1           lbphase  outdoor   queued
-  33  28th ~12:03     nx-lbphase-on-2           lbphase  outdoor   queued
-  34  28th ~13:06     nx-lbphase-off-2          lbphase  outdoor   queued
-  35  28th ~14:09     nx-lbphase-on-dungeons    lbphase  dungeons  queued
-                      (queue ends 28th ~15:10)
+  17  27th 19:13      nx-base-outdoor-1         base     outdoor   done
+  18  27th 20:16      nx-q5pa-outdoor-1         q5pa     outdoor   done
+  19  27th 21:36      nx-q5pacs-outdoor-1       q5pacs   outdoor   running
+  20  ~22:39          nx-q5pacs-outdoor-2       q5pacs   outdoor   queued
+  21  ~23:42          nx-q5pa-outdoor-2         q5pa     outdoor   queued
+  22  28th ~00:45     nx-base-outdoor-2         base     outdoor   queued
+  23  28th ~01:48     nx-q5pa-dungeons-1        q5pa     dungeons  queued
+  24  28th ~02:51     nx-q5pacs-dungeons-1      q5pacs   dungeons  queued
+  25  28th ~03:54     nx-q5pacsm2-dungeons-1    q5pacsm2 dungeons  queued
+  26  28th ~04:57     nx-q5par2-dungeons-1      q5par2   dungeons  queued
+  27  28th ~06:00     nx-q5par2-dungeons-2      q5par2   dungeons  queued
+  28  28th ~07:03     nx-q5pacsm2-dungeons-2    q5pacsm2 dungeons  queued
+  29  28th ~08:06     nx-q5pacs-dungeons-2      q5pacs   dungeons  queued
+  30  28th ~09:09     nx-q5pa-dungeons-2        q5pa     dungeons  queued
+  31  28th ~10:12     nx-lbphase-off-1          lbphase  outdoor   queued
+  32  28th ~11:15     nx-lbphase-on-1           lbphase  outdoor   queued
+  33  28th ~12:18     nx-lbphase-on-2           lbphase  outdoor   queued
+  34  28th ~13:21     nx-lbphase-off-2          lbphase  outdoor   queued
+  35  28th ~14:24     nx-lbphase-on-dungeons    lbphase  dungeons  queued
+                      (queue ends 28th ~15:27)
 
 WORK BETWEEN RUNS
   10:06   done: GC pause breakdown from the existing CPU traces (C.4), in the
@@ -144,6 +144,15 @@ WORK BETWEEN RUNS
   17:08   done: first surface allocation trace (run 13, base) and GC
           intervals of all five 45 min surface runs, in run 14's warm-up
           (D.12, D.13)
+  20:17   started a speed probe (scripts/probe.py -> runs/probe.log): every
+          minute it times a fixed 2,000,000-step loop and logs swap-in/out
+          pages, because run 17 ran 1.5x slower in every phase (D.14)
+  21:20   done: runs 17-18, GC and CPU profiles of runs 13 and 18, in run
+          19's warm-up. The probe was steady through run 18, so the
+          slowdown is the load (D.14)
+  21:28   the host crashed in run 19's warm-up. Nothing measured was lost.
+          Builds checked by md5, the partial run set aside (-crashed), and
+          the queue restarted at 21:35 from run 19; times below move 17 min
 
 
 ================================================================================
@@ -190,8 +199,13 @@ C.3  Replicate pass 1 (runs 11-16)
      q5, which C.1 measured, and their two hours went to the memory test.
      SURFACE RESULT (runs 11 and 13 against pass 1): no difference beyond the
      load's variation. Cores per 1,000 loaded landblocks: base 0.240 and
-     0.246; pg1 0.207; pg1r2 0.253 and 0.241. The dungeon runs (14, 16)
-     decide R.2.
+     0.246; pg1 0.207; pg1r2 0.253 and 0.241.
+     DUNGEON RESULT (runs 14 and 16): R.2 replicates. pg1r2 against base,
+     cores -3.4% in pass 1 (1.546 / 1.600) and -2.8% in pass 2 (1.582 /
+     1.627); Monster_Tick -5.9% and -3.9%; world update -2.7% and -1.9%.
+     PG.1 alone was -0.6% in pass 1, so most of it is R.2. Allocation and
+     GC are the same in all four runs. Run 26-27 (q5par2) test it on top
+     of q5pa.
 
 C.4  Why each young GC stops the world for ~25 ms (analysis only)
      From the GC events already in each run's CPU trace: suspension, mark time
@@ -284,9 +298,9 @@ D.6  DATAS off, dungeon load: 7% more cores, three times the collections,
      3.8% of the time paused instead of 2.2%. On the surface it reached
      13.46 GB and was stopped short of running out of memory. DATAS stays on
      until the GC-setting phase.
-D.7  Pass 1, one run each: PG.1 alone shows no gain beyond noise; PG.1 + R.2
-     used 3.4% fewer cores on the dungeon load. Surface runs vary too much to
-     show either. C.3 repeats them.
+D.7  On the dungeon load PG.1 + R.2 uses 2.8-3.4% fewer cores than base in
+     both passes; PG.1 alone shows no gain beyond noise, so the gain is
+     R.2's. Surface runs vary too much to show either. (C.3)
 D.8  The physics fixes on the whole server (runs 1-8, ABBA, dungeon load;
      the mean of two runs each; detail in perf-physics.txt S.6):
                     cores          alloc      GCs    pause per GC  total pause
@@ -330,6 +344,23 @@ D.13 What base allocates on the surface (run 13, 30 s sample): 55% under
      spawns are 8.1%, the enchantment heartbeat 3.9% (its top-layer query
      runs a group by and three sorts every 5 s per enchanted object;
      perf-worldobjects.txt O.6) and landblock loads 2.5%. (S.6)
+D.14 On the surface the world update grows much faster than the load:
+         run              landblocks  creatures  world update  gen0 pause
+         p1-base-outdoor    6,050       61,200     25.1 ms
+         p2-base-outdoor    6,378       59,800     27.0 ms       28 ms
+         nx-base-outdoor-1  6,944       66,700     42.8 ms       57 ms
+         nx-q5pa-outdoor-1  7,492       71,600     59.8 ms       74 ms
+     Every timed phase grows together. The speed probe (from 20:17) shows
+     the host steady through run 18: the loop took 69-81 ms all run, with
+     no swapping. So it is the load, not the VM. The CPU profiles show
+     costs that grow with crowding: the shadow-list removal
+     (perf-physics.txt P.4) 5.7-6.2% of the tick, monsters' target scans
+     (perf-worldobjects.txt P.6) 3.0 -> 6.6%, and the contended sequence
+     lock (perf-network.txt NM.4) 3.0 -> 5.0%. Young-GC survivors rise too
+     (41, 78, 117 MB per collection), so each pause is longer.
+     CONSEQUENCE: surface runs differ in load by up to 24%, and their cost
+     grows faster than the load, so dividing by landblocks does not make
+     them comparable. Surface A/B results need runs at matched load.
 
 
 ================================================================================
@@ -345,7 +376,11 @@ worst    = longest single world update in the window, ms
 lb       = loaded landblocks, window average (surface only)
 
   run                         cores  update  monster  alloc  GC/min  pause  worst   lb
+  2026-11-27/28, overnight queue (plan-next.txt), 45 min windows
+  nx-q5pa-outdoor-1           1.650  59.81    24.41    160    18.5  120.3  5,254  7,492
+  nx-base-outdoor-1           1.587  42.77    14.24    268    68.9   38.2  4,564  6,944
   2026-11-27, pass 2, 45 min windows
+  p2-base-dungeons            1.627   6.15    15.42    447    50.4   25.6     97
   p2-pg1r2-dungeons           1.582   6.04    14.81    451    50.8   25.6    124
   p2-base-outdoor             1.569  27.02     8.01    254    61.7   34.0  3,908  6,378
   p2-pg1r2-outdoor            1.610  28.53     9.37    280    32.0   69.8 10,935  6,681

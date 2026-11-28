@@ -145,6 +145,12 @@ P.4  Shadow-object teardown and rebuild every frame
      NOTE: this interacts directly with the CellArray bug in bugs-physics.txt -
      fix that first, or the "unchanged" comparison will never be true.
 
+     MEASURED under load (surface, 60 s CPU profile after the window, share
+     of the landblock tick's samples): remove_shadows_from_cells is 5.7%
+     on base and 6.2% on q5pa, nearly all of it the List.Remove scan and
+     shift. add_shadows_to_cell is 0.1%. The cost grows with how many
+     objects share a cell, so it is largest where the surface is crowded.
+
 P.5  Throwaway ObjectInfo on the hottest path
      PhysicsObj.cs:2587-2623
 
@@ -2924,6 +2930,10 @@ R.2  WHY IT SCALES NEGATIVELY. EnterUpgradeableReadLock admits one thread at a
   1. R.2 + PG.1 (+ the R.3 extension). The safe lock-free fast path and the
      AddedOutside flag. The lock is the only item here whose cost GROWS with
      thread count, and PG.1 removes 40-78% of the calls that take it.
+     On the whole server (dungeon load, 8 world threads, 45 min windows,
+     two passes in reverse order): PG.1 + R.2 used 3.4% and 2.8% fewer
+     cores than base, Monster_Tick 5.9% and 3.9% less. PG.1 alone was
+     -0.6%, so the gain is R.2's. Surface runs vary too much to show it.
   2. Q.E items 1-5 as one change: PG.1, PC.7 + PC.8 + PC.11, PG.2, PC.3 stage 0,
      PC.2. The diffs exist, and they are verified identical over 1,000,000
      updates: 24% fewer bytes and x0.77 time on open ground, x0.44-x0.50 in
@@ -3031,6 +3041,14 @@ S.1  [HIGH at scale] On a populated surface the landblock groups merge, and
      groups together the same way, since a gap of 3-4 landblocks is enough
      to join them. To check on a live server, log the size of the largest
      group (`serverstatus` prints only the group count).
+     THE COST GROWS FASTER THAN THE LOAD. Later surface runs loaded more of
+     the map, and the world update grew far more: 25.1 and 27.0 ms at
+     6,050-6,378 landblocks (base), 42.8 ms at 6,944 (base), 59.8 ms at
+     7,492 and 71,600 creatures (q5pa), with the host's speed checked
+     steady. In the profiles the growth is in crowding costs: the
+     shadow-list removal (P.4), monsters' visible-target scans
+     (perf-worldobjects.txt P.6) and the contended sequence lock
+     (perf-network.txt NM.4). Detail in loadtest-plan.txt D.14.
      DIRECTION, UNTESTED: tick landblocks in 4 x 4 colour phases, so that
      same-colour landblocks are at least 4 apart, and run each phase in
      parallel. This keeps the spacing rule's guarantee and stops parallelism

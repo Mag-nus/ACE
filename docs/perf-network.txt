@@ -771,6 +771,11 @@ NM.4 [MEDIUM] The sequence lookup (lock + Dictionary) costs more than the
        - Keep the byte[] API; the change is additive.
      SAFETY: the increment race is pre-existing and unchanged (NextValue
      already runs outside the lock). Confidence: VERIFIED.
+     MEASURED under load (perf-physics.txt Section S; surface, no players,
+     60 s CPU profile after the window): the lock is CONTENDED. Threads
+     waiting in Monitor.Enter under GetSequence are 3.0% of the landblock
+     tick's samples on base and 5.0% on q5pa, the largest single source
+     of Monitor waiting in the tick. The slots in the FIX take no lock.
 
 NM.5 = NT.5 (EnqueueSend params array). Found independently by both passes.
 

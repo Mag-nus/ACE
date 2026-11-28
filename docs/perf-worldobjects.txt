@@ -471,6 +471,14 @@ P.6  Idle faction mobs run a full visible-target scan at 5Hz
      Work proportional to total faction-mob CONTENT, not to activity.
      FIX: early-out on a cheap GetVisibleTargetsCount() == 0; throttle the scan
      to ~1s; add a non-allocating enumeration API on ObjMaint.
+     MEASURED under load (perf-physics.txt Section S; surface, 60 s CPU
+     profile, share of the landblock tick's samples):
+     GetVisibleTargetsValuesOfTypeCreature is 3.0% on base and 6.6% on q5pa,
+     whose run had 20% more creatures. Most of it comes through
+     FindNextTarget -> GetAttackTargets (awake monsters choosing a target),
+     not the idle faction-mob path above; FindNextTarget is 4.6% and 8.7%.
+     The scan grows with how many creatures each one can see, so it grows
+     faster than the creature count.
 
 P.7  Repeated recomputation inside a single monster tick
      Monster_Navigation.cs:203-224, 239-253, 385-404, 406-419;
