@@ -35,7 +35,8 @@ SECTION A - SETUP
              After the window: serverperformance, serverstatus and a 1 min
              CPU trace, so the trace never disturbs the measured numbers.
   Noise      two base dungeon runs a day apart: 1.600 vs 1.606 cores, world
-             update 6.05 vs 6.13 ms, Monster_Tick 15.16 vs 15.21 ms
+             update 6.05 vs 6.13 ms, Monster_Tick 15.16 vs 15.21 ms; q5pa
+             a day apart: 1.449 and 1.452 vs 1.435 cores
   Not tested no players: Player_Tick, networking, broadcast and spellbooks
              are not exercised.
   Scripts    /home/user/ace-lt/scripts on the VM (run.sh one run, matrix.sh a
@@ -96,24 +97,25 @@ measured window.
   --- queue3: plan-next.txt, editable until it starts (~19:15) -------------
   17  27th 19:13      nx-base-outdoor-1         base     outdoor   done
   18  27th 20:16      nx-q5pa-outdoor-1         q5pa     outdoor   done
-  19  27th 21:36      nx-q5pacs-outdoor-1       q5pacs   outdoor   running
-  20  ~22:39          nx-q5pacs-outdoor-2       q5pacs   outdoor   queued
-  21  ~23:42          nx-q5pa-outdoor-2         q5pa     outdoor   queued
-  22  28th ~00:45     nx-base-outdoor-2         base     outdoor   queued
-  23  28th ~01:48     nx-q5pa-dungeons-1        q5pa     dungeons  queued
-  24  28th ~02:51     nx-q5pacs-dungeons-1      q5pacs   dungeons  queued
-  25  28th ~03:54     nx-q5pacsm2-dungeons-1    q5pacsm2 dungeons  queued
-  26  28th ~04:57     nx-q5par2-dungeons-1      q5par2   dungeons  queued
-  27  28th ~06:00     nx-q5par2-dungeons-2      q5par2   dungeons  queued
-  28  28th ~07:03     nx-q5pacsm2-dungeons-2    q5pacsm2 dungeons  queued
-  29  28th ~08:06     nx-q5pacs-dungeons-2      q5pacs   dungeons  queued
-  30  28th ~09:09     nx-q5pa-dungeons-2        q5pa     dungeons  queued
-  31  28th ~10:12     nx-lbphase-off-1          lbphase  outdoor   queued
-  32  28th ~11:15     nx-lbphase-on-1           lbphase  outdoor   queued
-  33  28th ~12:18     nx-lbphase-on-2           lbphase  outdoor   queued
-  34  28th ~13:21     nx-lbphase-off-2          lbphase  outdoor   queued
-  35  28th ~14:24     nx-lbphase-on-dungeons    lbphase  dungeons  queued
-                      (queue ends 28th ~15:27)
+  19  27th 21:35      nx-q5pacs-outdoor-1       q5pacs   outdoor   done
+  20  27th 22:38      nx-q5pacs-outdoor-2       q5pacs   outdoor   done
+  21  27th 23:41      nx-q5pa-outdoor-2         q5pa     outdoor   done
+  22  28th 00:43      nx-base-outdoor-2         base     outdoor   done
+  23  28th 01:46      nx-q5pa-dungeons-1        q5pa     dungeons  done
+  24  28th 02:48      nx-q5pacs-dungeons-1      q5pacs   dungeons  done
+  25  28th 03:51      nx-q5pacsm2-dungeons-1    q5pacsm2 dungeons  done
+  26  28th 04:53      nx-q5par2-dungeons-1      q5par2   dungeons  done
+  27  28th 05:56      nx-q5par2-dungeons-2      q5par2   dungeons  running
+  28  28th ~07:00     nx-q5pacsm2-dungeons-2    q5pacsm2 dungeons  queued
+  29  28th ~08:03     nx-q5pacs-dungeons-2      q5pacs   dungeons  queued
+  30  28th ~09:06     nx-q5pa-dungeons-2        q5pa     dungeons  queued
+  31  28th ~10:09     nx-lbphase-off-1          lbphase  outdoor   queued
+  32  28th ~11:12     nx-lbphase-on-1           lbphase  outdoor   queued
+  33  28th ~12:15     nx-lbphase-on-2           lbphase  outdoor   queued
+  34  28th ~13:18     nx-lbphase-off-2          lbphase  outdoor   queued
+  35  28th ~14:21     nx-lbphase-on-dungeons    lbphase  dungeons  queued
+  36  28th ~15:25     diag-q5pacsm2-dungeons    q5pacsm2 dungeons  queued
+                      (queue ends 28th ~16:32)
 
 WORK BETWEEN RUNS
   10:06   done: GC pause breakdown from the existing CPU traces (C.4), in the
@@ -153,6 +155,37 @@ WORK BETWEEN RUNS
   21:28   the host crashed in run 19's warm-up. Nothing measured was lost.
           Builds checked by md5, the partial run set aside (-crashed), and
           the queue restarted at 21:35 from run 19; times below move 17 min
+  22:45   done: run 19, in run 20's warm-up. Found the cause of D.12 in the
+          .NET 10 GC source (the gen0 budget is trimmed by memory load) and
+          checked it minute by minute against all eight 45 min surface runs
+  22:50   started scripts/gcwatch.sh: it records GC events only (runtime GC
+          keyword, Informational, no rundown) over the windows of runs 20-22,
+          to see what starts each blocking gen2 (D.2). It runs beside
+          run.sh, which is unchanged. Output: gcwin.nettrace in each run dir
+  23:50   done: run 20 and its GC events, in run 21's warm-up. The blocking
+          gen2s start at 90% memory load (D.2). Counted the swapping per run
+          window from the probe log (D.15)
+  00:55   done: run 21 and its GC events, in run 22's warm-up. Decoded
+          DATAS's own events from the GC traces (traceanalyzer GCDYN=1):
+          DATAS's tuning history, not the build, decides whether the
+          trimmed gen0 budget holds (D.12). Started a second gcwatch.sh
+          for runs 23-30, so all eight dungeon runs get the same GC events
+  01:55   done: run 22 and its GC events, in run 23's warm-up. Base held
+          the full gen0 budget all window (D.12). Surface block 17-22
+          summed up in C.6. Queued run 36 (scripts/queue4.sh, after the
+          queue): a diag.sh run of q5pacsm2 on the dungeon load with two
+          heap dumps to the host share, to rank what is left on the heap
+          once all the memory fixes are in (C.8)
+  02:50   done: run 23, in run 24's warm-up. q5pa repeats its A/B dungeon
+          result (C.7)
+  03:55   done: run 24, in run 25's warm-up. q5pacs takes 2.7 GB off the
+          live heap (C.7). GCHIST now lists background gen2s with their
+          duration and what survives them; before, it dropped them
+  04:58   done: run 25, in run 26's warm-up. q5pacsm2 takes another
+          0.47 GB off the live heap and 1.55 GB off peak RSS (C.7)
+  06:00   done: run 26, in run 27's warm-up. q5par2 2.8% under q5pa;
+          shadow-list teardown (perf-physics.txt P.4) is 10-11% of the
+          landblock tick on the dungeon load in all four builds
 
 
 ================================================================================
@@ -243,12 +276,57 @@ C.6  The physics fixes and the CellStruct cache on the surface (runs 17-22)
      DESIGN: ABCCBA (base, q5pa, q5pacs, q5pacs, q5pa, base), because surface
      runs vary. Each pair is compared within the same night.
      MEASURES: as C.1, plus the live heap and working set, and the number and
-     length of blocking gen2s. Also the bytes allocated per collection
-     (D.12): q5pa contains PG.1, so if it collects every ~530 MB where base
-     collects every 160 MB, compare the builds by total pause, not by
-     collection count.
-     WORTHWHILE IF: the blocking compactions and their 1.3-3.5 s pauses stop,
+     length of blocking gen2s. The collection count follows free memory on
+     the surface (D.12), so compare the builds by total pause and worst
+     pause, not by collection count.
+     WORTHWHILE IF: the blocking compactions and their 1.3-4.3 s pauses stop,
      or the working set falls by GBs, with no new errors.
+     RUN 19 (q5pacs): the lowest surface load so far, 5,930 landblocks and
+     56,900 creatures on average (runs 17-18: 6,944 and 7,492). One 5 s
+     interval with over 1 s of GC pause (3.55 s), against 5 and 8 in runs
+     17-18; peak RSS 11.5 GB; lowest MemAvailable 2.0 GB. Total pause 66 s
+     against 118 and 100 s. The load is too far from the others to
+     credit the cache. Live heap after each gen2 against loaded landblocks,
+     fitted within each run, puts every surface run at 6.3-7.3 GB at 7,000
+     landblocks; q5pacs is at 6.6 GB, inside that spread. A saving under
+     ~1 GB would not show on the surface. The dungeon runs (C.7) measure it
+     at a fixed load.
+     RUN 20 (q5pacs): 6,095 landblocks and 59,500 creatures, about the load
+     of pass 1 base and pg1r2 (6,050 and 6,116, a day earlier). Against
+     them: cores 1.423 against 1.450 and 1.550, world update 23.2 against
+     25.1 and 25.4 ms, allocation 144 against 243 and 260 MB/s, total pause
+     68 against 95 and 88 s. But 3 blocking compactions (3.64, 2.31,
+     3.03 s) against 2 and 8, the same 12.0 GB peak working set, and the
+     same ~1.5 GB lowest MemAvailable. So the cache does not keep the
+     surface out of the compaction zone. q5pacs contains q5pa's physics
+     fixes, which cut allocation; runs 21-22 give q5pa and base on the same
+     night to separate the two.
+     RUN 21 (q5pa): 5,484 landblocks and 58,700 creatures, the lowest load
+     so far; the same build loaded 7,492 in run 18. No 5 s interval with
+     over 1 s of GC pause and no blocking gen2: memory load peaked at 85%
+     (lowest MemAvailable 2.18 GB, peak RSS 11.2 GB). Total pause 56 s.
+     Against run 19 (q5pacs, 5,930 landblocks): cores 1.199 against 1.423,
+     world update 22.1 against 19.4 ms, allocation 123 against 132 MB/s.
+     The two builds show no difference that the load does not explain.
+     One build's landblock count varies by 27% between runs, so whether a
+     run reaches the compaction zone follows the landblocks it loads
+     (D.2), not the build.
+     RUN 22 (base): 5,781 landblocks and 57,000 creatures, 5% more than run
+     21 the hour before. Against run 21 (q5pa): cores 1.456 against 1.199,
+     world update 23.0 against 22.1 ms, monster tick 6.16 against 5.06 ms,
+     allocation 247 against 123 MB/s, total pause 70 against 56 s. It
+     reached 91% memory load (lowest MemAvailable 1.42 GB, peak RSS
+     12.3 GB) and had 2 blocking compactions (3.19 and 3.13 s) against
+     none.
+     RESULT (runs 17-22): q5pa's halving of allocation holds on the
+     surface: 123-160 MB/s in all four q5pa and q5pacs runs, against
+     243-268 MB/s in all four base runs. It used fewer cores at a similar
+     load (18% fewer in run 21 than run 22, at 5% fewer landblocks), but
+     the surface load is too uneven to put a firm number on that (D.14).
+     Neither build keeps the surface out of the compaction zone. Whether a
+     run compacts follows how many landblocks it loads. The surface cannot
+     show q5pacs's heap saving: the live-heap fits put every run at
+     6.3-7.3 GB at 7,000 landblocks. C.7 measures it on the dungeon load.
 
 C.7  The memory fixes and R.2 on the dungeon load (runs 23-30)
      QUESTION: what does q5pacs save in memory, GC and CPU where the load is
@@ -262,10 +340,71 @@ C.7  The memory fixes and R.2 on the dungeon load (runs 23-30)
      0.5 GB more off (VisibleCells ~0.3 GB, caches ~0.13 GB, GUID queue
      ~0.1 GB in the first hour); no new errors. For q5par2, fewer cores
      beyond the noise in both halves.
+     MEASURE OF THE LIVE HEAP: what survives each background gen2 in gen2
+     and the large object heaps (GCHIST). On base it matches the forced
+     full GCs of the diagnostic run (5.75-5.94 GB, D.11).
+     RUN 23 (q5pa): 1.435 cores, 165 MB/s, 24.9 collections a minute at
+     37.2 ms each, against 1.449 and 1.452 cores, 165-166 MB/s and 37 ms
+     in the A/B runs a day earlier. DATAS held 6 heaps and 67 MB per heap
+     all window, at 70-78% memory load. Six background gen2s, 7 min
+     apart, 0.73-0.85 s each, left 5.68-5.78 GB: the same live heap as
+     base. With the garbage between them the heap read 8.6-9.7 GB, and
+     RSS peaked at 10.36 GB with 3.29 GB of RAM left. Errors: the same
+     9-10 teleport and portal lines as ab-q5pa-1.
+     RUN 24 (q5pacs): eleven background gen2s left 2.97-3.10 GB, 2.7 GB
+     less than run 23: the saving S.7 predicted. Peak RSS 6.54 GB (-3.8),
+     memory load 53% (-25 points), 7.13 GB of RAM left. The gen2s come
+     twice as often (3.6 min apart), since the GC sizes the gen2 budget
+     from the smaller gen2, and take 0.42-0.52 s. Allocation, collection
+     count and young-GC pause are unchanged (166 MB/s, 25.2 a minute,
+     36.7 ms). It used 4.5% fewer cores, 1.371 against 1.435: world
+     update 5.42 against 5.65 ms, WorldObject physics and RunActions
+     11% faster, Monster_Tick 4% faster. That is beyond the noise; runs
+     29 and 30 repeat the pair in the other order. The surviving gen2
+     still grows about 0.1 GB in 40 min, as on q5pa; q5pacsm2's GUID
+     queue fix targets that. Errors: the same 9 lines. Warnings rose
+     from 51,298 to 64,350, all CurCell=null lines from corpses stuck in
+     landblock 0x0275: each stuck corpse logs about 7,000 over its life
+     (bugs-physics.txt Q.5), and run 24 had five against run 23's four.
+     RUN 25 (q5pacsm2): eleven background gen2s left 2.50-2.57 GB, 0.47 GB
+     less than run 24: the ~0.5 GB S.7 predicted. Peak RSS 4.99 GB (-1.55
+     against run 24), memory load 41-44%, 8.70 GB of RAM left. RSS is
+     flat after 30 min (4.90 -> 4.96 GB), where q5pacs climbs 5.90 ->
+     6.51 GB and q5pa 9.64 -> 10.34 GB: the gen2 they carry, garbage
+     included, grows by about 1 GB over the window (4.71 -> 5.75 GB on
+     q5pacs) and stays at 3.75-4.01 GB here. What survives a gen2 still
+     grows about 0.06 GB in 40 min. 1.340 cores, 2.3% fewer than run 24
+     (world update 5.29 against 5.42 ms, Monster_Tick 12.90 against
+     13.14). Allocation and collections unchanged (165 MB/s, 25.0 a
+     minute, 36.5 ms), but gen1s run half as often (149 against 280,
+     123 MB promoted each against 96). Errors: the same teleport, portal
+     and generator lines. The log rolled over at 20 MB (ACE_Log-WARN.txt.1
+     holds the start): ten stuck corpses at the same Q.5 spots as the
+     other builds, 87,414 lines. The startup warnings match every other
+     build (864 null locations, 319 failed spawns).
+     RUN 26 (q5par2): 1.395 cores, 2.8% fewer than q5pa in run 23 (world
+     update 5.56 against 5.65 ms, Monster_Tick 13.14 against 13.71).
+     Pass 1 measured 3.4% for R.2 on top of PG.1. In the CPU trace after
+     the window the ReaderWriterLockSlim spinning falls from 2,815 to 906
+     samples. Memory as q5pa (6 background gen2s leaving 5.67-5.80 GB,
+     peak RSS 10.26 GB), as are allocation and collections (168 MB/s,
+     25.4 a minute, 37.1 ms). Errors: the same 10 lines. 15 stuck
+     corpses, the most of any dungeon run (3-10 before), but at the same
+     Q.5 spots: 7 of them in one cell, 0x5F4D01E4, where base and pg1r2
+     runs also trap corpses.
 
-C.8  Not queued yet
-     - ObjectMaint's 5 dictionaries per PhysicsObj created on first use
-       (~0.1 GB), after q5pacsm2 is measured;
+C.8  Next memory work
+     QUEUED: run 36, a diag.sh run of q5pacsm2 (q5pacs + the second memory
+     set) on the dungeon load, with heap dumps at 20 and 60 min. The
+     heap-owner report from the base dumps (D.11) ranks what q5pacs and m2
+     do not touch: per-object physics parts (PhysicsPart, Position, AFrame,
+     ~0.26 GB), property dictionaries copied into every biota (~0.26 GB),
+     spellbooks copied from the weenie (~0.09 GB, 50,555 dictionaries),
+     emote actions (~0.06 GB), ObjectMaint's empty dictionaries (~0.08 GB).
+     The dumps of run 36 rank them after the fixes. Not queued yet:
+     - ObjectMaint's 6 dictionaries per PhysicsObj created on first use
+       (on 160,000 objects: 800,000 Dictionary<uint, PhysicsObj>, 64 MB,
+       most of them empty, plus 160,000 destruction queues);
      - GC settings (DATAS off, GCConserveMemory, a floor on the DATAS heap
        count from D.10), only after the code-level memory work, judged on
        worst pause and worst tick, not averages.
@@ -280,10 +419,16 @@ D.1  On the surface one landblock group holds 3,756-5,345 of the ~5,500-6,800
      loaded landblocks. The server manages 39 updates a second on 1.45 of 8
      cores: world update 25.1 ms against a 16.7 ms budget. (S.1)
 D.2  When the working set reaches ~12.5 GB, the GC does a blocking compacting
-     gen2 that stops the world for 1.3-3.5 s, up to five times in 45 min. The
+     gen2 that stops the world for 1.3-4.3 s, up to eight times in 45 min. The
      dungeon load never got there. On a surface run that loaded ~10% more
      landblocks (run 11) they chained: up to 5 blocking gen2s in 15 s, 8.3 s
-     of pause, and a 10.9 s world update. (S.2)
+     of pause, and a 10.9 s world update. In the .NET 10 GC source the
+     trigger is free memory, not process size: at 90% memory load
+     (MemAvailable under ~1.6 GB here) a gen1 or older collection may turn
+     into a blocking compacting gen2. Run 20's GC events confirm it: its 3
+     blocking gen2s all started at 90% load, and none of its 231 gen1s at
+     71-89% became one. Run 21 peaked at 85% and had none. Run 22's 2
+     started at 91% and 90%, and 341 of its 342 gen1s were below 90%. (S.2)
 D.3  The process memory is the GC heap: ~6.5-7.5 GB of live objects plus
      1-5.7 GB of gen2 free space. Native memory outside it is ~0.1 GB. (S.3)
 D.4  Each young GC stops the world for ~25 ms, one ~530 MB of allocation
@@ -330,15 +475,37 @@ D.11 The live heap on the dungeon load is 5.75-5.93 GB, flat after 40 min.
      items: VisibleCells dictionaries 0.4 GB; 12 empty cache dictionaries on
      every WorldObject, 0.2 GB; a GUID recycle queue that holds every
      destroyed object's GUID for 6 hours (1.24 -> 3.77 million entries in
-     40 min). (S.7)
-D.12 On the surface the base build collects every 160 MB allocated for most
-     of each window, against ~530 MB on the dungeon load and 500-537 MB on
-     all three surface runs of pg1 and pg1r2 (even at 13.45 GB). It returns
-     to ~500 MB for a few minutes after each blocking gen2. Base therefore
-     runs twice as many collections at half the length; the total pause is
-     about the same (3.5% against 3.7%). The GC's events show its gen0
-     budget per heap stepping between 67.1, 40.4 and ~20 MB on base, at the
-     same 71-87% memory load and 8 heaps. Cause not found. (S.4)
+     40 min). (S.7) On q5pacs, which shares the geometry, 2.97-3.10 GB
+     survive each background gen2 (C.7, run 24); on q5pacsm2, 2.50-2.57 GB
+     (run 25).
+D.12 In three of the four base surface runs the GC collected every 160 MB
+     allocated for most of the window, against ~530 MB on the dungeon load
+     and 500-540 MB on the pg1, pg1r2 and q5pa surface runs and the fourth
+     base run. CAUSE: the .NET GC trims the gen0
+     budget by memory load (gc.cpp joined_youngest_desired). After each
+     blocking collection it caps the total budget at (85 - load)% of RAM,
+     and at 1% of RAM (161 MB here) from 84% up. Per heap that is 67.1 MB
+     (DATAS's 64 MiB cap) up to 81% load, then 60.7, 40.4 and 20.2 MB:
+     exactly the values in the GC's events. On this VM the full budget
+     needs ~2.9 GB of MemAvailable, and below ~2.6 GB it is 160 MB. The
+     three trimmed base surface runs follow it minute by minute, and go back to
+     ~520 MB whenever a blocking gen2 frees memory. pg1, pg1r2 and q5pa
+     kept the large budget at 84-90% load. That is DATAS's state, not the
+     build (gcpriv.h compute_gen0_budget_per_heap). Once DATAS's last
+     tuning step has changed the budget, it only scales the previous
+     budget by 98 / (100 - GC time %) after each GC, so the budget stays
+     high while GC time is near its 2% target. After a heap-count change,
+     any interval under 2% puts it back to the trimmed value. DATAS's own
+     events in the GC traces show both: run 20 changed its heap count at
+     12.7 min, sat at the trimmed 48 MB per heap (83% load) for 13 min,
+     then made a budget step and held 63-67 MB at 84-90%. Run 21 made a
+     budget step at 6 min and held 67 MB at 84-85%. Run 22 (base) made
+     budget steps at 1 and 6.5 min and held 66-67 MB at 82-91%, so base is
+     not trimmed by nature. The 85% is a constant
+     in gc.cpp, not a setting.
+     CONSEQUENCE: on the surface the collection count follows free memory,
+     so compare builds by total pause and worst pause. Below ~2.9 GB free,
+     each MB taken off the heap also lengthens the gen0 budget. (S.4)
 D.13 What base allocates on the surface (run 13, 30 s sample): 55% under
      PhysicsObj.update_object, against 82% on the dungeon load. Creature
      spawns are 8.1%, the enchantment heartbeat 3.9% (its top-layer query
@@ -350,17 +517,59 @@ D.14 On the surface the world update grows much faster than the load:
          p2-base-outdoor    6,378       59,800     27.0 ms       28 ms
          nx-base-outdoor-1  6,944       66,700     42.8 ms       57 ms
          nx-q5pa-outdoor-1  7,492       71,600     59.8 ms       74 ms
+         nx-q5pacs-out-1    5,930       56,900     19.4 ms       27 ms
+         nx-q5pacs-out-2    6,095       59,500     23.2 ms       56 ms
+         nx-q5pa-out-2      5,484       58,700     22.1 ms       56 ms
      Every timed phase grows together. The speed probe (from 20:17) shows
-     the host steady through run 18: the loop took 69-81 ms all run, with
-     no swapping. So it is the load, not the VM. The CPU profiles show
+     the host steady through run 18: the loop took 70-79 ms in 9 minutes of
+     10 (110, 152 and 116 ms once each), and the window swapped 27 MB out
+     and 2 MB in (D.15). So it is the load, not the VM. The CPU profiles show
      costs that grow with crowding: the shadow-list removal
      (perf-physics.txt P.4) 5.7-6.2% of the tick, monsters' target scans
      (perf-worldobjects.txt P.6) 3.0 -> 6.6%, and the contended sequence
-     lock (perf-network.txt NM.4) 3.0 -> 5.0%. Young-GC survivors rise too
-     (41, 78, 117 MB per collection), so each pause is longer.
-     CONSEQUENCE: surface runs differ in load by up to 24%, and their cost
+     lock (perf-network.txt NM.4) 3.0 -> 5.0%. The gen0 pause (from the
+     30 s trace at each run's end) follows the gen0 budget first (D.12):
+     p2-base and run 19 ended on the trimmed 20 MB per heap (27-28 ms, 41
+     and 36 MB survived per collection), the others on 67 MB (56-74 ms).
+     At the same budget the survivors still rise with the load: 78 MB in
+     nx-base-outdoor-1, 117 MB in nx-q5pa-outdoor-1.
+     The landblock count alone does not match the load. Monsters crossing
+     into a neighbour load it and its adjacents, which unload five minutes
+     later, so within one run the loaded count wanders between ~4,300 and
+     ~8,400. At 6,700-7,800 loaded landblocks the 5 min world-update
+     averages of runs 17 and 18 have medians of 36 and 45 ms, against
+     28 ms for the 14 points of the other surface runs in that range
+     (tools/py/lbcurve.py). The VM was not slower: the GC's gen0 copy rate
+     in each run's end trace is 0.15-0.20 MB per ms per heap at 8 heaps,
+     against 0.16-0.17 for p2-base and run 19. So how crowded the loaded
+     landblocks are matters as well as how many there are.
+     CONSEQUENCE: surface runs differ in load by up to 37%, and their cost
      grows faster than the load, so dividing by landblocks does not make
-     them comparable. Surface A/B results need runs at matched load.
+     them comparable. Surface A/B results need runs at matched load, and
+     a matched landblock count is not enough on its own.
+D.15 The VM swaps a little when memory load peaks. Per 45 min window, from
+     the probe's swap counters:
+         run 18 (q5pa)      27 MB out, 2 MB in; most in 21:13, the minute
+                            of its 4.27 s compaction
+         run 19 (q5pacs)    nothing
+         run 20 (q5pacs)    125 MB out, 76 MB in; most around 23:29, the
+                            minute of its first two compactions
+         run 21 (q5pa)      20 MB out, 1 MB in, over 00:32-00:40; no
+                            compaction, probe loop 67-75 ms throughout
+         run 22 (base)      311 MB out, 0.2 MB in; 305 MB of it in 01:18,
+                            2.5 min before its first compaction; probe
+                            loop 67-99 ms
+         run 23 (q5pa,      nothing out, 0.2 MB in; probe loop 67-77 ms
+          dungeons)
+         run 24 (q5pacs,    nothing out, 0.4 MB in; probe loop 67-77 ms
+          dungeons)
+         run 25 (q5pacsm2,  nothing out, 24 KB in; probe loop 67-74 ms
+          dungeons)
+         run 26 (q5par2,    48 KB out, 0.1 MB in; probe loop 67-80 ms
+          dungeons)
+     It is small next to a 12 GB heap, but a compaction that touches
+     swapped-out pages has to wait for them. Run 20's compactions (2.3-3.6 s)
+     were no longer than the others. Each run's swap is checked from here on.
 
 
 ================================================================================
@@ -377,6 +586,14 @@ lb       = loaded landblocks, window average (surface only)
 
   run                         cores  update  monster  alloc  GC/min  pause  worst   lb
   2026-11-27/28, overnight queue (plan-next.txt), 45 min windows
+  nx-q5par2-dungeons-1        1.395   5.56    13.14    168    25.4   37.1     95
+  nx-q5pacsm2-dungeons-1      1.340   5.29    12.90    165    25.0   36.5    105
+  nx-q5pacs-dungeons-1        1.371   5.42    13.14    166    25.2   36.7     99
+  nx-q5pa-dungeons-1          1.435   5.65    13.71    165    24.9   37.2     97
+  nx-base-outdoor-2           1.456  22.95     6.16    247    28.4   54.7  3,677  5,781
+  nx-q5pa-outdoor-2           1.199  22.06     5.06    123    19.2   65.3    374  5,484
+  nx-q5pacs-outdoor-2         1.423  23.20     6.06    144    20.5   73.7  3,736  6,095
+  nx-q5pacs-outdoor-1         1.423  19.44     5.20    132    24.0   61.3  3,854  5,930
   nx-q5pa-outdoor-1           1.650  59.81    24.41    160    18.5  120.3  5,254  7,492
   nx-base-outdoor-1           1.587  42.77    14.24    268    68.9   38.2  4,564  6,944
   2026-11-27, pass 2, 45 min windows

@@ -83,13 +83,14 @@ FrostfACE (~300 players online) are in `perf-managers.txt` Section G (P.14) and
 - On a populated surface nearly every landblock ends up in one landblock group, so the
   "multi-threaded" tick runs on about one thread and the server manages 39 updates a
   second on 1.45 of 8 cores (S.1).
-- When memory gets tight, the GC stops the world for 1.3-3.5 s, and for up to 8 s when
+- When memory gets tight, the GC stops the world for 1.3-4.3 s, and for up to 8 s when
   the compactions chain; one surface run had a 10.9 s world update (S.2).
 - Gen2 carries 1-5.7 GB of free space on top of 6.5-7.5 GB of live objects (S.3).
 - Each young collection pauses for ~25 ms, longer than a 60 Hz tick. Most of it is spent
   finding and moving objects that old objects point to, not on stacks. On the surface
-  the base build often collects every 160 MB instead of every ~530 MB, for a reason not
-  yet found (S.4).
+  the GC often collects every 160 MB instead of every ~530 MB: with less than ~2.6 GB of
+  RAM free, .NET trims the young-generation budget by memory load, unless its DATAS tuner
+  last changed the budget itself (S.4).
 - The verified physics fixes (Q.E items 1-5, the PC.1 pool and PC.4's AFrame struct)
   cut process CPU by 10% and allocation by 63% on the dungeon load. PC.4 is worth far
   more on the whole server than on single objects. DATAS then runs fewer GC heaps, so
@@ -101,7 +102,9 @@ FrostfACE (~300 players online) are in `perf-managers.txt` Section G (P.14) and
   same cell geometry: each EnvCell builds its own CellStruct, about 140 copies of each
   structure (`perf-datloader.txt` P.4, now measured). Also new: per-cell visible-cell
   dictionaries (0.4 GB), a GUID recycle queue that grows for 6 hours, and 12 eager cache
-  dictionaries on every WorldObject (S.7).
+  dictionaries on every WorldObject (S.7). In test runs a shared-geometry cache took
+  2.7 GB off the live heap, and the other three fixes another 0.5 GB: 5.7 to 2.5 GB live,
+  10.4 to 5.0 GB peak RSS.
 
 Bugs seen in those runs: `bugs-command.txt` X.14, `bugs-managers.txt` M.16 and
 `bugs-physics.txt` Q.5. The run plan, what each run tests and the results log are in
@@ -308,8 +311,8 @@ volume.]*
 
 Under the load test (`perf-physics.txt` S.2-S.4, no players) Server GC is on with 8
 heaps, and each young collection stops the world for ~25 ms. Volume does cost: one
-stop per ~530 MB allocated (every 160 MB for long stretches on the surface base build,
-S.4). With less allocation DATAS drops to fewer heaps, and each stop gets longer (S.6).
+stop per ~530 MB allocated (every 160 MB when free memory is low, S.4). With less
+allocation DATAS drops to fewer heaps, and each stop gets longer (S.6).
 The rest is not yet profiled.
 `dotnet-counters` on `gen-0/1/2-gc-count` and `alloc-rate`
 under a populated load settles the ranking above — specifically **whether

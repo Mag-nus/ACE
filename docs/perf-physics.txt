@@ -150,6 +150,10 @@ P.4  Shadow-object teardown and rebuild every frame
      on base and 6.2% on q5pa, nearly all of it the List.Remove scan and
      shift. add_shadows_to_cell is 0.1%. The cost grows with how many
      objects share a cell, so it is largest where the surface is crowded.
+     On the dungeon load, where 12,000 creatures share 429 landblocks, it is
+     10.0-11.2% of the landblock tick on q5pa, q5pacs, q5pacsm2 and q5par2
+     (loadtest-plan.txt C.7, runs 23-26): the largest ACE method in the
+     profile.
 
 P.5  Throwaway ObjectInfo on the hottest path
      PhysicsObj.cs:2587-2623
@@ -3056,19 +3060,47 @@ S.1  [HIGH at scale] On a populated surface the landblock groups merge, and
      anything that assumes one thread runs a group's landblocks for the whole
      tick has to be found first.
 
-S.2  [HIGH] When memory gets tight, the GC stops the world for 1.3-3.5 s,
+S.2  [HIGH] When memory gets tight, the GC stops the world for 1.3-4.3 s,
      and back-to-back for up to 8 s
      On every outdoor run, background gen2 collections (one every ~2 min)
      swept without compacting, so gen2 free space sawed between ~1 and ~5 GB.
      Once the working set reached 12.4-12.6 GB (MemAvailable ~1.5 GB of
      16 GB), the GC switched to a blocking, compacting gen2. Free space went
-     to zero, RSS fell by 1-2.5 GB, and every thread stopped:
+     to zero, RSS fell by 1-2.5 GB, and every thread stopped. In the .NET 10
+     source the switch is set by memory load, not by process size: at 90%
+     load or more (MemAvailable under ~1.6 GB here), a gen1 or older
+     collection checks how much of gen2 it could reclaim and, if enough,
+     runs a blocking compacting gen2 (gc.cpp generation_to_condemn; the
+     90% applies below 80 GB of RAM). MEASURED: GC events recorded over the
+     window of a q5pacs surface run (2026-11-27 run 20, GC keyword only)
+     show 3 blocking gen2s, 3.57, 2.31 and 3.03 s, each starting at 90%
+     memory load. None of the 231 gen1s at 71-89% load became one; 2 gen1s
+     at 90% did not either, so the free-space check also has to pass. Base
+     run 22 behaved the same way: 2 blocking gen2s, at 91% and 90% load,
+     and 341 of its 342 gen1s below 90%. The q5pa run 21 peaked at 85% load
+     and had none.
          build   5 s counter intervals with over 1 s of GC pause,   worst tick
                  in the 45 min window
-         base    1  (3.46 s)                                         3.50 s
+         base    2  (3.46, 2.84 s)                                   3.50 s
          pg1     2  (2.91, 3.19 s)                                   3.60 s
-         pg1r2   5  (3.34, 2.43, 2.30, 1.33, 1.40 s)                 3.79 s
+         pg1r2   8  (3.34, 2.43, 2.30, 1.33, 1.40, 3.18, 2.52,       3.79 s
+                    2.63 s)
          base p2 3  (3.42, 3.13, 3.53 s)                             3.91 s
+         base nx 5  (3.44, 3.47, 3.30, 4.10, 4.04 s)                 4.56 s
+         q5pa    8  (4.15, 3.18, 3.02, 3.77, 4.27, 1.49, 1.46,       5.25 s
+                    1.48 s)
+         q5pacs  1  (3.55 s)                                         3.85 s
+         q5pacs  3  (3.64, 2.31, 3.03 s)                             3.74 s
+         q5pa    0                                                   0.37 s
+         base nx 2  (3.23, 3.13 s)                                   3.68 s
+     The last six are the 2026-11-27/28 night runs 17-22, at 6,944, 7,492,
+     5,930, 6,095, 5,484 and 5,781 loaded landblocks; their lowest
+     MemAvailable readings were 1.56, 1.21, 2.00, 1.54, 2.18 and 1.42 GB.
+     Whether a run compacts follows how much it loads, and one build's
+     load varies by 27% between runs. The second q5pacs run loaded about
+     as much as pass 1 base (6,050) and pg1r2 (6,116) and peaked at the
+     same 12.0 GB working set, so the CellStruct cache does not keep the
+     surface out of this zone.
      (worst tick = the longest UpdateGameWorld_Entire in serverperformance.)
      The dungeon load (10.9 GB committed, ~3 GB available) never compacted:
      worst 5 s GC pause 0.15-0.20 s, worst tick 0.09-0.32 s.
@@ -3158,31 +3190,62 @@ S.4  [HIGH] Each young collection pauses the world for ~25 ms, longer than
          world and physics objects (Position, AFrame: PC.4, M.4) and
          per-object collections that are replaced instead of reused are the
          candidates.
-     ON THE SURFACE THE BASE BUILD COLLECTS THREE TIMES AS OFTEN. Bytes
-     allocated per collection, in 3 min steps over each 45 min window:
+     WHEN FREE MEMORY IS LOW THE GC COLLECTS UP TO THREE TIMES AS OFTEN.
+     Bytes allocated per collection, in 3 min steps over each 45 min window:
          dungeons, every build          about 530 MB throughout
-         surface, pg1 and pg1r2         500-537 MB throughout (3 runs), at
-                                        working sets up to 13.45 GB
-         surface, base                  160 MB for most of the window
-                                        (2 runs); 450-530 MB for a few
-                                        minutes after each blocking gen2
-     The GC's own events (GCGlobalHeapHistory, in the traces after each
-     window) show the gen0 budget it set for each heap. It takes three
-     values. 67.1 MB in all six traces checked: three dungeon runs, two
-     PG.1 surface runs, and pass 1 base's surface trace, which fell in one
-     of its ~500 MB stretches. 40.4 MB and 20.2-20.9 MB in pass 2 base's
-     surface traces (8 x 20 MB is the 160 MB above). Memory load was 71-87%
-     in all of them, and every surface trace shows 8 heaps, so neither
-     memory pressure nor DATAS's heap count sets it.
-     Allocation is about the same (243-254 MB/s against
-     260-280), so base runs 62-76 collections a minute against 30-32, each
+         surface, base (3 of 4 runs)    160 MB for most of the window;
+                                        ~520 MB for a few minutes after
+                                        each blocking gen2
+         surface, pg1, pg1r2, q5pa,     500-537 MB throughout (5 runs), at
+         and base run 22                working sets up to 13.45 GB
+     The cause is the GC's memory-load trim (.NET 10 source, gc.cpp
+     joined_youngest_desired and trim_youngest_desired). At the end of each
+     blocking collection the GC reads the memory load, (MemTotal -
+     MemAvailable) / MemTotal, and caps the total gen0 budget at
+     (85 - load)% of RAM, or at 1% of RAM from 85% up. With MemTotal
+     16.2 GB and 8 heaps that gives these budgets per heap:
+         load 81% or less    67.1 MB, DATAS's 64 MiB cap (~537 MB per GC)
+         load 82%            60.7 MB
+         load 83%            40.4 MB
+         load 84% and up     20.2 MB (8 x 20.2 = the 160 MB above)
+     These are exactly the values in the GC's own events
+     (GCGlobalHeapHistory). The full budget needs about 2.9 GB of
+     MemAvailable; at about 2.6 GB or less it is 160 MB. The three trimmed
+     base surface runs follow this minute by minute (MemAvailable sampled each
+     minute against MB per collection). The memory load printed in those
+     events misled: the GC reads it only at the start of gen1 and older
+     collections, while the trim reads it again at every collection.
+     The 85% is a constant in gc.cpp (MAX_ALLOWED_MEM_LOAD), not a setting.
+     DATAS CAN LIFT THE TRIMMED BUDGET. pg1, pg1r2 and q5pa kept 500-540 MB
+     per collection at 84-90% load. In the source
+     (gcpriv.h compute_gen0_budget_per_heap), after each blocking
+     collection DATAS takes the trimmed value unless one of two things
+     holds: its last tuning step changed the budget (not the heap count),
+     or the GC time of the last interval was 2-4%, just above its 2%
+     target. Then it scales the previous budget by 98 / (100 - GC time %)
+     instead, kept between the trimmed value and 64 MiB. So once DATAS has
+     made a budget step, the budget only drifts, and it stays high while GC
+     time is near 2%. After a heap-count change, any interval under 2% puts
+     it back to the trimmed value. DATAS's own events in the GC traces
+     (SizeAdaptationSample and SizeAdaptationTuning, decoded with
+     traceanalyzer GCDYN=1) show both states. Run 20 (q5pacs) changed its
+     heap count at 12.7 min and sat at the trimmed 48 MB per heap (7 heaps,
+     83% load) for 13 min. It then made a budget step and held 63-67 MB per
+     heap at 84-90% load. Run 21 (q5pa) made a budget step at 6 min and
+     held 67 MB per heap at 84-85% load, drifting to 52 MB once when GC
+     time stayed under 2% for two minutes. Run 22 (base) made budget steps
+     at 1 and 6.5 min and held 66-67 MB per heap at 82-91% load, so base is
+     not trimmed by nature. Which state a run is in comes from DATAS's
+     tuning history, not from the build, and can differ between two runs
+     of the same build.
+     Allocation is about the same (243-254 MB/s for base against 260-280
+     for pg1r2), so base runs 62-76 collections a minute against 30-32, each
      about half as long (28-34 ms against 56-70 ms), and the total pause is
-     about the same (3.5% of the time against 3.7%). The cause is not
-     found.
-     So on the surface, compare builds by total pause and by the worst
-     pauses, not by collection count or pause per collection. The surface
-     runs queued for 2026-11-27/28 (loadtest-plan.txt C.6) run base and q5pa,
-     which contains PG.1, twice each.
+     about the same (3.5% of the time against 3.7%).
+     So on the surface the collection count follows free memory and pause
+     length, not only allocation. Compare builds by total pause and by the
+     worst pauses, not by collection count or pause per collection. Below
+     ~2.9 GB free, every MB taken off the heap also lengthens the budget.
      GC THREADS' SHARE OF THE CPU: a 60 s perf profile of the base dungeon
      load (16 min in, before the first heap dump) puts 10.6% of the
      process's on-CPU samples on the ".NET Server GC" threads, about 0.17 of
@@ -3332,8 +3395,14 @@ S.7  [HIGH memory] Nearly half the live heap on the dungeon load is copies
      diet then only shrinks the 958 shared copies, a few MB.
      Built as variant q5pacs (q5pa plus the cache: a ConcurrentDictionary in
      a new Physics/Entity/CellStructCache.cs, following GfxObjCache, and a
-     one-line change at EnvCell.cs:72). Its A/B on the surface and the
-     dungeon load is queued (loadtest-plan.txt C.6, C.7).
+     one-line change at EnvCell.cs:72).
+     MEASURED, dungeon load (loadtest-plan.txt C.7, runs 23 and 24, an hour
+     apart): what survives each background gen2 falls from 5.68-5.78 GB on
+     q5pa to 2.97-3.10 GB on q5pacs, 2.7 GB. Peak RSS falls from 10.36 to
+     6.54 GB, memory load from 78% to 53%. The same run used 4.5% fewer
+     cores, with WorldObject physics 11% faster; the repeat pair in C.7
+     checks that. On the surface the saving does not show next to the
+     run-to-run spread in loaded landblocks (C.6).
 
      NEW, VisibleCells. Each EnvCell keeps a Dictionary<uint, EnvCell> of the
      cells it can see (EnvCell.cs:115-126): 10.3 million entries in 133,099
@@ -3377,13 +3446,18 @@ S.7  [HIGH memory] Nearly half the live heap on the dungeon load is copies
      About 130 MB on this load.
      VisibleCellMap, the value-tuple queue and the lazy caches are built
      together as variant q5pacsm2, on top of q5pacs. VisibleCellMap matched
-     Dictionary<uint, EnvCell> in 2,000 random trials. Queued in
-     loadtest-plan.txt C.7.
+     Dictionary<uint, EnvCell> in 2,000 random trials.
+     MEASURED, dungeon load (loadtest-plan.txt C.7, run 25): 2.50-2.57 GB
+     survive each background gen2, 0.47 GB less than q5pacs. Peak RSS falls
+     from 6.54 to 4.99 GB, and stays flat after 30 min where q5pacs and q5pa
+     keep climbing. Together with the geometry cache, the live heap falls
+     from 5.7 to 2.5 GB and peak RSS from 10.4 to 5.0 GB.
 
      LIMITS: one load, no players (P.14's character biotas and spellbooks are
      not in it). The surface load was not dumped. It holds fewer EnvCells per
-     landblock but far more landblocks, so the queued surface A/B of q5pacs
-     measures it directly.
+     landblock but far more landblocks. The surface A/B of q5pacs could not
+     show the saving next to the run-to-run spread in loaded landblocks
+     (loadtest-plan.txt C.6).
 
 
 ================================================================================
